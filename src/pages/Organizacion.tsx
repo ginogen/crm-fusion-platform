@@ -20,7 +20,18 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, Plus, Search, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Plus, Search, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const TIPOS_ESTRUCTURA = [
   'Empresa',
@@ -61,17 +72,21 @@ const EstructuraVinculada = ({ estructura, usuarios, isOpen, onToggle, estructur
   return (
     <div className="border rounded-lg bg-white mb-2">
       <div 
-        className="flex items-center justify-between p-4 cursor-pointer"
-        onClick={onToggle}
+        className="flex items-center justify-between p-4"
       >
-        <div className="space-y-1">
-          <h3 className="font-medium">{estructura.custom_name || estructura.nombre}</h3>
-          <p className="text-sm text-muted-foreground">{estructura.tipo}</p>
-          {estructuraPadre && (
-            <p className="text-sm text-muted-foreground">
-              Vinculada a: {estructuraPadre.custom_name || estructuraPadre.nombre} ({estructuraPadre.tipo})
-            </p>
-          )}
+        <div 
+          className="flex-1 cursor-pointer"
+          onClick={onToggle}
+        >
+          <div className="space-y-1">
+            <h3 className="font-medium">{estructura.custom_name || estructura.nombre}</h3>
+            <p className="text-sm text-muted-foreground">{estructura.tipo}</p>
+            {estructuraPadre && (
+              <p className="text-sm text-muted-foreground">
+                Vinculada a: {estructuraPadre.custom_name || estructuraPadre.nombre} ({estructuraPadre.tipo})
+              </p>
+            )}
+          </div>
         </div>
         {isOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
       </div>
@@ -269,6 +284,23 @@ const Organizacion = () => {
     );
   };
 
+  const handleDeleteEstructura = async (estructuraId: number) => {
+    const { error } = await supabase
+      .from("estructuras")
+      .delete()
+      .eq("id", estructuraId);
+
+    if (error) {
+      console.error("Error deleting estructura:", error);
+      toast.error("Error al eliminar la estructura");
+      return;
+    }
+
+    toast.success("Estructura eliminada exitosamente");
+    refetch();
+    setIsVinculacionModalOpen(false);
+  };
+
   if (isLoadingProfile || isLoadingEstructuras) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -391,37 +423,79 @@ const Organizacion = () => {
             return (
               <div key={tipo} className="space-y-2">
                 <h3 className="font-medium text-lg">{tipo}</h3>
+                
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {estructurasDelNivel.map((estructura) => (
                     <div
                       key={estructura.id}
-                      className="p-4 bg-white rounded-lg border hover:shadow-md transition-shadow cursor-pointer"
-                      onClick={() => {
-                        setSelectedEstructura(estructura);
-                        setIsVinculacionModalOpen(true);
-                      }}
+                      className="relative p-4 bg-white rounded-lg border hover:shadow-md transition-shadow group"
                     >
-                      <h4 className="font-medium">
-                        {estructura.custom_name || estructura.nombre}
-                      </h4>
-                      <div className="space-y-1 mt-2">
-                        {estructura.parent_estructura_id && (
-                          <p className="text-sm text-muted-foreground">
-                            Vinculada a: {
-                              estructuras?.find(e => e.id === estructura.parent_estructura_id)?.nombre ||
-                              'Estructura no encontrada'
-                            } ({
-                              estructuras?.find(e => e.id === estructura.parent_estructura_id)?.tipo ||
-                              'Tipo desconocido'
-                            })
-                          </p>
-                        )}
-                        {estructura.hijos && estructura.hijos.length > 0 && (
-                          <p className="text-sm text-muted-foreground">
-                            Estructuras vinculadas: {estructura.hijos.length}
-                          </p>
-                        )}
+                      <div 
+                        className="cursor-pointer"
+                        onClick={() => {
+                          setSelectedEstructura(estructura);
+                          setIsVinculacionModalOpen(true);
+                        }}
+                      >
+                        <h4 className="font-medium">
+                          {estructura.custom_name || estructura.nombre}
+                        </h4>
+                        <div className="space-y-1 mt-2">
+                          {estructura.parent_estructura_id && (
+                            <p className="text-sm text-muted-foreground">
+                              Vinculada a: {
+                                estructuras?.find(e => e.id === estructura.parent_estructura_id)?.nombre ||
+                                'Estructura no encontrada'
+                              } ({
+                                estructuras?.find(e => e.id === estructura.parent_estructura_id)?.tipo ||
+                                'Tipo desconocido'
+                              })
+                            </p>
+                          )}
+                          {estructura.hijos && estructura.hijos.length > 0 && (
+                            <p className="text-sm text-muted-foreground">
+                              Estructuras vinculadas: {estructura.hijos.length}
+                            </p>
+                          )}
+                        </div>
                       </div>
+                      
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Esta acción eliminará la estructura "{estructura.custom_name || estructura.nombre}" y no se puede deshacer.
+                              {estructura.hijos && estructura.hijos.length > 0 && (
+                                <p className="mt-2 text-destructive">
+                                  Advertencia: Esta estructura tiene {estructura.hijos.length} estructura(s) vinculada(s).
+                                </p>
+                              )}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleDeleteEstructura(estructura.id);
+                              }}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Eliminar
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   ))}
                 </div>
