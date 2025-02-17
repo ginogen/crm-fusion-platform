@@ -326,6 +326,28 @@ const Organizacion = () => {
     setIsVinculacionModalOpen(false);
   };
 
+  const handleDesvincularEstructura = async (estructuraId: number) => {
+    const estructura = estructuras?.find(e => e.id === estructuraId);
+    if (!estructura) {
+      toast.error("Estructura no encontrada");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("estructuras")
+      .update({ parent_estructura_id: null })
+      .eq("id", estructuraId);
+
+    if (error) {
+      console.error("Error desvinculando estructura:", error);
+      toast.error("Error al desvincular la estructura");
+      return;
+    }
+
+    toast.success("Estructura desvinculada exitosamente");
+    refetch();
+  };
+
   if (isLoadingProfile || isLoadingEstructuras) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -543,13 +565,23 @@ const Organizacion = () => {
               <div className="space-y-2">
                 {/* Estructuras superiores */}
                 {selectedEstructura?.parent_estructura_id && (
-                  <EstructuraVinculada
-                    estructura={estructuras?.find(e => e.id === selectedEstructura.parent_estructura_id)!}
-                    usuarios={usuarios?.filter(u => u.estructura_id === selectedEstructura.parent_estructura_id) || []}
-                    isOpen={expandedEstructuras.includes(selectedEstructura.parent_estructura_id)}
-                    onToggle={() => toggleEstructura(selectedEstructura.parent_estructura_id!)}
-                    estructuraPadre={null}
-                  />
+                  <div className="relative">
+                    <EstructuraVinculada
+                      estructura={estructuras?.find(e => e.id === selectedEstructura.parent_estructura_id)!}
+                      usuarios={usuarios?.filter(u => u.estructura_id === selectedEstructura.parent_estructura_id) || []}
+                      isOpen={expandedEstructuras.includes(selectedEstructura.parent_estructura_id)}
+                      onToggle={() => toggleEstructura(selectedEstructura.parent_estructura_id!)}
+                      estructuraPadre={null}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="absolute top-2 right-2"
+                      onClick={() => handleDesvincularEstructura(selectedEstructura.id)}
+                    >
+                      Desvincular
+                    </Button>
+                  </div>
                 )}
 
                 {/* Estructuras inferiores */}
@@ -561,14 +593,23 @@ const Organizacion = () => {
                     );
                     
                     return (
-                      <EstructuraVinculada
-                        key={estructura.id}
-                        estructura={estructura}
-                        usuarios={usuariosDeEstructura || []}
-                        isOpen={expandedEstructuras.includes(estructura.id)}
-                        onToggle={() => toggleEstructura(estructura.id)}
-                        estructuraPadre={selectedEstructura}
-                      />
+                      <div key={estructura.id} className="relative">
+                        <EstructuraVinculada
+                          estructura={estructura}
+                          usuarios={usuariosDeEstructura || []}
+                          isOpen={expandedEstructuras.includes(estructura.id)}
+                          onToggle={() => toggleEstructura(estructura.id)}
+                          estructuraPadre={selectedEstructura}
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="absolute top-2 right-2"
+                          onClick={() => handleDesvincularEstructura(estructura.id)}
+                        >
+                          Desvincular
+                        </Button>
+                      </div>
                     );
                   })}
               </div>
