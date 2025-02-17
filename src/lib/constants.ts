@@ -12,18 +12,25 @@ export const NAVIGATION_ITEMS = [
 ] as const;
 
 export const LEAD_STATUSES = [
-  "SIN LLAMAR",
-  "LLAMAR DESPUES",
-  "CITA PROGRAMADA",
+  "SIN_LLAMAR",
+  "LLAMAR_DESPUES",
+  "CITA_PROGRAMADA",
   "MATRICULA",
 ] as const;
+
+export const LEAD_STATUS_LABELS = {
+  SIN_LLAMAR: "Sin Llamar",
+  LLAMAR_DESPUES: "Llamar Después",
+  CITA_PROGRAMADA: "Cita Programada",
+  MATRICULA: "Matrícula",
+} as const;
 
 export const MANAGEMENT_TYPES = [
   "CITA",
   "LLAMADA",
   "RECHAZO",
-  "NUMERO EQUIVOCADO",
-  "DATO DUPLICADO",
+  "NUMERO_EQUIVOCADO",
+  "DATO_DUPLICADO",
 ] as const;
 
 export const ROLES = [
@@ -49,3 +56,4 @@ export const STRUCTURE_TYPES = [
   "Jefaturas",
   "Sub Organización",
 ] as const;
+

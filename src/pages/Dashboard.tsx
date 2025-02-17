@@ -50,6 +50,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { addDays, format, startOfWeek } from "date-fns";
 import { toast } from "sonner";
+import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS } from "@/lib/constants";
 
 const CALENDAR_VIEWS = {
   MONTH: "month",
@@ -57,24 +58,9 @@ const CALENDAR_VIEWS = {
   DAY: "day",
 } as const;
 
-const LEAD_ESTADOS = {
-  SIN_LLAMAR: "SIN LLAMAR",
-  LLAMAR_DESPUES: "LLAMAR DESPUÉS",
-  CITA_PROGRAMADA: "CITA PROGRAMADA",
-  MATRICULA: "MATRÍCULA",
-} as const;
-
-const TIPOS_GESTION = {
-  CITA: "CITA",
-  LLAMADA: "LLAMADA",
-  RECHAZO: "RECHAZO",
-  NUMERO_EQUIVOCADO: "NÚMERO EQUIVOCADO",
-  DATO_DUPLICADO: "DATO DUPLICADO",
-} as const;
-
 type CalendarView = typeof CALENDAR_VIEWS[keyof typeof CALENDAR_VIEWS];
-type LeadEstado = typeof LEAD_ESTADOS[keyof typeof LEAD_ESTADOS];
-type TipoGestion = typeof TIPOS_GESTION[keyof typeof TIPOS_GESTION];
+type LeadEstado = typeof LEAD_STATUSES[number];
+type TipoGestion = typeof MANAGEMENT_TYPES[number];
 
 const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
   const [formData, setFormData] = useState(lead);
@@ -226,7 +212,7 @@ const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, o
                 <SelectValue placeholder="Seleccionar tipo..." />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(TIPOS_GESTION).map(([key, value]) => (
+                {Object.entries(MANAGEMENT_TYPES).map(([key, value]) => (
                   <SelectItem key={key} value={value}>
                     {value}
                   </SelectItem>
@@ -368,12 +354,12 @@ const Dashboard = () => {
       const { data: pending } = await supabase
         .from("leads")
         .select("*", { count: "exact" })
-        .eq("estado", "SIN LLAMAR");
+        .eq("estado", "SIN_LLAMAR");
 
       const { data: scheduled } = await supabase
         .from("leads")
         .select("*", { count: "exact" })
-        .eq("estado", "CITA PROGRAMADA");
+        .eq("estado", "CITA_PROGRAMADA");
 
       const { data: enrolled } = await supabase
         .from("leads")
@@ -635,9 +621,9 @@ const Dashboard = () => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {Object.values(LEAD_ESTADOS).map((estado) => (
+                          {LEAD_STATUSES.map((estado) => (
                             <SelectItem key={estado} value={estado}>
-                              {estado}
+                              {LEAD_STATUS_LABELS[estado]}
                             </SelectItem>
                           ))}
                         </SelectContent>
