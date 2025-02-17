@@ -14,6 +14,21 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import {
   CalendarCheck2,
   Users,
   Calendar as CalendarIcon,
@@ -21,14 +36,23 @@ import {
   Eye,
   ClipboardList,
   History,
+  Pencil,
 } from "lucide-react";
-import { LEAD_STATUSES, MANAGEMENT_TYPES } from "@/lib/constants";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+
+const CALENDAR_VIEWS = {
+  MONTH: "month",
+  WEEK: "week",
+  DAY: "day",
+} as const;
+
+type CalendarView = typeof CALENDAR_VIEWS[keyof typeof CALENDAR_VIEWS];
 
 const Dashboard = () => {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedLead, setSelectedLead] = useState<any>(null);
+  const [calendarView, setCalendarView] = useState<CalendarView>(CALENDAR_VIEWS.MONTH);
 
   // Fetch metrics
   const { data: metrics } = useQuery({
@@ -82,21 +106,17 @@ const Dashboard = () => {
     },
   });
 
-  // Fetch leads by status
-  const { data: leadsByStatus } = useQuery({
-    queryKey: ["leads-by-status"],
+  // Fetch leads
+  const { data: leads } = useQuery({
+    queryKey: ["leads"],
     queryFn: async () => {
-      const { data: leads } = await supabase
+      const { data } = await supabase
         .from("leads")
         .select(`
           *,
           users (nombre_completo)
         `);
-
-      return LEAD_STATUSES.map((status) => ({
-        status,
-        leads: leads?.filter((lead) => lead.estado === status) || [],
-      }));
+      return data;
     },
   });
 
@@ -151,13 +171,25 @@ const Dashboard = () => {
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">Calendario de Tareas</h2>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm">
+            <Button 
+              variant={calendarView === CALENDAR_VIEWS.MONTH ? "default" : "outline"} 
+              size="sm"
+              onClick={() => setCalendarView(CALENDAR_VIEWS.MONTH)}
+            >
               Mes
             </Button>
-            <Button variant="outline" size="sm">
+            <Button 
+              variant={calendarView === CALENDAR_VIEWS.WEEK ? "default" : "outline"} 
+              size="sm"
+              onClick={() => setCalendarView(CALENDAR_VIEWS.WEEK)}
+            >
               Semana
             </Button>
-            <Button variant="outline" size="sm">
+            <Button 
+              variant={calendarView === CALENDAR_VIEWS.DAY ? "default" : "outline"} 
+              size="sm"
+              onClick={() => setCalendarView(CALENDAR_VIEWS.DAY)}
+            >
               Día
             </Button>
           </div>
@@ -172,7 +204,7 @@ const Dashboard = () => {
           {tasks?.map((task) => (
             <div
               key={task.id}
-              className="absolute bg-blue-100 text-blue-700 p-2 rounded text-sm"
+              className="absolute bg-blue-100 text-blue-700 p-2 rounded text-sm hover:bg-blue-200 transition-colors cursor-pointer"
               style={{
                 left: '20%',
                 top: '30%',
@@ -187,38 +219,94 @@ const Dashboard = () => {
         </div>
       </Card>
 
-      {/* Leads by Status */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {leadsByStatus?.map(({ status, leads }) => (
-          <Card key={status} className="p-4">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-semibold">{status}</h3>
-              <span className="text-sm text-muted-foreground">
-                {leads.length} leads
-              </span>
+      {/* Leads Table */}
+      <Card className="p-6">
+        <h2 className="text-lg font-semibold mb-6">Leads Recientes</h2>
+        <div className="space-y-4">
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="text-sm text-muted-foreground">Estado</label>
+              <Select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar estado..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SIN_LLAMAR">Sin Llamar</SelectItem>
+                  <SelectItem value="LLAMAR_DESPUES">Llamar Después</SelectItem>
+                  <SelectItem value="CITA_PROGRAMADA">Cita Programada</SelectItem>
+                  <SelectItem value="MATRICULA">Matrícula</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="space-y-2">
-              {leads.map((lead) => (
-                <Card key={lead.id} className="p-3">
-                  <p className="font-medium">{lead.nombre_completo}</p>
-                  <p className="text-sm text-muted-foreground">{lead.email}</p>
-                  <div className="flex gap-2 mt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => setSelectedLead(lead)}
-                    >
-                      <Eye className="h-4 w-4 mr-1" />
-                      Ver
-                    </Button>
-                  </div>
-                </Card>
-              ))}
+            <div className="flex-1">
+              <label className="text-sm text-muted-foreground">Asignado A</label>
+              <Select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Buscar usuario..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user1">Usuario 1</SelectItem>
+                  <SelectItem value="user2">Usuario 2</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          </Card>
-        ))}
-      </div>
+          </div>
+
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12"></TableHead>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Teléfono</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Asignado A</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {leads?.map((lead) => (
+                  <TableRow key={lead.id}>
+                    <TableCell>
+                      <input type="checkbox" className="rounded border-gray-300" />
+                    </TableCell>
+                    <TableCell>{lead.nombre_completo}</TableCell>
+                    <TableCell>{lead.email}</TableCell>
+                    <TableCell>{lead.telefono}</TableCell>
+                    <TableCell>
+                      <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                        ${lead.estado === 'LLAMAR_DESPUES' ? 'bg-blue-100 text-blue-800' :
+                          lead.estado === 'CITA_PROGRAMADA' ? 'bg-yellow-100 text-yellow-800' :
+                          lead.estado === 'MATRICULA' ? 'bg-green-100 text-green-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                        {lead.estado}
+                      </div>
+                    </TableCell>
+                    <TableCell>{lead.users?.nombre_completo}</TableCell>
+                    <TableCell>{new Date(lead.created_at).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <button className="text-gray-600 hover:text-gray-900">
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button className="text-gray-600 hover:text-gray-900">
+                          <ClipboardList className="h-4 w-4" />
+                        </button>
+                        <button className="text-gray-600 hover:text-gray-900">
+                          <History className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      </Card>
 
       {/* Lead Details Sheet */}
       <Sheet>
