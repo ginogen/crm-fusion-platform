@@ -303,14 +303,6 @@ const Dashboard = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showGestionModal, setShowGestionModal] = useState(false);
   const [showHistorialSheet, setShowHistorialSheet] = useState(false);
-  const [filterEstado, setFilterEstado] = useState<string>("");
-  const [filterAsignado, setFilterAsignado] = useState<string>("");
-  const [estructuraFilter, setEstructuraFilter] = useState<string>("");
-  const [emailFilter, setEmailFilter] = useState<string>("");
-  const [nombreFilter, setNombreFilter] = useState<string>("");
-  const [cargoFilter, setCargoFilter] = useState<string>("");
-  const [usuarios, setUsuarios] = useState<any[]>([]);
-  const [estructuras, setEstructuras] = useState<any[]>([]);
   const queryClient = useQueryClient();
 
   const { data: metrics } = useQuery({
@@ -371,8 +363,7 @@ const Dashboard = () => {
         .from("leads")
         .select(`
           *,
-          users (nombre_completo),
-          estructura (nombre)
+          users (nombre_completo)
         `);
       return data;
     },
@@ -455,18 +446,6 @@ const Dashboard = () => {
     }
   });
 
-  const filteredLeads = leads?.filter((lead) => {
-    const matchesEmail = lead.email.toLowerCase().includes(emailFilter.toLowerCase());
-    const matchesNombre = lead.nombre_completo.toLowerCase().includes(nombreFilter.toLowerCase());
-    const matchesCargo = lead.user_position.toLowerCase().includes(cargoFilter.toLowerCase());
-    const matchesEstructura = estructuras
-      ?.find((e) => e.id === lead.estructura_id)
-      ?.nombre.toLowerCase()
-      .includes(estructuraFilter.toLowerCase());
-
-    return matchesEmail && matchesNombre && matchesCargo && matchesEstructura;
-  });
-
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -538,32 +517,28 @@ const Dashboard = () => {
         <div className="space-y-4">
           <div className="flex gap-4">
             <div className="flex-1">
-              <Select value={filterEstado || "all"} onValueChange={(value) => setFilterEstado(value === "all" ? "" : value)}>
+              <label className="text-sm text-muted-foreground">Estado</label>
+              <Select>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar estado..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos los estados</SelectItem>
-                  {LEAD_STATUSES.map((estado) => (
-                    <SelectItem key={estado} value={estado}>
-                      {LEAD_STATUS_LABELS[estado]}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="SIN_LLAMAR">Sin Llamar</SelectItem>
+                  <SelectItem value="LLAMAR_DESPUES">Llamar Después</SelectItem>
+                  <SelectItem value="CITA_PROGRAMADA">Cita Programada</SelectItem>
+                  <SelectItem value="MATRICULA">Matrícula</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="flex-1">
-              <Select value={filterAsignado || "all"} onValueChange={(value) => setFilterAsignado(value === "all" ? "" : value)}>
+              <label className="text-sm text-muted-foreground">Asignado A</label>
+              <Select>
                 <SelectTrigger>
                   <SelectValue placeholder="Buscar usuario..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos los usuarios</SelectItem>
-                  {usuarios?.map((usuario) => (
-                    <SelectItem key={usuario.id} value={usuario.id}>
-                      {usuario.nombre_completo}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="user1">Usuario 1</SelectItem>
+                  <SelectItem value="user2">Usuario 2</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -573,9 +548,7 @@ const Dashboard = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-12">
-                    <input type="checkbox" className="rounded border-gray-300" />
-                  </TableHead>
+                  <TableHead className="w-12"></TableHead>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Teléfono</TableHead>
@@ -586,7 +559,7 @@ const Dashboard = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredLeads?.map((lead) => (
+                {leads?.map((lead) => (
                   <TableRow key={lead.id}>
                     <TableCell>
                       <input type="checkbox" className="rounded border-gray-300" />
