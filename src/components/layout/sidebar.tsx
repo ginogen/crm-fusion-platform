@@ -7,13 +7,38 @@ import {
   SidebarContent,
   SidebarHeader,
   SidebarTrigger,
+  SidebarFooter,
 } from "@/components/ui/sidebar";
-import { LucideIcon } from "lucide-react";
+import { LucideIcon, User } from "lucide-react";
 import * as Icons from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
 export const AppSidebar = () => {
   const location = useLocation();
+
+  // Obtener la sesión del usuario
+  const { data: userData } = useQuery({
+    queryKey: ["user-profile"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No user found");
+
+      // Obtener el rol del usuario
+      const { data: userProfile } = await supabase
+        .from("users")
+        .select("email, nombre_completo, role")
+        .eq("id", user.id)
+        .single();
+
+      return {
+        email: user.email,
+        nombre_completo: userProfile?.nombre_completo || "Usuario",
+        role: userProfile?.role || "Usuario",
+      };
+    },
+  });
 
   return (
     <Sidebar>
@@ -27,7 +52,19 @@ export const AppSidebar = () => {
         <SidebarTrigger />
       </SidebarHeader>
       <SidebarContent>
-        <div className="px-2 space-y-1">
+        <div className="px-4 py-4 border-b">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-slate-200 flex items-center justify-center">
+              <User className="h-6 w-6 text-slate-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{userData?.nombre_completo}</p>
+              <p className="text-xs text-muted-foreground truncate">{userData?.email}</p>
+              <p className="text-xs text-primary font-medium">{userData?.role}</p>
+            </div>
+          </div>
+        </div>
+        <div className="px-2 space-y-1 mt-4">
           {NAVIGATION_ITEMS.map((item) => {
             const Icon = Icons[item.icon as keyof typeof Icons] as LucideIcon;
             const isActive = location.pathname === item.href;

@@ -27,7 +27,7 @@ export default function Auth() {
       if (error) throw error;
       
       toast.success("¡Sesión iniciada exitosamente!");
-      navigate("/organizacion");
+      navigate("/"); // Cambiado a Dashboard (ruta /)
     } catch (error: any) {
       toast.error(error.message || "Error al iniciar sesión");
     } finally {
@@ -48,6 +48,7 @@ export default function Auth() {
       if (error) throw error;
       
       toast.success("¡Cuenta creada exitosamente! Por favor revisa tu email para confirmar tu cuenta.");
+      navigate("/"); // Cambiado a Dashboard (ruta /)
     } catch (error: any) {
       toast.error(error.message || "Error al crear la cuenta");
     } finally {
