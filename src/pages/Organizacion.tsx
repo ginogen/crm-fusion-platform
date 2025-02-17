@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -205,11 +204,11 @@ const Organizacion = () => {
                 <div className="space-y-2">
                   <Label>Estructura Padre (Opcional)</Label>
                   <Select
-                    value={newEstructura.parent_id?.toString() || ""}
+                    value={newEstructura.parent_id?.toString() || "none"}
                     onValueChange={(value) => 
                       setNewEstructura(prev => ({ 
                         ...prev, 
-                        parent_id: value ? parseInt(value) : null 
+                        parent_id: value === "none" ? null : parseInt(value) 
                       }))
                     }
                   >
@@ -217,7 +216,7 @@ const Organizacion = () => {
                       <SelectValue placeholder="Seleccione una estructura padre" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Ninguna</SelectItem>
+                      <SelectItem value="none">Ninguna</SelectItem>
                       {estructuras?.map((estructura) => (
                         <SelectItem 
                           key={estructura.id} 
@@ -242,14 +241,14 @@ const Organizacion = () => {
         <div className="flex gap-4">
           <div className="w-[200px]">
             <Select
-              value={filterTipo}
-              onValueChange={setFilterTipo}
+              value={filterTipo || "all"}
+              onValueChange={(value) => setFilterTipo(value === "all" ? "" : value)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Filtrar por tipo" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todos</SelectItem>
+                <SelectItem value="all">Todos</SelectItem>
                 {TIPOS_ESTRUCTURA.map((tipo) => (
                   <SelectItem key={tipo} value={tipo}>
                     {tipo}
