@@ -2,50 +2,15 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { 
-  Sheet,
-  SheetTrigger,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
-import {
-  CalendarCheck2,
-  Users,
-  Calendar as CalendarIcon,
-  GraduationCap,
-  Eye,
-  ClipboardList,
-  History,
-  Pencil,
-} from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { CalendarCheck2, Users, Calendar as CalendarIcon, GraduationCap, Eye, ClipboardList, History, Pencil } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { addDays, format, startOfWeek } from "date-fns";
@@ -75,7 +40,6 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
 
       if (error) throw error;
 
-      // Registrar la acción en el historial
       await supabase.from("lead_history").insert({
         lead_id: lead.id,
         user_id: (await supabase.auth.getUser()).data.user?.id,
@@ -154,7 +118,6 @@ const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, o
 
   const createGestion = useMutation({
     mutationFn: async () => {
-      // Registrar la tarea
       const { error: taskError } = await supabase
         .from("tareas")
         .insert({
@@ -167,7 +130,6 @@ const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, o
 
       if (taskError) throw taskError;
 
-      // Registrar en el historial
       await supabase.from("lead_history").insert({
         lead_id: lead.id,
         user_id: (await supabase.auth.getUser()).data.user?.id,
@@ -175,7 +137,6 @@ const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, o
         details: JSON.stringify({ fecha, observaciones })
       });
 
-      // Actualizar estado del lead si es necesario
       if (tipo === "CITA") {
         await supabase
           .from("leads")
@@ -465,7 +426,6 @@ const Dashboard = () => {
 
       if (error) throw error;
 
-      // Registrar el cambio en el historial
       await supabase.from("lead_history").insert({
         lead_id: leadId,
         user_id: (await supabase.auth.getUser()).data.user?.id,
@@ -488,7 +448,6 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      {/* Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {metrics?.map((metric) => (
           <Card key={metric.title} className="p-6">
@@ -514,7 +473,6 @@ const Dashboard = () => {
         ))}
       </div>
 
-      {/* Calendar */}
       <Card className="p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">Calendario de Tareas</h2>
@@ -554,7 +512,6 @@ const Dashboard = () => {
         </div>
       </Card>
 
-      {/* Leads Table */}
       <Card className="p-6">
         <h2 className="text-lg font-semibold mb-6">Leads Recientes</h2>
         <div className="space-y-4">
@@ -688,7 +645,6 @@ const Dashboard = () => {
         </div>
       </Card>
 
-      {/* Modales */}
       {selectedLead && (
         <>
           <LeadEditModal
