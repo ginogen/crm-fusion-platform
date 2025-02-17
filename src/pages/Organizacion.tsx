@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -20,9 +21,8 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, Plus, Search } from "lucide-react";
+import { Loader2, Plus, Search, ChevronDown, ChevronUp } from "lucide-react";
 
-// Tipos de estructura disponibles (actualizados según el enum de la base de datos)
 const TIPOS_ESTRUCTURA = [
   'Empresa',
   'Paises',
@@ -49,11 +49,54 @@ interface UserProfile {
   nombre_completo: string;
 }
 
+interface EstructuraVinculadaProps {
+  estructura: Estructura;
+  usuarios: UserProfile[];
+  isOpen: boolean;
+  onToggle: () => void;
+}
+
+const EstructuraVinculada = ({ estructura, usuarios, isOpen, onToggle }: EstructuraVinculadaProps) => {
+  return (
+    <div className="border rounded-lg bg-white mb-2">
+      <div 
+        className="flex items-center justify-between p-4 cursor-pointer"
+        onClick={onToggle}
+      >
+        <div>
+          <h3 className="font-medium">{estructura.custom_name || estructura.nombre}</h3>
+          <p className="text-sm text-muted-foreground">{estructura.tipo}</p>
+        </div>
+        {isOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+      </div>
+      
+      {isOpen && usuarios.length > 0 && (
+        <div className="p-4 pt-0 border-t">
+          <h4 className="text-sm font-medium mb-2">Usuarios vinculados</h4>
+          <div className="space-y-3">
+            {usuarios.map((usuario) => (
+              <div key={usuario.id} className="p-3 bg-slate-50 rounded-md">
+                <p className="font-medium">{usuario.nombre_completo}</p>
+                <p className="text-sm text-muted-foreground">{usuario.user_position}</p>
+                <p className="text-sm text-muted-foreground">{usuario.email}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Organizacion = () => {
   const navigate = useNavigate();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isVinculacionModalOpen, setIsVinculacionModalOpen] = useState(false);
+  const [selectedEstructura, setSelectedEstructura] = useState<Estructura | null>(null);
+  const [estructurasSeleccionadas, setEstructurasSeleccionadas] = useState<number[]>([]);
   const [filterTipo, setFilterTipo] = useState<string>("");
   const [filterNombre, setFilterNombre] = useState("");
+  const [expandedEstructuras, setExpandedEstructuras] = useState<number[]>([]);
   const [newEstructura, setNewEstructura] = useState({
     tipo: "",
     nombre: "",
@@ -103,19 +146,37 @@ const Organizacion = () => {
   const { data: estructuras, isLoading: isLoadingEstructuras, error, refetch } = useQuery({
     queryKey: ["estructuras"],
     queryFn: async () => {
-      console.log("Fetching estructuras...");
       const { data, error } = await supabase
         .from("estructuras")
         .select("*")
         .order("tipo", { ascending: true });
 
-      if (error) {
-        console.error("Error fetching estructuras:", error);
-        throw error;
-      }
-      
-      console.log("Estructuras fetched:", data);
+      if (error) throw error;
       return data as Estructura[];
+    },
+  });
+
+  // Obtener usuarios por estructura
+  const { data: usuariosPorEstructura } = useQuery({
+    queryKey: ["usuariosPorEstructura"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("users")
+        .select("*");
+
+      if (error) throw error;
+      
+      const usuariosPorEstructura: Record<number, UserProfile[]> = {};
+      data.forEach((usuario: UserProfile & { estructura_id: number }) => {
+        if (usuario.estructura_id) {
+          if (!usuariosPorEstructura[usuario.estructura_id]) {
+            usuariosPorEstructura[usuario.estructura_id] = [];
+          }
+          usuariosPorEstructura[usuario.estructura_id].push(usuario);
+        }
+      });
+      
+      return usuariosPorEstructura;
     },
   });
 
@@ -135,16 +196,6 @@ const Organizacion = () => {
     acc[nivel].push(estructura);
     return acc;
   }, {} as Record<number, Estructura[]>);
-
-  // Log para depuración
-  console.log("Estado actual:", {
-    estructuras,
-    estructurasFiltradas,
-    estructurasNiveles,
-    filterTipo,
-    filterNombre,
-    error
-  });
 
   const handleCreateEstructura = async () => {
     if (!newEstructura.tipo || !newEstructura.nombre) {
@@ -174,6 +225,41 @@ const Organizacion = () => {
     refetch();
   };
 
+  const handleVincularEstructuras = async () => {
+    if (!selectedEstructura || estructurasSeleccionadas.length === 0) {
+      toast.error("Por favor seleccione al menos una estructura para vincular");
+      return;
+    }
+
+    const updates = estructurasSeleccionadas.map(id => ({
+      id,
+      parent_id: selectedEstructura.id,
+    }));
+
+    const { error } = await supabase
+      .from("estructuras")
+      .upsert(updates);
+
+    if (error) {
+      console.error("Error vinculando estructuras:", error);
+      toast.error("Error al vincular las estructuras");
+      return;
+    }
+
+    toast.success("Estructuras vinculadas exitosamente");
+    setIsVinculacionModalOpen(false);
+    setEstructurasSeleccionadas([]);
+    refetch();
+  };
+
+  const toggleEstructura = (estructuraId: number) => {
+    setExpandedEstructuras(prev => 
+      prev.includes(estructuraId) 
+        ? prev.filter(id => id !== estructuraId)
+        : [...prev, estructuraId]
+    );
+  };
+
   if (isLoadingProfile || isLoadingEstructuras) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -183,7 +269,6 @@ const Organizacion = () => {
   }
 
   if (error) {
-    console.error("Error in component:", error);
     return (
       <div className="flex justify-center items-center h-64 text-red-500">
         Error al cargar las estructuras
@@ -333,7 +418,11 @@ const Organizacion = () => {
                   {estructurasDelNivel.map((estructura) => (
                     <div
                       key={estructura.id}
-                      className="p-4 bg-white rounded-lg border hover:shadow-md transition-shadow"
+                      className="p-4 bg-white rounded-lg border hover:shadow-md transition-shadow cursor-pointer"
+                      onClick={() => {
+                        setSelectedEstructura(estructura);
+                        setIsVinculacionModalOpen(true);
+                      }}
                     >
                       <h4 className="font-medium">
                         {estructura.custom_name || estructura.nombre}
@@ -351,6 +440,68 @@ const Organizacion = () => {
           })}
         </div>
       </div>
+
+      {/* Modal de Vinculación */}
+      <Dialog open={isVinculacionModalOpen} onOpenChange={setIsVinculacionModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Vincular Estructuras con {selectedEstructura?.nombre}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Seleccionar Estructuras</Label>
+              <Select
+                value={estructurasSeleccionadas[0]?.toString()}
+                onValueChange={(value) => {
+                  const id = parseInt(value);
+                  setEstructurasSeleccionadas(prev => 
+                    prev.includes(id) 
+                      ? prev.filter(x => x !== id)
+                      : [...prev, id]
+                  );
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar estructuras..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {estructuras?.filter(e => e.id !== selectedEstructura?.id).map((estructura) => (
+                    <SelectItem key={estructura.id} value={estructura.id.toString()}>
+                      {estructura.custom_name || estructura.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-lg font-medium">Estructuras Vinculadas</h3>
+              <div className="space-y-2">
+                {estructuras
+                  ?.filter(e => e.parent_id === selectedEstructura?.id)
+                  .map(estructura => (
+                    <EstructuraVinculada
+                      key={estructura.id}
+                      estructura={estructura}
+                      usuarios={usuariosPorEstructura?.[estructura.id] || []}
+                      isOpen={expandedEstructuras.includes(estructura.id)}
+                      onToggle={() => toggleEstructura(estructura.id)}
+                    />
+                  ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="outline" onClick={() => setIsVinculacionModalOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleVincularEstructuras}>
+                Vincular
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
