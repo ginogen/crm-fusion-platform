@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -354,7 +355,7 @@ const EditTaskDialog = ({ task, isOpen, onClose }: { task: any; isOpen: boolean;
 };
 
 const Dashboard = () => {
-  const [selectedTaskType, setSelectedTaskType] = useState<string>("");
+  const [selectedTaskType, setSelectedTaskType] = useState<string>("ALL");
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
   const queryClient = useQueryClient();
@@ -423,7 +424,7 @@ const Dashboard = () => {
         `)
         .order('fecha', { ascending: true });
 
-      if (selectedTaskType) {
+      if (selectedTaskType && selectedTaskType !== "ALL") {
         query = query.eq('tipo', selectedTaskType);
       }
 
@@ -469,7 +470,7 @@ const Dashboard = () => {
               <SelectValue placeholder="Filtrar por tipo" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Todos</SelectItem>
+              <SelectItem value="ALL">Todos</SelectItem>
               {MANAGEMENT_TYPES.map((tipo) => (
                 <SelectItem key={tipo} value={tipo}>
                   {tipo}
