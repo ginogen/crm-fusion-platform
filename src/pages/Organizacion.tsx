@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -37,7 +36,7 @@ const TIPOS_ESTRUCTURA = [
 interface Estructura {
   id: number;
   tipo: typeof TIPOS_ESTRUCTURA[number];
-  parent_id: number | null;
+  parent_estructura_id: number | null;
   nombre: string;
   custom_name: string | null;
   hijos?: Estructura[];
@@ -101,7 +100,7 @@ const Organizacion = () => {
   const [newEstructura, setNewEstructura] = useState({
     tipo: "",
     nombre: "",
-    parent_id: null as number | null,
+    parent_estructura_id: null as number | null,
   });
 
   useEffect(() => {
@@ -147,7 +146,7 @@ const Organizacion = () => {
         .from("estructuras")
         .select(`
           *,
-          hijos:estructuras!estructuras_parent_id_fkey(*)
+          hijos:estructuras!estructuras_parent_estructura_id_fkey(*)
         `)
         .order('tipo', { ascending: true });
 
@@ -205,7 +204,7 @@ const Organizacion = () => {
       .insert([{
         tipo: newEstructura.tipo,
         nombre: newEstructura.nombre,
-        parent_id: newEstructura.parent_id,
+        parent_estructura_id: newEstructura.parent_estructura_id,
       }])
       .select()
       .single();
@@ -218,7 +217,7 @@ const Organizacion = () => {
 
     toast.success("Estructura creada exitosamente");
     setIsCreateModalOpen(false);
-    setNewEstructura({ tipo: "", nombre: "", parent_id: null });
+    setNewEstructura({ tipo: "", nombre: "", parent_estructura_id: null });
     refetch();
   };
 
@@ -230,7 +229,7 @@ const Organizacion = () => {
 
     const updates = estructurasSeleccionadas.map(id => ({
       id,
-      parent_id: selectedEstructura.id,
+      parent_estructura_id: selectedEstructura.id,
     }));
 
     const { error } = await supabase
@@ -392,9 +391,9 @@ const Organizacion = () => {
                       <h4 className="font-medium">
                         {estructura.custom_name || estructura.nombre}
                       </h4>
-                      {estructura.parent_id && (
+                      {estructura.parent_estructura_id && (
                         <p className="text-sm text-muted-foreground">
-                          Padre: {estructuras?.find(e => e.id === estructura.parent_id)?.nombre}
+                          Padre: {estructuras?.find(e => e.id === estructura.parent_estructura_id)?.nombre}
                         </p>
                       )}
                     </div>
@@ -442,7 +441,7 @@ const Organizacion = () => {
               <h3 className="text-lg font-medium">Estructuras Vinculadas</h3>
               <div className="space-y-2">
                 {estructuras
-                  ?.filter(e => e.parent_id === selectedEstructura?.id)
+                  ?.filter(e => e.parent_estructura_id === selectedEstructura?.id)
                   .map(estructura => (
                     <EstructuraVinculada
                       key={estructura.id}
