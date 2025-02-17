@@ -22,7 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Pencil, ClipboardList, History, Upload, UserPlus } from "lucide-react";
+import { Pencil, ClipboardList, History, Upload, UserPlus, Download } from "lucide-react";
 
 interface NewLeadForm {
   nombre_completo: string;
@@ -44,12 +44,25 @@ const initialFormState: NewLeadForm = {
   observaciones: "",
 };
 
+const CSV_HEADERS = [
+  "Nombre Completo",
+  "Email",
+  "Telefono",
+  "Origen",
+  "Pais",
+  "Filial",
+  "Observaciones",
+];
+
 const Datos = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
   const [formData, setFormData] = useState<NewLeadForm>(initialFormState);
   const [isDuplicate, setIsDuplicate] = useState<boolean | null>(null);
+  const [csvData, setCsvData] = useState<NewLeadForm[]>([]);
+  const [previewData, setPreviewData] = useState<NewLeadForm[]>([]);
 
-  const { data: leads } = useQuery({
+  const { data: leads, refetch } = useQuery({
     queryKey: ["leads"],
     queryFn: async () => {
       const { data } = await supabase
@@ -67,7 +80,7 @@ const Datos = () => {
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    setIsDuplicate(null); // Reset duplicate check on input change
+    setIsDuplicate(null);
   };
 
   const checkDuplicate = async () => {
@@ -104,6 +117,80 @@ const Datos = () => {
     toast.success("Lead guardado exitosamente");
     setFormData(initialFormState);
     setIsDialogOpen(false);
+    refetch();
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const lines = text.split('\n');
+      const headers = lines[0].split(',').map(h => h.trim());
+
+      // Validar encabezados
+      const isValidHeaders = CSV_HEADERS.every(header => 
+        headers.includes(header)
+      );
+
+      if (!isValidHeaders) {
+        toast.error("El archivo CSV no tiene los encabezados correctos");
+        return;
+      }
+
+      // Procesar datos
+      const parsedData = lines.slice(1).map(line => {
+        const values = line.split(',').map(v => v.trim());
+        return {
+          nombre_completo: values[0] || "",
+          email: values[1] || "",
+          telefono: values[2] || "",
+          origen: values[3] || "",
+          pais: values[4] || "",
+          filial: values[5] || "",
+          observaciones: values[6] || "",
+        };
+      }).filter(lead => lead.nombre_completo && lead.email && lead.telefono);
+
+      setCsvData(parsedData);
+      setPreviewData(parsedData.slice(0, 5)); // Mostrar solo los primeros 5 registros
+      toast.success(`${parsedData.length} leads encontrados en el archivo`);
+    };
+
+    reader.readAsText(file);
+  };
+
+  const handleBulkUpload = async () => {
+    if (csvData.length === 0) {
+      toast.error("No hay datos para cargar");
+      return;
+    }
+
+    const { error } = await supabase.from("leads").insert(csvData);
+
+    if (error) {
+      toast.error("Error al cargar los leads");
+      return;
+    }
+
+    toast.success(`${csvData.length} leads cargados exitosamente`);
+    setCsvData([]);
+    setPreviewData([]);
+    setIsBulkDialogOpen(false);
+    refetch();
+  };
+
+  const downloadTemplate = () => {
+    const template = CSV_HEADERS.join(',') + '\n';
+    const blob = new Blob([template], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'plantilla_leads.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   return (
@@ -111,10 +198,76 @@ const Datos = () => {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Datos</h1>
         <div className="flex gap-2">
-          <Button variant="outline">
-            <Upload className="mr-2 h-4 w-4" />
-            Carga Masiva
-          </Button>
+          <Dialog open={isBulkDialogOpen} onOpenChange={setIsBulkDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Upload className="mr-2 h-4 w-4" />
+                Carga Masiva
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[700px]">
+              <DialogHeader>
+                <DialogTitle>Carga Masiva de Leads</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Label>Archivo CSV</Label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={downloadTemplate}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Descargar Plantilla
+                    </Button>
+                  </div>
+                  <Input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileUpload}
+                  />
+                </div>
+
+                {previewData.length > 0 && (
+                  <div className="space-y-4">
+                    <h3 className="font-medium">Vista Previa (5 primeros registros)</h3>
+                    <div className="rounded-md border overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Nombre</TableHead>
+                            <TableHead>Email</TableHead>
+                            <TableHead>Teléfono</TableHead>
+                            <TableHead>País</TableHead>
+                            <TableHead>Filial</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {previewData.map((lead, index) => (
+                            <TableRow key={index}>
+                              <TableCell>{lead.nombre_completo}</TableCell>
+                              <TableCell>{lead.email}</TableCell>
+                              <TableCell>{lead.telefono}</TableCell>
+                              <TableCell>{lead.pais}</TableCell>
+                              <TableCell>{lead.filial}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <Button onClick={handleBulkUpload}>
+                        Cargar {csvData.length} Leads
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button>
