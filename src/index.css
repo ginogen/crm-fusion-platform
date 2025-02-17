@@ -35,14 +35,15 @@
 
     --radius: 0.5rem;
 
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+    /* Nuevos colores más oscuros para la sidebar */
+    --sidebar-background: 221 39% 11%; /* Color base azul oscuro */
+    --sidebar-foreground: 210 40% 98%; /* Texto claro para contraste */
+    --sidebar-primary: 217 91% 60%; /* Azul brillante para elementos primarios */
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 221 39% 16%; /* Azul oscuro para elementos de acento */
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 221 39% 16%;
+    --sidebar-ring: 217 91% 60%;
   }
 
   .dark {
