@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -76,15 +77,21 @@ const Organizacion = () => {
   });
 
   // Obtener todas las estructuras
-  const { data: estructuras, isLoading: isLoadingEstructuras, refetch } = useQuery({
+  const { data: estructuras, isLoading: isLoadingEstructuras, error } = useQuery({
     queryKey: ["estructuras"],
     queryFn: async () => {
+      console.log("Fetching estructuras...");
       const { data, error } = await supabase
         .from("estructuras")
         .select("*")
         .order("tipo", { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error fetching estructuras:", error);
+        throw error;
+      }
+      
+      console.log("Estructuras fetched:", data);
       return data as Estructura[];
     },
   });
@@ -106,6 +113,16 @@ const Organizacion = () => {
     return acc;
   }, {} as Record<number, Estructura[]>);
 
+  // Log para depuración
+  console.log("Estado actual:", {
+    estructuras,
+    estructurasFiltradas,
+    estructurasNiveles,
+    filterTipo,
+    filterNombre,
+    error
+  });
+
   const handleCreateEstructura = async () => {
     if (!newEstructura.tipo || !newEstructura.nombre) {
       toast.error("Por favor complete todos los campos requeridos");
@@ -123,6 +140,7 @@ const Organizacion = () => {
       .single();
 
     if (error) {
+      console.error("Error creating estructura:", error);
       toast.error("Error al crear la estructura");
       return;
     }
@@ -137,6 +155,15 @@ const Organizacion = () => {
     return (
       <div className="flex justify-center items-center h-64">
         <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    console.error("Error in component:", error);
+    return (
+      <div className="flex justify-center items-center h-64 text-red-500">
+        Error al cargar las estructuras
       </div>
     );
   }
