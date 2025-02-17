@@ -3,16 +3,16 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { CalendarCheck2, Users, Calendar as CalendarIcon, GraduationCap, Eye, ClipboardList, History, Pencil } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { addDays, format, startOfWeek } from "date-fns";
+import { format } from "date-fns";
 import { toast } from "sonner";
 import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
@@ -296,6 +296,63 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
   );
 };
 
+const EditTaskDialog = ({ task, isOpen, onClose }: { task: any; isOpen: boolean; onClose: () => void }) => {
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(task?.fecha ? new Date(task.fecha) : undefined);
+  const queryClient = useQueryClient();
+
+  const updateTask = useMutation({
+    mutationFn: async () => {
+      if (!selectedDate || !task) return;
+
+      const { error } = await supabase
+        .from("tareas")
+        .update({ fecha: selectedDate.toISOString() })
+        .eq("id", task.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Tarea actualizada correctamente");
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      onClose();
+    },
+    onError: (error) => {
+      toast.error("Error al actualizar la tarea");
+      console.error("Error updating task:", error);
+    }
+  });
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar Tarea</DialogTitle>
+          <DialogDescription>
+            Actualizar fecha de la tarea
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium">Nueva Fecha</label>
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              onSelect={setSelectedDate}
+              className="rounded-md border mt-2"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button onClick={() => updateTask.mutate()} disabled={!selectedDate}>
+              Guardar
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 const Dashboard = () => {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedLead, setSelectedLead] = useState<any>(null);
@@ -303,6 +360,9 @@ const Dashboard = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showGestionModal, setShowGestionModal] = useState(false);
   const [showHistorialSheet, setShowHistorialSheet] = useState(false);
+  const [selectedTaskType, setSelectedTaskType] = useState<string>("");
+  const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: metrics } = useQuery({
@@ -370,18 +430,25 @@ const Dashboard = () => {
   });
 
   const { data: tasks } = useQuery({
-    queryKey: ["tasks", selectedDate],
+    queryKey: ["tasks", selectedTaskType],
     queryFn: async () => {
-      const { data } = await supabase
+      let query = supabase
         .from("tareas")
         .select(`
           *,
-          leads (nombre_completo, email, telefono),
-          users (nombre_completo)
+          leads (
+            nombre_completo
+          )
         `)
-        .gte("fecha", selectedDate?.toISOString() || "")
-        .lte("fecha", selectedDate?.toISOString() || "");
+        .order('fecha', { ascending: true });
 
+      if (selectedTaskType) {
+        query = query.eq('tipo', selectedTaskType);
+      }
+
+      const { data, error } = await query;
+      
+      if (error) throw error;
       return data;
     },
   });
@@ -647,6 +714,61 @@ const Dashboard = () => {
         </div>
       </Card>
 
+      <Card className="p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-lg font-semibold">Listado de Tareas</h2>
+          <Select value={selectedTaskType} onValueChange={setSelectedTaskType}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filtrar por tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Todos</SelectItem>
+              {MANAGEMENT_TYPES.map((tipo) => (
+                <SelectItem key={tipo} value={tipo}>
+                  {tipo}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Lead</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Fecha</TableHead>
+                <TableHead>Observaciones</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tasks?.map((task) => (
+                <TableRow key={task.id}>
+                  <TableCell>{task.leads?.nombre_completo}</TableCell>
+                  <TableCell>{task.tipo}</TableCell>
+                  <TableCell>{format(new Date(task.fecha), "dd/MM/yyyy HH:mm")}</TableCell>
+                  <TableCell className="max-w-[300px] truncate">{task.observaciones}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setSelectedTask(task);
+                        setShowEditTaskDialog(true);
+                      }}
+                    >
+                      <ClipboardList className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+
       {selectedLead && (
         <>
           <LeadEditModal
@@ -674,6 +796,17 @@ const Dashboard = () => {
             }}
           />
         </>
+      )}
+
+      {selectedTask && (
+        <EditTaskDialog
+          task={selectedTask}
+          isOpen={showEditTaskDialog}
+          onClose={() => {
+            setShowEditTaskDialog(false);
+            setSelectedTask(null);
+          }}
+        />
       )}
     </div>
   );
