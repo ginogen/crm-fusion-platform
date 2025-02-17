@@ -529,26 +529,41 @@ const Organizacion = () => {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+        <div>
+          <h3 className="text-lg font-medium mb-4">Estructuras Vinculadas</h3>
+          <div className="space-y-2">
+            {/* Estructuras superiores */}
             {selectedEstructura?.parent_estructura_id && (
-              <div className="p-4 bg-slate-50 rounded-lg">
-                <h3 className="text-sm font-medium mb-2">Estructura Superior</h3>
-                <div className="space-y-1">
-                  {(() => {
-                    const estructuraPadre = estructuras?.find(
-                      e => e.id === selectedEstructura.parent_estructura_id
-                    );
-                    return estructuraPadre ? (
-                      <>
-                        <p className="font-medium">{estructuraPadre.custom_name || estructuraPadre.nombre}</p>
-                        <p className="text-sm text-muted-foreground">{estructuraPadre.tipo}</p>
-                      </>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">Estructura superior no encontrada</p>
-                    );
-                  })()}
-                </div>
-              </div>
+              <EstructuraVinculada
+                estructura={estructuras?.find(e => e.id === selectedEstructura.parent_estructura_id)!}
+                usuarios={usuarios?.filter(u => u.estructura_id === selectedEstructura.parent_estructura_id) || []}
+                isOpen={expandedEstructuras.includes(selectedEstructura.parent_estructura_id)}
+                onToggle={() => toggleEstructura(selectedEstructura.parent_estructura_id!)}
+                estructuraPadre={null}
+              />
             )}
+
+            {/* Estructuras inferiores */}
+            {estructuras
+              ?.filter(e => e.parent_estructura_id === selectedEstructura?.id)
+              .map(estructura => {
+                const usuariosDeEstructura = usuarios?.filter(
+                  usuario => usuario.estructura_id === estructura.id
+                );
+                
+                return (
+                  <EstructuraVinculada
+                    key={estructura.id}
+                    estructura={estructura}
+                    usuarios={usuariosDeEstructura || []}
+                    isOpen={expandedEstructuras.includes(estructura.id)}
+                    onToggle={() => toggleEstructura(estructura.id)}
+                    estructuraPadre={selectedEstructura}
+                  />
+                );
+              })}
+          </div>
+        </div>
 
             <div>
               <Label>Vincular Nueva Estructura</Label>
