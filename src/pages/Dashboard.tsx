@@ -618,11 +618,26 @@ const Dashboard = () => {
                         }}
                       >
                         <SelectTrigger className="w-[180px]">
-                          <SelectValue />
+                          <SelectValue className={cn(
+                            "flex items-center gap-2",
+                            lead.estado === "SIN_LLAMAR" && "bg-white",
+                            lead.estado === "LLAMAR_DESPUES" && "bg-blue-100",
+                            lead.estado === "CITA_PROGRAMADA" && "bg-yellow-100",
+                            lead.estado === "MATRICULA" && "bg-green-100",
+                          )} />
                         </SelectTrigger>
                         <SelectContent>
                           {LEAD_STATUSES.map((estado) => (
-                            <SelectItem key={estado} value={estado}>
+                            <SelectItem 
+                              key={estado} 
+                              value={estado}
+                              className={cn(
+                                estado === "SIN_LLAMAR" && "bg-white",
+                                estado === "LLAMAR_DESPUES" && "bg-blue-100",
+                                estado === "CITA_PROGRAMADA" && "bg-yellow-100",
+                                estado === "MATRICULA" && "bg-green-100",
+                              )}
+                            >
                               {LEAD_STATUS_LABELS[estado]}
                             </SelectItem>
                           ))}
