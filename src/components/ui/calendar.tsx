@@ -22,7 +22,7 @@ function Calendar({
   ...props
 }: CalendarProps) {
   const handleTaskPosition = (taskDate: Date) => {
-    const cellHeight = 128; // altura de la celda en píxeles
+    const cellHeight = 128;
     const dayStart = new Date(taskDate).setHours(0, 0, 0, 0);
     const taskTime = taskDate.getTime() - dayStart;
     const dayLength = 24 * 60 * 60 * 1000;
@@ -35,6 +35,10 @@ function Calendar({
     };
   };
 
+  const today = new Date();
+  const weekStart = startOfWeek(today, { locale: es });
+  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
   const modifiers = {
     hasTasks: tasks.map(task => new Date(task.fecha)),
   };
@@ -44,6 +48,50 @@ function Calendar({
       backgroundColor: 'rgba(59, 130, 246, 0.1)',
     },
   };
+
+  if (view === "week") {
+    return (
+      <div className="w-full">
+        <div className="grid grid-cols-7 gap-px">
+          {weekDates.map((date) => (
+            <div
+              key={date.toISOString()}
+              className="min-h-[256px] border p-2 relative"
+            >
+              <div className="text-sm font-medium mb-2">
+                {format(date, 'EEEE', { locale: es })}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {format(date, 'd', { locale: es })}
+              </div>
+              {tasks
+                .filter(task => {
+                  const taskDate = new Date(task.fecha);
+                  return taskDate.toDateString() === date.toDateString();
+                })
+                .map((task) => {
+                  const taskDate = new Date(task.fecha);
+                  const style = handleTaskPosition(taskDate);
+                  
+                  return (
+                    <div
+                      key={task.id}
+                      className="absolute bg-blue-100 text-blue-700 p-2 rounded text-xs hover:bg-blue-200 transition-colors cursor-pointer"
+                      style={style}
+                    >
+                      <div className="font-medium truncate">
+                        {task.tipo} {format(taskDate, 'HH:mm')}
+                      </div>
+                      <div className="truncate">{task.leads?.nombre_completo}</div>
+                    </div>
+                  );
+                })}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <DayPicker
@@ -68,7 +116,6 @@ function Calendar({
         row: "flex w-full mt-0",
         cell: cn(
           "relative min-h-[128px] w-full text-center text-sm p-0 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20 border border-border",
-          view === "week" && "min-h-[256px]",
           view === "day" && "min-h-[512px]"
         ),
         day: cn(

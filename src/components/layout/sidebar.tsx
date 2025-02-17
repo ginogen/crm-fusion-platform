@@ -8,10 +8,9 @@ import {
   SidebarHeader,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { LucideIcon } from "lucide-react";
 import * as Icons from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-
-type IconName = keyof typeof Icons;
 
 export const AppSidebar = () => {
   const location = useLocation();
@@ -30,7 +29,7 @@ export const AppSidebar = () => {
       <SidebarContent>
         <div className="px-2 space-y-1">
           {NAVIGATION_ITEMS.map((item) => {
-            const IconComponent = Icons[item.icon as IconName];
+            const Icon = Icons[item.icon as keyof typeof Icons] as LucideIcon;
             const isActive = location.pathname === item.href;
             
             return (
@@ -44,7 +43,7 @@ export const AppSidebar = () => {
                 asChild
               >
                 <Link to={item.href}>
-                  <IconComponent className="mr-2 h-4 w-4" />
+                  <Icon className="mr-2 h-4 w-4" />
                   {item.label}
                 </Link>
               </Button>
