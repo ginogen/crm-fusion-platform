@@ -18,14 +18,12 @@ import { supabase } from "@/integrations/supabase/client";
 export const AppSidebar = () => {
   const location = useLocation();
 
-  // Obtener la sesión del usuario
   const { data: userData } = useQuery({
     queryKey: ["user-profile"],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No user found");
 
-      // Obtener el rol del usuario
       const { data: userProfile } = await supabase
         .from("users")
         .select("email, nombre_completo, role")
@@ -44,23 +42,29 @@ export const AppSidebar = () => {
     <Sidebar>
       <SidebarHeader className="h-16 flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-semibold">CF</span>
+          <div className="h-8 w-8 rounded-lg bg-white/10 flex items-center justify-center">
+            <span className="text-white font-semibold">CF</span>
           </div>
-          <span className="font-semibold text-sidebar-foreground">CRM Fusion</span>
+          <span className="font-semibold text-white">CRM Fusion</span>
         </div>
-        <SidebarTrigger />
+        <SidebarTrigger className="text-white hover:text-white/90" />
       </SidebarHeader>
       <SidebarContent>
-        <div className="px-4 py-4 border-b border-sidebar-border">
+        <div className="px-4 py-4 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-sidebar-accent flex items-center justify-center">
-              <User className="h-6 w-6 text-sidebar-foreground" />
+            <div className="h-10 w-10 rounded-full bg-white/10 flex items-center justify-center">
+              <User className="h-6 w-6 text-white" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-sidebar-foreground truncate">{userData?.nombre_completo}</p>
-              <p className="text-xs text-sidebar-foreground/70 truncate">{userData?.email}</p>
-              <p className="text-xs text-sidebar-primary font-medium">{userData?.role}</p>
+              <p className="text-sm font-medium text-white truncate">
+                {userData?.nombre_completo}
+              </p>
+              <p className="text-xs text-white/80 truncate">
+                {userData?.email}
+              </p>
+              <p className="text-xs text-blue-300 font-medium">
+                {userData?.role}
+              </p>
             </div>
           </div>
         </div>
@@ -74,8 +78,10 @@ export const AppSidebar = () => {
                 key={item.href}
                 variant={isActive ? "secondary" : "ghost"}
                 className={cn(
-                  "w-full justify-start text-sidebar-foreground",
-                  isActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  "w-full justify-start",
+                  isActive 
+                    ? "bg-white/10 text-white" 
+                    : "text-white/80 hover:bg-white/10 hover:text-white"
                 )}
                 asChild
               >
