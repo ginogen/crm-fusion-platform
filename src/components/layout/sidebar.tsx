@@ -47,20 +47,20 @@ export const AppSidebar = () => {
           <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
             <span className="text-primary-foreground font-semibold">CF</span>
           </div>
-          <span className="font-semibold text-sidebar-foreground">CRM Fusion</span>
+          <span className="font-semibold">CRM Fusion</span>
         </div>
         <SidebarTrigger />
       </SidebarHeader>
       <SidebarContent>
-        <div className="px-4 py-4 border-b border-sidebar-border">
+        <div className="px-4 py-4 border-b">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-sidebar-accent flex items-center justify-center">
-              <User className="h-6 w-6 text-sidebar-foreground" />
+            <div className="h-10 w-10 rounded-full bg-slate-200 flex items-center justify-center">
+              <User className="h-6 w-6 text-slate-500" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-sidebar-foreground truncate">{userData?.nombre_completo}</p>
-              <p className="text-xs text-sidebar-foreground/70 truncate">{userData?.email}</p>
-              <p className="text-xs text-sidebar-primary font-medium">{userData?.role}</p>
+              <p className="text-sm font-medium truncate">{userData?.nombre_completo}</p>
+              <p className="text-xs text-muted-foreground truncate">{userData?.email}</p>
+              <p className="text-xs text-primary font-medium">{userData?.role}</p>
             </div>
           </div>
         </div>
@@ -74,8 +74,8 @@ export const AppSidebar = () => {
                 key={item.href}
                 variant={isActive ? "secondary" : "ghost"}
                 className={cn(
-                  "w-full justify-start text-sidebar-foreground",
-                  isActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  "w-full justify-start",
+                  isActive && "bg-secondary/80"
                 )}
                 asChild
               >

@@ -6,11 +6,6 @@ import { Button } from "@/components/ui/button";
 export const Topbar = () => {
   return (
     <div className="h-16 border-b flex items-center justify-between px-6 bg-white fixed top-0 right-0 left-0 z-50">
-      {/* Espacio para el logo */}
-      <div className="w-[200px]">
-        {/* Aquí puedes agregar tu logo cuando lo tengas */}
-      </div>
-
       <div className="flex items-center gap-4 flex-1 max-w-xl">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
