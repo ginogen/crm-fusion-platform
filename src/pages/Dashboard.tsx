@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -435,6 +434,23 @@ const Dashboard = () => {
     },
   });
 
+  const { data: recentLeads } = useQuery({
+    queryKey: ["recent-leads"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("leads")
+        .select(`
+          *,
+          users (nombre_completo)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error) throw error;
+      return data;
+    },
+  });
+
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -509,6 +525,59 @@ const Dashboard = () => {
                     >
                       <ClipboardList className="h-4 w-4" />
                     </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-lg font-semibold">Leads Recientes</h2>
+        </div>
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Nombre</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Teléfono</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>Asignado A</TableHead>
+                <TableHead>Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {recentLeads?.map((lead) => (
+                <TableRow key={lead.id}>
+                  <TableCell>{lead.nombre_completo}</TableCell>
+                  <TableCell>{lead.email}</TableCell>
+                  <TableCell>{lead.telefono}</TableCell>
+                  <TableCell>
+                    <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                      ${lead.estado === 'LLAMAR_DESPUES' ? 'bg-blue-100 text-blue-800' :
+                        lead.estado === 'CITA_PROGRAMADA' ? 'bg-yellow-100 text-yellow-800' :
+                        lead.estado === 'MATRICULA' ? 'bg-green-100 text-green-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                      {lead.estado}
+                    </div>
+                  </TableCell>
+                  <TableCell>{lead.users?.nombre_completo}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <button className="text-gray-600 hover:text-gray-900">
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button className="text-gray-600 hover:text-gray-900">
+                        <ClipboardList className="h-4 w-4" />
+                      </button>
+                      <button className="text-gray-600 hover:text-gray-900">
+                        <History className="h-4 w-4" />
+                      </button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
