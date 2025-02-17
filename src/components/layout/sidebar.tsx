@@ -17,7 +17,7 @@ export const AppSidebar = () => {
   const location = useLocation();
 
   return (
-    <Sidebar defaultCollapsed={false}>
+    <Sidebar>
       <SidebarHeader className="h-16 flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
