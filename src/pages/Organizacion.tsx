@@ -144,14 +144,17 @@ const Organizacion = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("estructuras")
-        .select(`
-          *,
-          hijos:estructuras!estructuras_parent_estructura_id_fkey(*)
-        `)
+        .select('*')
         .order('tipo', { ascending: true });
 
       if (error) throw error;
-      return data as Estructura[];
+
+      const estructurasConHijos = data.map(estructura => ({
+        ...estructura,
+        hijos: data.filter(e => e.parent_estructura_id === estructura.id)
+      }));
+
+      return estructurasConHijos as Estructura[];
     },
   });
 
