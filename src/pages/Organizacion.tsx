@@ -237,6 +237,42 @@ const Organizacion = () => {
     return acc;
   }, {} as Record<number, Estructura[]>);
 
+  const handleVincularEstructuras = async () => {
+    if (!selectedEstructura || estructurasSeleccionadas.length === 0) {
+      toast.error("Por favor seleccione al menos una estructura para vincular");
+      return;
+    }
+
+    const updates = estructurasSeleccionadas.map(id => {
+      const estructura = estructuras?.find(e => e.id === id);
+      if (!estructura) {
+        throw new Error(`Estructura ${id} no encontrada`);
+      }
+      
+      return {
+        id,
+        parent_estructura_id: selectedEstructura.id,
+        nombre: estructura.nombre,
+        tipo: estructura.tipo
+      };
+    });
+
+    const { error } = await supabase
+      .from("estructuras")
+      .upsert(updates);
+
+    if (error) {
+      console.error("Error vinculando estructuras:", error);
+      toast.error("Error al vincular las estructuras");
+      return;
+    }
+
+    toast.success("Estructuras vinculadas exitosamente");
+    setIsVinculacionModalOpen(false);
+    setEstructurasSeleccionadas([]);
+    refetch();
+  };
+
   const handleCreateEstructura = async () => {
     if (!newEstructura.tipo || !newEstructura.nombre) {
       toast.error("Por favor complete todos los campos requeridos");
@@ -262,33 +298,6 @@ const Organizacion = () => {
     toast.success("Estructura creada exitosamente");
     setIsCreateModalOpen(false);
     setNewEstructura({ tipo: "", nombre: "", parent_estructura_id: null });
-    refetch();
-  };
-
-  const handleVincularEstructuras = async () => {
-    if (!selectedEstructura || estructurasSeleccionadas.length === 0) {
-      toast.error("Por favor seleccione al menos una estructura para vincular");
-      return;
-    }
-
-    const updates = estructurasSeleccionadas.map(id => ({
-      id,
-      parent_estructura_id: selectedEstructura.id,
-    }));
-
-    const { error } = await supabase
-      .from("estructuras")
-      .upsert(updates);
-
-    if (error) {
-      console.error("Error vinculando estructuras:", error);
-      toast.error("Error al vincular las estructuras");
-      return;
-    }
-
-    toast.success("Estructuras vinculadas exitosamente");
-    setIsVinculacionModalOpen(false);
-    setEstructurasSeleccionadas([]);
     refetch();
   };
 
