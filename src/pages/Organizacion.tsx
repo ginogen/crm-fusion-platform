@@ -54,34 +54,44 @@ interface EstructuraVinculadaProps {
   usuarios: UserProfile[];
   isOpen: boolean;
   onToggle: () => void;
+  estructuraPadre?: Estructura | null;
 }
 
-const EstructuraVinculada = ({ estructura, usuarios, isOpen, onToggle }: EstructuraVinculadaProps) => {
+const EstructuraVinculada = ({ estructura, usuarios, isOpen, onToggle, estructuraPadre }: EstructuraVinculadaProps) => {
   return (
     <div className="border rounded-lg bg-white mb-2">
       <div 
         className="flex items-center justify-between p-4 cursor-pointer"
         onClick={onToggle}
       >
-        <div>
+        <div className="space-y-1">
           <h3 className="font-medium">{estructura.custom_name || estructura.nombre}</h3>
           <p className="text-sm text-muted-foreground">{estructura.tipo}</p>
+          {estructuraPadre && (
+            <p className="text-sm text-muted-foreground">
+              Vinculada a: {estructuraPadre.custom_name || estructuraPadre.nombre} ({estructuraPadre.tipo})
+            </p>
+          )}
         </div>
         {isOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
       </div>
       
-      {isOpen && usuarios.length > 0 && (
+      {isOpen && (
         <div className="p-4 pt-0 border-t">
-          <h4 className="text-sm font-medium mb-2">Usuarios vinculados</h4>
-          <div className="space-y-3">
-            {usuarios.map((usuario) => (
-              <div key={usuario.id} className="p-3 bg-slate-50 rounded-md">
-                <p className="font-medium">{usuario.nombre_completo}</p>
-                <p className="text-sm text-muted-foreground">{usuario.user_position}</p>
-                <p className="text-sm text-muted-foreground">{usuario.email}</p>
+          {usuarios.length > 0 && (
+            <>
+              <h4 className="text-sm font-medium mb-2">Usuarios vinculados</h4>
+              <div className="space-y-3">
+                {usuarios.map((usuario) => (
+                  <div key={usuario.id} className="p-3 bg-slate-50 rounded-md">
+                    <p className="font-medium">{usuario.nombre_completo}</p>
+                    <p className="text-sm text-muted-foreground">{usuario.user_position}</p>
+                    <p className="text-sm text-muted-foreground">{usuario.email}</p>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -425,7 +435,7 @@ const Organizacion = () => {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              Estructura: {selectedEstructura?.nombre} ({selectedEstructura?.tipo})
+              Estructura: {selectedEstructura?.custom_name || selectedEstructura?.nombre} ({selectedEstructura?.tipo})
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -439,7 +449,7 @@ const Organizacion = () => {
                     );
                     return estructuraPadre ? (
                       <>
-                        <p className="font-medium">{estructuraPadre.nombre}</p>
+                        <p className="font-medium">{estructuraPadre.custom_name || estructuraPadre.nombre}</p>
                         <p className="text-sm text-muted-foreground">{estructuraPadre.tipo}</p>
                       </>
                     ) : (
@@ -481,15 +491,21 @@ const Organizacion = () => {
               <div className="space-y-2">
                 {estructuras
                   ?.filter(e => e.parent_estructura_id === selectedEstructura?.id)
-                  .map(estructura => (
-                    <EstructuraVinculada
-                      key={estructura.id}
-                      estructura={estructura}
-                      usuarios={usuariosPorEstructura?.[estructura.id] || []}
-                      isOpen={expandedEstructuras.includes(estructura.id)}
-                      onToggle={() => toggleEstructura(estructura.id)}
-                    />
-                  ))}
+                  .map(estructura => {
+                    const estructuraPadre = estructuras?.find(
+                      e => e.id === estructura.parent_estructura_id
+                    );
+                    return (
+                      <EstructuraVinculada
+                        key={estructura.id}
+                        estructura={estructura}
+                        usuarios={usuariosPorEstructura?.[estructura.id] || []}
+                        isOpen={expandedEstructuras.includes(estructura.id)}
+                        onToggle={() => toggleEstructura(estructura.id)}
+                        estructuraPadre={estructuraPadre}
+                      />
+                    );
+                  })}
               </div>
             </div>
 
