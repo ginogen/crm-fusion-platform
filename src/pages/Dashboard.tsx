@@ -1,158 +1,51 @@
+
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { CalendarCheck2, Users, Calendar as CalendarIcon, GraduationCap, Eye, ClipboardList, History, Pencil } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Calendar } from "@/components/ui/calendar";
+import { Users, CalendarCheck2, Calendar as CalendarIcon, GraduationCap, ClipboardList } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { addDays, format, startOfWeek } from "date-fns";
+import { format } from "date-fns";
 import { toast } from "sonner";
-import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS } from "@/lib/constants";
-import { cn } from "@/lib/utils";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { MANAGEMENT_TYPES } from "@/lib/constants";
 
-const CALENDAR_VIEWS = {
-  MONTH: "month",
-  WEEK: "week",
-  DAY: "day"
-} as const;
+interface Task {
+  id: number;
+  tipo: string;
+  fecha: string;
+  observaciones: string;
+  leads: {
+    nombre_completo: string;
+  };
+}
 
-type CalendarView = typeof CALENDAR_VIEWS[keyof typeof CALENDAR_VIEWS];
-type LeadEstado = typeof LEAD_STATUSES[number];
-type TipoGestion = typeof MANAGEMENT_TYPES[number];
-
-const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
-  const [formData, setFormData] = useState(lead);
+const EditTaskDialog = ({ task, isOpen, onClose }: { task: Task | null; isOpen: boolean; onClose: () => void }) => {
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(task?.fecha ? new Date(task.fecha) : undefined);
   const queryClient = useQueryClient();
 
-  const updateLead = useMutation({
-    mutationFn: async (data: any) => {
+  const updateTask = useMutation({
+    mutationFn: async () => {
+      if (!selectedDate || !task) return;
+
       const { error } = await supabase
-        .from("leads")
-        .update(data)
-        .eq("id", lead.id);
+        .from("tareas")
+        .update({ fecha: selectedDate.toISOString() })
+        .eq("id", task.id);
 
       if (error) throw error;
-
-      await supabase.from("lead_history").insert({
-        lead_id: lead.id,
-        user_id: (await supabase.auth.getUser()).data.user?.id,
-        action: "ACTUALIZACIÓN",
-        details: JSON.stringify({ 
-          previous: lead,
-          new: data,
-          changes: Object.keys(data).filter(key => data[key] !== lead[key])
-        })
-      });
     },
     onSuccess: () => {
-      toast.success("Lead actualizado correctamente");
-      queryClient.invalidateQueries({ queryKey: ["leads"] });
-      onClose();
-    },
-    onError: (error) => {
-      toast.error("Error al actualizar el lead");
-      console.error("Error updating lead:", error);
-    }
-  });
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Editar Lead</DialogTitle>
-          <DialogDescription>
-            Modifica la información del lead
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <label className="text-sm font-medium">Nombre Completo</label>
-            <Input
-              value={formData.nombre_completo}
-              onChange={(e) => setFormData(prev => ({ ...prev, nombre_completo: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Email</label>
-            <Input
-              value={formData.email}
-              onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Teléfono</label>
-            <Input
-              value={formData.telefono}
-              onChange={(e) => setFormData(prev => ({ ...prev, telefono: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Observaciones</label>
-            <Textarea
-              value={formData.observaciones || ""}
-              onChange={(e) => setFormData(prev => ({ ...prev, observaciones: e.target.value }))}
-            />
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>Cancelar</Button>
-            <Button onClick={() => updateLead.mutate(formData)}>Guardar</Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-};
-
-const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
-  const [tipo, setTipo] = useState<TipoGestion | "">("");
-  const [fecha, setFecha] = useState<Date>();
-  const [observaciones, setObservaciones] = useState("");
-  const queryClient = useQueryClient();
-
-  const createGestion = useMutation({
-    mutationFn: async () => {
-      const { error: taskError } = await supabase
-        .from("tareas")
-        .insert({
-          lead_id: lead.id,
-          tipo,
-          fecha: fecha?.toISOString(),
-          observaciones,
-          user_id: (await supabase.auth.getUser()).data.user?.id
-        });
-
-      if (taskError) throw taskError;
-
-      await supabase.from("lead_history").insert({
-        lead_id: lead.id,
-        user_id: (await supabase.auth.getUser()).data.user?.id,
-        action: tipo,
-        details: JSON.stringify({ fecha, observaciones })
-      });
-
-      if (tipo === "CITA") {
-        await supabase
-          .from("leads")
-          .update({ estado: "CITA_PROGRAMADA" })
-          .eq("id", lead.id);
-      }
-    },
-    onSuccess: () => {
-      toast.success("Gestión registrada correctamente");
-      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      toast.success("Tarea actualizada correctamente");
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       onClose();
     },
     onError: (error) => {
-      toast.error("Error al registrar la gestión");
-      console.error("Error creating gestion:", error);
+      toast.error("Error al actualizar la tarea");
+      console.error("Error updating task:", error);
     }
   });
 
@@ -160,59 +53,21 @@ const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, o
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Nueva Gestión</DialogTitle>
-          <DialogDescription>
-            Registra una nueva gestión para {lead.nombre_completo}
-          </DialogDescription>
+          <DialogTitle>Editar Tarea</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium">Tipo de Gestión</label>
-            <Select value={tipo} onValueChange={(value: TipoGestion) => setTipo(value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar tipo..." />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(MANAGEMENT_TYPES).map(([key, value]) => (
-                  <SelectItem key={key} value={value}>
-                    {value}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {(tipo === "CITA" || tipo === "LLAMADA") && (
-            <div>
-              <label className="text-sm font-medium">Fecha</label>
-              <div className="mt-1">
-                <Calendar
-                  mode="single"
-                  selected={fecha}
-                  onSelect={setFecha}
-                  className="rounded-md border"
-                />
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="text-sm font-medium">Observaciones</label>
-            <Textarea
-              value={observaciones}
-              onChange={(e) => setObservaciones(e.target.value)}
-              placeholder="Ingrese las observaciones..."
+            <label className="text-sm font-medium">Nueva Fecha</label>
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              onSelect={setSelectedDate}
+              className="rounded-md border mt-2"
             />
           </div>
-
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button 
-              onClick={() => createGestion.mutate()}
-              disabled={!tipo || ((tipo === "CITA" || tipo === "LLAMADA") && !fecha) || !observaciones}
-            >
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button onClick={() => updateTask.mutate()} disabled={!selectedDate}>
               Guardar
             </Button>
           </div>
@@ -222,88 +77,10 @@ const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, o
   );
 };
 
-const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
-  const { data: historial } = useQuery({
-    queryKey: ["lead-history", lead?.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("lead_history")
-        .select(`
-          *,
-          users (nombre_completo)
-        `)
-        .eq("lead_id", lead.id)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!lead?.id
-  });
-
-  return (
-    <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>Historial del Lead</SheetTitle>
-          <SheetDescription>
-            Información completa y acciones realizadas
-          </SheetDescription>
-        </SheetHeader>
-        <div className="mt-6 space-y-6">
-          <div className="space-y-4">
-            <h3 className="font-semibold">Información del Lead</h3>
-            <div className="space-y-2">
-              <p><span className="font-medium">Nombre:</span> {lead?.nombre_completo}</p>
-              <p><span className="font-medium">Email:</span> {lead?.email}</p>
-              <p><span className="font-medium">Teléfono:</span> {lead?.telefono}</p>
-              <p><span className="font-medium">Estado:</span> {lead?.estado}</p>
-              <p><span className="font-medium">Asignado a:</span> {lead?.users?.nombre_completo}</p>
-              <p><span className="font-medium">Fecha de creación:</span> {format(new Date(lead?.created_at), "dd/MM/yyyy HH:mm")}</p>
-            </div>
-          </div>
-
-          <Separator />
-
-          <div className="space-y-4">
-            <h3 className="font-semibold">Historial de Acciones</h3>
-            <div className="space-y-4">
-              {historial?.map((item) => (
-                <div key={item.id} className="border rounded-lg p-4 space-y-2">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-medium">{item.action}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Por: {item.users?.nombre_completo}
-                      </p>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {format(new Date(item.created_at), "dd/MM/yyyy HH:mm")}
-                    </p>
-                  </div>
-                  {item.details && (
-                    <p className="text-sm whitespace-pre-wrap">
-                      {typeof item.details === 'string' ? item.details : JSON.stringify(item.details, null, 2)}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
-};
-
 const Dashboard = () => {
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
-  const [selectedLead, setSelectedLead] = useState<any>(null);
-  const [calendarView, setCalendarView] = useState<CalendarView>(CALENDAR_VIEWS.MONTH);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showGestionModal, setShowGestionModal] = useState(false);
-  const [showHistorialSheet, setShowHistorialSheet] = useState(false);
-  const queryClient = useQueryClient();
+  const [selectedTaskType, setSelectedTaskType] = useState<string>("");
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
 
   const { data: metrics } = useQuery({
     queryKey: ["dashboard-metrics"],
@@ -356,94 +133,28 @@ const Dashboard = () => {
     },
   });
 
-  const { data: leads } = useQuery({
-    queryKey: ["leads"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("leads")
-        .select(`
-          *,
-          users (nombre_completo)
-        `);
-      return data;
-    },
-  });
-
   const { data: tasks } = useQuery({
-    queryKey: ["tasks", selectedDate],
+    queryKey: ["tasks", selectedTaskType],
     queryFn: async () => {
-      const { data } = await supabase
+      let query = supabase
         .from("tareas")
         .select(`
           *,
-          leads (nombre_completo, email, telefono),
-          users (nombre_completo)
+          leads (
+            nombre_completo
+          )
         `)
-        .gte("fecha", selectedDate?.toISOString() || "")
-        .lte("fecha", selectedDate?.toISOString() || "");
+        .order('fecha', { ascending: true });
 
-      return data;
-    },
-  });
+      if (selectedTaskType) {
+        query = query.eq('tipo', selectedTaskType);
+      }
 
-  const getFilteredTasks = () => {
-    if (!tasks) return [];
-    
-    const today = new Date(selectedDate || new Date());
-    
-    switch (calendarView) {
-      case CALENDAR_VIEWS.DAY:
-        return tasks.filter(task => {
-          const taskDate = new Date(task.fecha);
-          return taskDate.toDateString() === today.toDateString();
-        });
+      const { data, error } = await query;
       
-      case CALENDAR_VIEWS.WEEK:
-        const weekStart = startOfWeek(today);
-        const weekEnd = addDays(weekStart, 7);
-        return tasks.filter(task => {
-          const taskDate = new Date(task.fecha);
-          return taskDate >= weekStart && taskDate < weekEnd;
-        });
-      
-      default:
-        return tasks;
-    }
-  };
-
-  const updateLeadStatus = useMutation({
-    mutationFn: async ({ leadId, newStatus }: { leadId: number, newStatus: LeadEstado }) => {
-      const { data: lead } = await supabase
-        .from("leads")
-        .select()
-        .eq("id", leadId)
-        .single();
-
-      const { error } = await supabase
-        .from("leads")
-        .update({ estado: newStatus })
-        .eq("id", leadId);
-
       if (error) throw error;
-
-      await supabase.from("lead_history").insert({
-        lead_id: leadId,
-        user_id: (await supabase.auth.getUser()).data.user?.id,
-        action: "CAMBIO_ESTADO",
-        details: JSON.stringify({
-          estado_anterior: lead.estado,
-          nuevo_estado: newStatus
-        })
-      });
+      return data as Task[];
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["leads"] });
-      toast.success("Estado actualizado correctamente");
-    },
-    onError: (error) => {
-      toast.error("Error al actualizar el estado");
-      console.error("Error updating lead status:", error);
-    }
   });
 
   return (
@@ -474,207 +185,68 @@ const Dashboard = () => {
       </div>
 
       <Card className="p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">Calendario de Tareas</h2>
-          <div className="flex gap-2">
-            <Button 
-              variant={calendarView === CALENDAR_VIEWS.MONTH ? "default" : "outline"} 
-              size="sm"
-              onClick={() => setCalendarView(CALENDAR_VIEWS.MONTH)}
-            >
-              Mes
-            </Button>
-            <Button 
-              variant={calendarView === CALENDAR_VIEWS.WEEK ? "default" : "outline"} 
-              size="sm"
-              onClick={() => setCalendarView(CALENDAR_VIEWS.WEEK)}
-            >
-              Semana
-            </Button>
-            <Button 
-              variant={calendarView === CALENDAR_VIEWS.DAY ? "default" : "outline"} 
-              size="sm"
-              onClick={() => setCalendarView(CALENDAR_VIEWS.DAY)}
-            >
-              Día
-            </Button>
-          </div>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-lg font-semibold">Listado de Tareas</h2>
+          <Select value={selectedTaskType} onValueChange={setSelectedTaskType}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filtrar por tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Todos</SelectItem>
+              {MANAGEMENT_TYPES.map((tipo) => (
+                <SelectItem key={tipo} value={tipo}>
+                  {tipo}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <div className="relative">
-          <Calendar
-            mode="single"
-            selected={selectedDate}
-            onSelect={setSelectedDate}
-            className="rounded-md border"
-            view={calendarView}
-            tasks={getFilteredTasks()}
-          />
-        </div>
-      </Card>
-
-      <Card className="p-6">
-        <h2 className="text-lg font-semibold mb-6">Leads Recientes</h2>
-        <div className="space-y-4">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="text-sm text-muted-foreground">Estado</label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar estado..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="SIN_LLAMAR">Sin Llamar</SelectItem>
-                  <SelectItem value="LLAMAR_DESPUES">Llamar Después</SelectItem>
-                  <SelectItem value="CITA_PROGRAMADA">Cita Programada</SelectItem>
-                  <SelectItem value="MATRICULA">Matrícula</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex-1">
-              <label className="text-sm text-muted-foreground">Asignado A</label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Buscar usuario..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="user1">Usuario 1</SelectItem>
-                  <SelectItem value="user2">Usuario 2</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12"></TableHead>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Teléfono</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Asignado A</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Acciones</TableHead>
+        
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Lead</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Fecha</TableHead>
+                <TableHead>Observaciones</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tasks?.map((task) => (
+                <TableRow key={task.id}>
+                  <TableCell>{task.leads?.nombre_completo}</TableCell>
+                  <TableCell>{task.tipo}</TableCell>
+                  <TableCell>{format(new Date(task.fecha), "dd/MM/yyyy HH:mm")}</TableCell>
+                  <TableCell className="max-w-[300px] truncate">{task.observaciones}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setSelectedTask(task);
+                        setShowEditDialog(true);
+                      }}
+                    >
+                      <ClipboardList className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {leads?.map((lead) => (
-                  <TableRow key={lead.id}>
-                    <TableCell>
-                      <input type="checkbox" className="rounded border-gray-300" />
-                    </TableCell>
-                    <TableCell>{lead.nombre_completo}</TableCell>
-                    <TableCell>{lead.email}</TableCell>
-                    <TableCell>{lead.telefono}</TableCell>
-                    <TableCell>
-                      <Select
-                        value={lead.estado}
-                        onValueChange={(value: LeadEstado) => {
-                          updateLeadStatus.mutate({ leadId: lead.id, newStatus: value });
-                        }}
-                      >
-                        <SelectTrigger 
-                          className={cn(
-                            "w-[180px]",
-                            lead.estado === "SIN_LLAMAR" && "bg-white",
-                            lead.estado === "LLAMAR_DESPUES" && "bg-blue-100",
-                            lead.estado === "CITA_PROGRAMADA" && "bg-yellow-100",
-                            lead.estado === "MATRICULA" && "bg-green-100",
-                          )}
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {LEAD_STATUSES.map((estado) => (
-                            <SelectItem 
-                              key={estado} 
-                              value={estado}
-                              className={cn(
-                                estado === "SIN_LLAMAR" && "bg-white",
-                                estado === "LLAMAR_DESPUES" && "bg-blue-100",
-                                estado === "CITA_PROGRAMADA" && "bg-yellow-100",
-                                estado === "MATRICULA" && "bg-green-100",
-                              )}
-                            >
-                              {LEAD_STATUS_LABELS[estado]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>{lead.users?.nombre_completo}</TableCell>
-                    <TableCell>{format(new Date(lead.created_at), "dd/MM/yyyy")}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedLead(lead);
-                            setShowEditModal(true);
-                          }}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedLead(lead);
-                            setShowGestionModal(true);
-                          }}
-                        >
-                          <ClipboardList className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedLead(lead);
-                            setShowHistorialSheet(true);
-                          }}
-                        >
-                          <History className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       </Card>
 
-      {selectedLead && (
-        <>
-          <LeadEditModal
-            lead={selectedLead}
-            isOpen={showEditModal}
-            onClose={() => {
-              setShowEditModal(false);
-              setSelectedLead(null);
-            }}
-          />
-          <GestionModal
-            lead={selectedLead}
-            isOpen={showGestionModal}
-            onClose={() => {
-              setShowGestionModal(false);
-              setSelectedLead(null);
-            }}
-          />
-          <LeadHistorialSheet
-            lead={selectedLead}
-            isOpen={showHistorialSheet}
-            onClose={() => {
-              setShowHistorialSheet(false);
-              setSelectedLead(null);
-            }}
-          />
-        </>
-      )}
+      <EditTaskDialog
+        task={selectedTask}
+        isOpen={showEditDialog}
+        onClose={() => {
+          setShowEditDialog(false);
+          setSelectedTask(null);
+        }}
+      />
     </div>
   );
 };
