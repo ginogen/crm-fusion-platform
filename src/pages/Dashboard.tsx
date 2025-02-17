@@ -354,12 +354,6 @@ const EditTaskDialog = ({ task, isOpen, onClose }: { task: any; isOpen: boolean;
 };
 
 const Dashboard = () => {
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
-  const [selectedLead, setSelectedLead] = useState<any>(null);
-  const [calendarView, setCalendarView] = useState<CalendarView>(CALENDAR_VIEWS.MONTH);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showGestionModal, setShowGestionModal] = useState(false);
-  const [showHistorialSheet, setShowHistorialSheet] = useState(false);
   const [selectedTaskType, setSelectedTaskType] = useState<string>("");
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
@@ -416,19 +410,6 @@ const Dashboard = () => {
     },
   });
 
-  const { data: leads } = useQuery({
-    queryKey: ["leads"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("leads")
-        .select(`
-          *,
-          users (nombre_completo)
-        `);
-      return data;
-    },
-  });
-
   const { data: tasks } = useQuery({
     queryKey: ["tasks", selectedTaskType],
     queryFn: async () => {
@@ -451,66 +432,6 @@ const Dashboard = () => {
       if (error) throw error;
       return data;
     },
-  });
-
-  const getFilteredTasks = () => {
-    if (!tasks) return [];
-    
-    const today = new Date(selectedDate || new Date());
-    
-    switch (calendarView) {
-      case CALENDAR_VIEWS.DAY:
-        return tasks.filter(task => {
-          const taskDate = new Date(task.fecha);
-          return taskDate.toDateString() === today.toDateString();
-        });
-      
-      case CALENDAR_VIEWS.WEEK:
-        const weekStart = startOfWeek(today);
-        const weekEnd = addDays(weekStart, 7);
-        return tasks.filter(task => {
-          const taskDate = new Date(task.fecha);
-          return taskDate >= weekStart && taskDate < weekEnd;
-        });
-      
-      default:
-        return tasks;
-    }
-  };
-
-  const updateLeadStatus = useMutation({
-    mutationFn: async ({ leadId, newStatus }: { leadId: number, newStatus: LeadEstado }) => {
-      const { data: lead } = await supabase
-        .from("leads")
-        .select()
-        .eq("id", leadId)
-        .single();
-
-      const { error } = await supabase
-        .from("leads")
-        .update({ estado: newStatus })
-        .eq("id", leadId);
-
-      if (error) throw error;
-
-      await supabase.from("lead_history").insert({
-        lead_id: leadId,
-        user_id: (await supabase.auth.getUser()).data.user?.id,
-        action: "CAMBIO_ESTADO",
-        details: JSON.stringify({
-          estado_anterior: lead.estado,
-          nuevo_estado: newStatus
-        })
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["leads"] });
-      toast.success("Estado actualizado correctamente");
-    },
-    onError: (error) => {
-      toast.error("Error al actualizar el estado");
-      console.error("Error updating lead status:", error);
-    }
   });
 
   return (
@@ -539,180 +460,6 @@ const Dashboard = () => {
           </Card>
         ))}
       </div>
-
-      <Card className="p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">Calendario de Tareas</h2>
-          <div className="flex gap-2">
-            <Button 
-              variant={calendarView === CALENDAR_VIEWS.MONTH ? "default" : "outline"} 
-              size="sm"
-              onClick={() => setCalendarView(CALENDAR_VIEWS.MONTH)}
-            >
-              Mes
-            </Button>
-            <Button 
-              variant={calendarView === CALENDAR_VIEWS.WEEK ? "default" : "outline"} 
-              size="sm"
-              onClick={() => setCalendarView(CALENDAR_VIEWS.WEEK)}
-            >
-              Semana
-            </Button>
-            <Button 
-              variant={calendarView === CALENDAR_VIEWS.DAY ? "default" : "outline"} 
-              size="sm"
-              onClick={() => setCalendarView(CALENDAR_VIEWS.DAY)}
-            >
-              Día
-            </Button>
-          </div>
-        </div>
-        <div className="relative">
-          <Calendar
-            mode="single"
-            selected={selectedDate}
-            onSelect={setSelectedDate}
-            className="rounded-md border"
-            view={calendarView}
-            tasks={getFilteredTasks()}
-          />
-        </div>
-      </Card>
-
-      <Card className="p-6">
-        <h2 className="text-lg font-semibold mb-6">Leads Recientes</h2>
-        <div className="space-y-4">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="text-sm text-muted-foreground">Estado</label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar estado..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="SIN_LLAMAR">Sin Llamar</SelectItem>
-                  <SelectItem value="LLAMAR_DESPUES">Llamar Después</SelectItem>
-                  <SelectItem value="CITA_PROGRAMADA">Cita Programada</SelectItem>
-                  <SelectItem value="MATRICULA">Matrícula</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex-1">
-              <label className="text-sm text-muted-foreground">Asignado A</label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Buscar usuario..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="user1">Usuario 1</SelectItem>
-                  <SelectItem value="user2">Usuario 2</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12"></TableHead>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Teléfono</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Asignado A</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {leads?.map((lead) => (
-                  <TableRow key={lead.id}>
-                    <TableCell>
-                      <input type="checkbox" className="rounded border-gray-300" />
-                    </TableCell>
-                    <TableCell>{lead.nombre_completo}</TableCell>
-                    <TableCell>{lead.email}</TableCell>
-                    <TableCell>{lead.telefono}</TableCell>
-                    <TableCell>
-                      <Select
-                        value={lead.estado}
-                        onValueChange={(value: LeadEstado) => {
-                          updateLeadStatus.mutate({ leadId: lead.id, newStatus: value });
-                        }}
-                      >
-                        <SelectTrigger 
-                          className={cn(
-                            "w-[180px]",
-                            lead.estado === "SIN_LLAMAR" && "bg-white",
-                            lead.estado === "LLAMAR_DESPUES" && "bg-blue-100",
-                            lead.estado === "CITA_PROGRAMADA" && "bg-yellow-100",
-                            lead.estado === "MATRICULA" && "bg-green-100",
-                          )}
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {LEAD_STATUSES.map((estado) => (
-                            <SelectItem 
-                              key={estado} 
-                              value={estado}
-                              className={cn(
-                                estado === "SIN_LLAMAR" && "bg-white",
-                                estado === "LLAMAR_DESPUES" && "bg-blue-100",
-                                estado === "CITA_PROGRAMADA" && "bg-yellow-100",
-                                estado === "MATRICULA" && "bg-green-100",
-                              )}
-                            >
-                              {LEAD_STATUS_LABELS[estado]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>{lead.users?.nombre_completo}</TableCell>
-                    <TableCell>{format(new Date(lead.created_at), "dd/MM/yyyy")}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedLead(lead);
-                            setShowEditModal(true);
-                          }}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedLead(lead);
-                            setShowGestionModal(true);
-                          }}
-                        >
-                          <ClipboardList className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedLead(lead);
-                            setShowHistorialSheet(true);
-                          }}
-                        >
-                          <History className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
-      </Card>
 
       <Card className="p-6">
         <div className="flex justify-between items-center mb-6">
@@ -769,45 +516,14 @@ const Dashboard = () => {
         </div>
       </Card>
 
-      {selectedLead && (
-        <>
-          <LeadEditModal
-            lead={selectedLead}
-            isOpen={showEditModal}
-            onClose={() => {
-              setShowEditModal(false);
-              setSelectedLead(null);
-            }}
-          />
-          <GestionModal
-            lead={selectedLead}
-            isOpen={showGestionModal}
-            onClose={() => {
-              setShowGestionModal(false);
-              setSelectedLead(null);
-            }}
-          />
-          <LeadHistorialSheet
-            lead={selectedLead}
-            isOpen={showHistorialSheet}
-            onClose={() => {
-              setShowHistorialSheet(false);
-              setSelectedLead(null);
-            }}
-          />
-        </>
-      )}
-
-      {selectedTask && (
-        <EditTaskDialog
-          task={selectedTask}
-          isOpen={showEditTaskDialog}
-          onClose={() => {
-            setShowEditTaskDialog(false);
-            setSelectedTask(null);
-          }}
-        />
-      )}
+      <EditTaskDialog
+        task={selectedTask}
+        isOpen={showEditTaskDialog}
+        onClose={() => {
+          setShowEditTaskDialog(false);
+          setSelectedTask(null);
+        }}
+      />
     </div>
   );
 };
