@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -103,7 +102,6 @@ const Organizacion = () => {
     parent_id: null as number | null,
   });
 
-  // Verificar sesión
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -125,7 +123,6 @@ const Organizacion = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
-  // Obtener perfil del usuario actual
   const { data: userProfile, isLoading: isLoadingProfile } = useQuery({
     queryKey: ["userProfile"],
     queryFn: async () => {
@@ -142,27 +139,28 @@ const Organizacion = () => {
     },
   });
 
-  // Obtener todas las estructuras
   const { data: estructuras, isLoading: isLoadingEstructuras, error, refetch } = useQuery({
     queryKey: ["estructuras"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("estructuras")
-        .select("*")
-        .order("tipo", { ascending: true });
+        .select(`
+          *,
+          hijos:estructuras!estructuras_parent_id_fkey(*)
+        `)
+        .order('tipo', { ascending: true });
 
       if (error) throw error;
-      return data as Estructura[];
+      return data as (Estructura & { hijos: Estructura[] })[];
     },
   });
 
-  // Obtener usuarios por estructura
   const { data: usuariosPorEstructura } = useQuery({
     queryKey: ["usuariosPorEstructura"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("users")
-        .select("*");
+        .select("*, estructura_id");
 
       if (error) throw error;
       
@@ -180,7 +178,6 @@ const Organizacion = () => {
     },
   });
 
-  // Estructuras filtradas
   const estructurasFiltradas = estructuras?.filter(estructura => {
     const matchesTipo = !filterTipo || estructura.tipo === filterTipo;
     const matchesNombre = !filterNombre || 
@@ -189,7 +186,6 @@ const Organizacion = () => {
     return matchesTipo && matchesNombre;
   });
 
-  // Organizar estructuras por niveles
   const estructurasNiveles = estructurasFiltradas?.reduce((acc, estructura) => {
     const nivel = TIPOS_ESTRUCTURA.indexOf(estructura.tipo);
     if (!acc[nivel]) acc[nivel] = [];
@@ -278,7 +274,6 @@ const Organizacion = () => {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      {/* Información del usuario */}
       <div className="p-6 bg-white rounded-lg shadow-sm border">
         <h2 className="text-xl font-semibold mb-4">Mi Perfil Organizacional</h2>
         <div className="space-y-2">
@@ -288,7 +283,6 @@ const Organizacion = () => {
         </div>
       </div>
 
-      {/* Gestión de Estructuras */}
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <h2 className="text-xl font-semibold">Gestión de Estructuras</h2>
@@ -372,7 +366,6 @@ const Organizacion = () => {
           </Dialog>
         </div>
 
-        {/* Filtros */}
         <div className="flex gap-4">
           <div className="w-[200px]">
             <Select
@@ -405,7 +398,6 @@ const Organizacion = () => {
           </div>
         </div>
 
-        {/* Estructuras por niveles */}
         <div className="space-y-6">
           {TIPOS_ESTRUCTURA.map((tipo, index) => {
             const estructurasDelNivel = estructurasNiveles?.[index] || [];
@@ -441,7 +433,6 @@ const Organizacion = () => {
         </div>
       </div>
 
-      {/* Modal de Vinculación */}
       <Dialog open={isVinculacionModalOpen} onOpenChange={setIsVinculacionModalOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -465,11 +456,13 @@ const Organizacion = () => {
                   <SelectValue placeholder="Seleccionar estructuras..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {estructuras?.filter(e => e.id !== selectedEstructura?.id).map((estructura) => (
-                    <SelectItem key={estructura.id} value={estructura.id.toString()}>
-                      {estructura.custom_name || estructura.nombre}
-                    </SelectItem>
-                  ))}
+                  {estructuras
+                    ?.filter(e => e.id !== selectedEstructura?.id)
+                    .map((estructura) => (
+                      <SelectItem key={estructura.id} value={estructura.id.toString()}>
+                        {estructura.custom_name || estructura.nombre}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -477,17 +470,15 @@ const Organizacion = () => {
             <div className="space-y-2">
               <h3 className="text-lg font-medium">Estructuras Vinculadas</h3>
               <div className="space-y-2">
-                {estructuras
-                  ?.filter(e => e.parent_id === selectedEstructura?.id)
-                  .map(estructura => (
-                    <EstructuraVinculada
-                      key={estructura.id}
-                      estructura={estructura}
-                      usuarios={usuariosPorEstructura?.[estructura.id] || []}
-                      isOpen={expandedEstructuras.includes(estructura.id)}
-                      onToggle={() => toggleEstructura(estructura.id)}
-                    />
-                  ))}
+                {selectedEstructura?.hijos?.map(estructura => (
+                  <EstructuraVinculada
+                    key={estructura.id}
+                    estructura={estructura}
+                    usuarios={usuariosPorEstructura?.[estructura.id] || []}
+                    isOpen={expandedEstructuras.includes(estructura.id)}
+                    onToggle={() => toggleEstructura(estructura.id)}
+                  />
+                ))}
               </div>
             </div>
 
