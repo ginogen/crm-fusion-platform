@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 const CALENDAR_VIEWS = {
   MONTH: "month",
   WEEK: "week",
-  DAY: "day",
+  DAY: "day"
 } as const;
 
 type CalendarView = typeof CALENDAR_VIEWS[keyof typeof CALENDAR_VIEWS];
@@ -574,14 +574,16 @@ const Dashboard = () => {
                           updateLeadStatus.mutate({ leadId: lead.id, newStatus: value });
                         }}
                       >
-                        <SelectTrigger className="w-[180px]">
-                          <SelectValue className={cn(
-                            "flex items-center gap-2",
+                        <SelectTrigger 
+                          className={cn(
+                            "w-[180px]",
                             lead.estado === "SIN_LLAMAR" && "bg-white",
                             lead.estado === "LLAMAR_DESPUES" && "bg-blue-100",
                             lead.estado === "CITA_PROGRAMADA" && "bg-yellow-100",
                             lead.estado === "MATRICULA" && "bg-green-100",
-                          )} />
+                          )}
+                        >
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           {LEAD_STATUSES.map((estado) => (
