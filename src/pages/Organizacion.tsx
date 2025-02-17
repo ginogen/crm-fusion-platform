@@ -394,11 +394,24 @@ const Organizacion = () => {
                       <h4 className="font-medium">
                         {estructura.custom_name || estructura.nombre}
                       </h4>
-                      {estructura.parent_estructura_id && (
-                        <p className="text-sm text-muted-foreground">
-                          Padre: {estructuras?.find(e => e.id === estructura.parent_estructura_id)?.nombre}
-                        </p>
-                      )}
+                      <div className="space-y-1 mt-2">
+                        {estructura.parent_estructura_id && (
+                          <p className="text-sm text-muted-foreground">
+                            Vinculada a: {
+                              estructuras?.find(e => e.id === estructura.parent_estructura_id)?.nombre ||
+                              'Estructura no encontrada'
+                            } ({
+                              estructuras?.find(e => e.id === estructura.parent_estructura_id)?.tipo ||
+                              'Tipo desconocido'
+                            })
+                          </p>
+                        )}
+                        {estructura.hijos && estructura.hijos.length > 0 && (
+                          <p className="text-sm text-muted-foreground">
+                            Estructuras vinculadas: {estructura.hijos.length}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -411,11 +424,34 @@ const Organizacion = () => {
       <Dialog open={isVinculacionModalOpen} onOpenChange={setIsVinculacionModalOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Vincular Estructuras con {selectedEstructura?.nombre}</DialogTitle>
+            <DialogTitle>
+              Estructura: {selectedEstructura?.nombre} ({selectedEstructura?.tipo})
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {selectedEstructura?.parent_estructura_id && (
+              <div className="p-4 bg-slate-50 rounded-lg">
+                <h3 className="text-sm font-medium mb-2">Estructura Superior</h3>
+                <div className="space-y-1">
+                  {(() => {
+                    const estructuraPadre = estructuras?.find(
+                      e => e.id === selectedEstructura.parent_estructura_id
+                    );
+                    return estructuraPadre ? (
+                      <>
+                        <p className="font-medium">{estructuraPadre.nombre}</p>
+                        <p className="text-sm text-muted-foreground">{estructuraPadre.tipo}</p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Estructura superior no encontrada</p>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+
             <div>
-              <Label>Seleccionar Estructuras</Label>
+              <Label>Vincular Nueva Estructura</Label>
               <Select
                 value={estructurasSeleccionadas[0]?.toString()}
                 onValueChange={(value) => {
@@ -433,7 +469,7 @@ const Organizacion = () => {
                 <SelectContent>
                   {estructuras?.filter(e => e.id !== selectedEstructura?.id).map((estructura) => (
                     <SelectItem key={estructura.id} value={estructura.id.toString()}>
-                      {estructura.custom_name || estructura.nombre}
+                      {estructura.custom_name || estructura.nombre} ({estructura.tipo})
                     </SelectItem>
                   ))}
                 </SelectContent>
