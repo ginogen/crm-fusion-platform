@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -149,33 +148,43 @@ const Dashboard = () => {
 
       {/* Calendar */}
       <Card className="p-6">
-        <h2 className="text-lg font-semibold mb-4">Calendario de Tareas</h2>
-        <Calendar
-          mode="single"
-          selected={selectedDate}
-          onSelect={setSelectedDate}
-          className="rounded-md border"
-        />
-        {tasks && tasks.length > 0 && (
-          <div className="mt-4 space-y-2">
-            <h3 className="font-medium">Tareas para {selectedDate?.toLocaleDateString()}</h3>
-            <div className="space-y-2">
-              {tasks.map((task) => (
-                <Card key={task.id} className="p-4">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-medium">{task.leads.nombre_completo}</p>
-                      <p className="text-sm text-muted-foreground">{task.tipo}</p>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {new Date(task.fecha).toLocaleTimeString()}
-                    </p>
-                  </div>
-                </Card>
-              ))}
-            </div>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Calendario de Tareas</h2>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm">
+              Mes
+            </Button>
+            <Button variant="outline" size="sm">
+              Semana
+            </Button>
+            <Button variant="outline" size="sm">
+              Día
+            </Button>
           </div>
-        )}
+        </div>
+        <div className="relative">
+          <Calendar
+            mode="single"
+            selected={selectedDate}
+            onSelect={setSelectedDate}
+            className="rounded-md border"
+          />
+          {tasks?.map((task) => (
+            <div
+              key={task.id}
+              className="absolute bg-blue-100 text-blue-700 p-2 rounded text-sm"
+              style={{
+                left: '20%',
+                top: '30%',
+              }}
+            >
+              <div className="font-medium">
+                {task.tipo} {new Date(task.fecha).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </div>
+              <div>{task.leads.nombre_completo}</div>
+            </div>
+          ))}
+        </div>
       </Card>
 
       {/* Leads by Status */}
