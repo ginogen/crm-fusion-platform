@@ -574,70 +574,42 @@ const Organizacion = () => {
           </div>
         </div>
 
-            <div>
-              <Label>Vincular Nueva Estructura</Label>
-              <Select
-                value={estructurasSeleccionadas[0]?.toString()}
-                onValueChange={(value) => {
-                  const id = parseInt(value);
-                  setEstructurasSeleccionadas(prev => 
-                    prev.includes(id) 
-                      ? prev.filter(x => x !== id)
-                      : [...prev, id]
-                  );
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar estructuras..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {estructuras?.filter(e => e.id !== selectedEstructura?.id).map((estructura) => (
-                    <SelectItem key={estructura.id} value={estructura.id.toString()}>
-                      {estructura.custom_name || estructura.nombre} ({estructura.tipo})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <div>
+          <Label>Vincular Nueva Estructura</Label>
+          <Select
+            value={estructurasSeleccionadas[0]?.toString()}
+            onValueChange={(value) => {
+              const id = parseInt(value);
+              setEstructurasSeleccionadas(prev => 
+                prev.includes(id) 
+                  ? prev.filter(x => x !== id)
+                  : [...prev, id]
+              );
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Seleccionar estructuras..." />
+            </SelectTrigger>
+            <SelectContent>
+              {estructuras?.filter(e => e.id !== selectedEstructura?.id).map((estructura) => (
+                <SelectItem key={estructura.id} value={estructura.id.toString()}>
+                  {estructura.custom_name || estructura.nombre} ({estructura.tipo})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-            <div className="space-y-2">
-              <h3 className="text-lg font-medium">Estructuras Vinculadas</h3>
-              <div className="space-y-2">
-                {estructuras
-                  ?.filter(e => e.parent_estructura_id === selectedEstructura?.id)
-                  .map(estructura => {
-                    const estructuraPadre = estructuras?.find(
-                      e => e.id === estructura.parent_estructura_id
-                    );
-                    const usuariosDeEstructura = usuarios?.filter(
-                      usuario => usuario.estructura_id === estructura.id
-                    );
-                    
-                    return (
-                      <EstructuraVinculada
-                        key={estructura.id}
-                        estructura={estructura}
-                        usuarios={usuariosDeEstructura || []}
-                        isOpen={expandedEstructuras.includes(estructura.id)}
-                        onToggle={() => toggleEstructura(estructura.id)}
-                        estructuraPadre={estructuraPadre}
-                      />
-                    );
-                  })}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 mt-4">
-              <Button variant="outline" onClick={() => setIsVinculacionModalOpen(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={handleVincularEstructuras}>
-                Vincular
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="outline" onClick={() => setIsVinculacionModalOpen(false)}>
+            Cancelar
+          </Button>
+          <Button onClick={handleVincularEstructuras}>
+            Vincular
+          </Button>
+        </div>
+      </div>
+    </DialogContent>
     </div>
   );
 };
