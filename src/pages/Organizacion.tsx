@@ -58,6 +58,7 @@ interface UserProfile {
   user_position: string;
   email: string;
   nombre_completo: string;
+  estructura_id: number;
 }
 
 interface EstructuraVinculadaProps {
@@ -93,7 +94,7 @@ const EstructuraVinculada = ({ estructura, usuarios, isOpen, onToggle, estructur
       
       {isOpen && (
         <div className="p-4 pt-0 border-t">
-          {usuarios.length > 0 && (
+          {usuarios && usuarios.length > 0 ? (
             <>
               <h4 className="text-sm font-medium mb-2">Usuarios vinculados</h4>
               <div className="space-y-3">
@@ -106,6 +107,8 @@ const EstructuraVinculada = ({ estructura, usuarios, isOpen, onToggle, estructur
                 ))}
               </div>
             </>
+          ) : (
+            <p className="text-sm text-muted-foreground">No hay usuarios vinculados a esta estructura</p>
           )}
         </div>
       )}
@@ -180,6 +183,19 @@ const Organizacion = () => {
       }));
 
       return estructurasConHijos as Estructura[];
+    },
+  });
+
+  const { data: usuarios } = useQuery({
+    queryKey: ["usuarios"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("users")
+        .select("*")
+        .order("nombre_completo");
+
+      if (error) throw error;
+      return data as UserProfile[];
     },
   });
 
@@ -569,11 +585,15 @@ const Organizacion = () => {
                     const estructuraPadre = estructuras?.find(
                       e => e.id === estructura.parent_estructura_id
                     );
+                    const usuariosDeEstructura = usuarios?.filter(
+                      usuario => usuario.estructura_id === estructura.id
+                    );
+                    
                     return (
                       <EstructuraVinculada
                         key={estructura.id}
                         estructura={estructura}
-                        usuarios={usuariosPorEstructura?.[estructura.id] || []}
+                        usuarios={usuariosDeEstructura || []}
                         isOpen={expandedEstructuras.includes(estructura.id)}
                         onToggle={() => toggleEstructura(estructura.id)}
                         estructuraPadre={estructuraPadre}
