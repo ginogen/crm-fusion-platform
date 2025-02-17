@@ -54,7 +54,6 @@ const Dashboard = () => {
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [calendarView, setCalendarView] = useState<CalendarView>(CALENDAR_VIEWS.MONTH);
 
-  // Fetch metrics
   const { data: metrics } = useQuery({
     queryKey: ["dashboard-metrics"],
     queryFn: async () => {
@@ -106,7 +105,6 @@ const Dashboard = () => {
     },
   });
 
-  // Fetch leads
   const { data: leads } = useQuery({
     queryKey: ["leads"],
     queryFn: async () => {
@@ -120,7 +118,6 @@ const Dashboard = () => {
     },
   });
 
-  // Fetch tasks for calendar
   const { data: tasks } = useQuery({
     queryKey: ["tasks", selectedDate],
     queryFn: async () => {
@@ -137,6 +134,31 @@ const Dashboard = () => {
       return data;
     },
   });
+
+  const getFilteredTasks = () => {
+    if (!tasks) return [];
+    
+    const today = new Date(selectedDate || new Date());
+    
+    switch (calendarView) {
+      case CALENDAR_VIEWS.DAY:
+        return tasks.filter(task => {
+          const taskDate = new Date(task.fecha);
+          return taskDate.toDateString() === today.toDateString();
+        });
+      
+      case CALENDAR_VIEWS.WEEK:
+        const weekStart = startOfWeek(today);
+        const weekEnd = addDays(weekStart, 7);
+        return tasks.filter(task => {
+          const taskDate = new Date(task.fecha);
+          return taskDate >= weekStart && taskDate < weekEnd;
+        });
+      
+      default:
+        return tasks;
+    }
+  };
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -200,22 +222,9 @@ const Dashboard = () => {
             selected={selectedDate}
             onSelect={setSelectedDate}
             className="rounded-md border"
+            view={calendarView}
+            tasks={getFilteredTasks()}
           />
-          {tasks?.map((task) => (
-            <div
-              key={task.id}
-              className="absolute bg-blue-100 text-blue-700 p-2 rounded text-sm hover:bg-blue-200 transition-colors cursor-pointer"
-              style={{
-                left: '20%',
-                top: '30%',
-              }}
-            >
-              <div className="font-medium">
-                {task.tipo} {new Date(task.fecha).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </div>
-              <div>{task.leads.nombre_completo}</div>
-            </div>
-          ))}
         </div>
       </Card>
 

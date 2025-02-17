@@ -30,7 +30,7 @@ export const AppSidebar = () => {
       <SidebarContent>
         <div className="px-2 space-y-1">
           {NAVIGATION_ITEMS.map((item) => {
-            const Icon = Icons[item.icon as IconName];
+            const IconComponent = Icons[item.icon as IconName];
             const isActive = location.pathname === item.href;
             
             return (
@@ -44,7 +44,7 @@ export const AppSidebar = () => {
                 asChild
               >
                 <Link to={item.href}>
-                  <Icon className="mr-2 h-4 w-4" />
+                  <IconComponent className="mr-2 h-4 w-4" />
                   {item.label}
                 </Link>
               </Button>
