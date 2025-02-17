@@ -1,6 +1,6 @@
-
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
@@ -50,6 +50,7 @@ interface UserProfile {
 }
 
 const Organizacion = () => {
+  const navigate = useNavigate();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [filterTipo, setFilterTipo] = useState<string>("");
   const [filterNombre, setFilterNombre] = useState("");
@@ -58,6 +59,28 @@ const Organizacion = () => {
     nombre: "",
     parent_id: null as number | null,
   });
+
+  // Verificar sesión
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Por favor inicia sesión para continuar");
+        navigate("/auth");
+      }
+    };
+
+    checkSession();
+
+    // Suscribirse a cambios en la sesión
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        navigate("/auth");
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
 
   // Obtener perfil del usuario actual
   const { data: userProfile, isLoading: isLoadingProfile } = useQuery({
