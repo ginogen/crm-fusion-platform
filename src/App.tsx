@@ -26,14 +26,14 @@ function App() {
         <Router>
           <Routes>
             <Route path="/auth" element={<Auth />} />
-            <Route element={<MainLayout />}>
-              <Route path="/organizacion" element={<Organizacion />} />
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/datos" element={<Datos />} />
-              <Route path="/campanas" element={<Campanas />} />
-              <Route path="/reasignar" element={<Reasignar />} />
-              <Route path="/informes" element={<Informes />} />
-              <Route path="/usuarios" element={<Usuarios />} />
+            <Route path="/" element={<MainLayout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="organizacion" element={<Organizacion />} />
+              <Route path="datos" element={<Datos />} />
+              <Route path="campanas" element={<Campanas />} />
+              <Route path="reasignar" element={<Reasignar />} />
+              <Route path="informes" element={<Informes />} />
+              <Route path="usuarios" element={<Usuarios />} />
               <Route path="*" element={<NotFound />} />
             </Route>
           </Routes>
