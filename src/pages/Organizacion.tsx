@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -39,6 +40,7 @@ interface Estructura {
   parent_id: number | null;
   nombre: string;
   custom_name: string | null;
+  hijos?: Estructura[];
 }
 
 interface UserProfile {
@@ -113,7 +115,6 @@ const Organizacion = () => {
 
     checkSession();
 
-    // Suscribirse a cambios en la sesión
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         navigate("/auth");
@@ -151,7 +152,7 @@ const Organizacion = () => {
         .order('tipo', { ascending: true });
 
       if (error) throw error;
-      return data as (Estructura & { hijos: Estructura[] })[];
+      return data as Estructura[];
     },
   });
 
@@ -330,34 +331,6 @@ const Organizacion = () => {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Estructura Padre (Opcional)</Label>
-                  <Select
-                    value={newEstructura.parent_id?.toString() || "none"}
-                    onValueChange={(value) => 
-                      setNewEstructura(prev => ({ 
-                        ...prev, 
-                        parent_id: value === "none" ? null : parseInt(value) 
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccione una estructura padre" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Ninguna</SelectItem>
-                      {estructuras?.map((estructura) => (
-                        <SelectItem 
-                          key={estructura.id} 
-                          value={estructura.id.toString()}
-                        >
-                          {estructura.custom_name || estructura.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
                 <Button className="w-full" onClick={handleCreateEstructura}>
                   Crear Estructura
                 </Button>
@@ -456,13 +429,11 @@ const Organizacion = () => {
                   <SelectValue placeholder="Seleccionar estructuras..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {estructuras
-                    ?.filter(e => e.id !== selectedEstructura?.id)
-                    .map((estructura) => (
-                      <SelectItem key={estructura.id} value={estructura.id.toString()}>
-                        {estructura.custom_name || estructura.nombre}
-                      </SelectItem>
-                    ))}
+                  {estructuras?.filter(e => e.id !== selectedEstructura?.id).map((estructura) => (
+                    <SelectItem key={estructura.id} value={estructura.id.toString()}>
+                      {estructura.custom_name || estructura.nombre}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -470,15 +441,17 @@ const Organizacion = () => {
             <div className="space-y-2">
               <h3 className="text-lg font-medium">Estructuras Vinculadas</h3>
               <div className="space-y-2">
-                {selectedEstructura?.hijos?.map(estructura => (
-                  <EstructuraVinculada
-                    key={estructura.id}
-                    estructura={estructura}
-                    usuarios={usuariosPorEstructura?.[estructura.id] || []}
-                    isOpen={expandedEstructuras.includes(estructura.id)}
-                    onToggle={() => toggleEstructura(estructura.id)}
-                  />
-                ))}
+                {estructuras
+                  ?.filter(e => e.parent_id === selectedEstructura?.id)
+                  .map(estructura => (
+                    <EstructuraVinculada
+                      key={estructura.id}
+                      estructura={estructura}
+                      usuarios={usuariosPorEstructura?.[estructura.id] || []}
+                      isOpen={expandedEstructuras.includes(estructura.id)}
+                      onToggle={() => toggleEstructura(estructura.id)}
+                    />
+                  ))}
               </div>
             </div>
 
