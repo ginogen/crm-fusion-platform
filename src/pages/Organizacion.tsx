@@ -22,11 +22,11 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, Plus, Search } from "lucide-react";
 
-// Tipos de estructura disponibles
+// Tipos de estructura disponibles (actualizados según el enum de la base de datos)
 const TIPOS_ESTRUCTURA = [
-  'Empresas',
-  'País',
-  'Zonas',
+  'Empresa',
+  'Paises',
+  'Filiales',
   'Filial',
   'División',
   'Organizaciones',
@@ -77,7 +77,7 @@ const Organizacion = () => {
   });
 
   // Obtener todas las estructuras
-  const { data: estructuras, isLoading: isLoadingEstructuras, error } = useQuery({
+  const { data: estructuras, isLoading: isLoadingEstructuras, error, refetch } = useQuery({
     queryKey: ["estructuras"],
     queryFn: async () => {
       console.log("Fetching estructuras...");
