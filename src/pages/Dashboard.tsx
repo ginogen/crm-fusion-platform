@@ -546,7 +546,7 @@ const Dashboard = () => {
                 <TableHead>Teléfono</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Asignado A</TableHead>
-                <TableHead>Acciones</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -556,27 +556,46 @@ const Dashboard = () => {
                   <TableCell>{lead.email}</TableCell>
                   <TableCell>{lead.telefono}</TableCell>
                   <TableCell>
-                    <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                      ${lead.estado === 'LLAMAR_DESPUES' ? 'bg-blue-100 text-blue-800' :
-                        lead.estado === 'CITA_PROGRAMADA' ? 'bg-yellow-100 text-yellow-800' :
-                        lead.estado === 'MATRICULA' ? 'bg-green-100 text-green-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                      {lead.estado}
+                    <div className={cn(
+                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                      lead.estado === 'LLAMAR_DESPUES' ? 'bg-blue-100 text-blue-800' :
+                      lead.estado === 'CITA_PROGRAMADA' ? 'bg-yellow-100 text-yellow-800' :
+                      lead.estado === 'MATRICULA' ? 'bg-green-100 text-green-800' :
+                      'bg-gray-100 text-gray-800'
+                    )}>
+                      {LEAD_STATUS_LABELS[lead.estado as LeadEstado] || lead.estado}
                     </div>
                   </TableCell>
                   <TableCell>{lead.users?.nombre_completo}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <button className="text-gray-600 hover:text-gray-900">
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          // Implementar edición
+                        }}
+                      >
                         <Pencil className="h-4 w-4" />
-                      </button>
-                      <button className="text-gray-600 hover:text-gray-900">
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          // Implementar gestión
+                        }}
+                      >
                         <ClipboardList className="h-4 w-4" />
-                      </button>
-                      <button className="text-gray-600 hover:text-gray-900">
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          // Implementar historial
+                        }}
+                      >
                         <History className="h-4 w-4" />
-                      </button>
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
