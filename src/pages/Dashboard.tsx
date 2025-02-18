@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +28,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { DateRange } from "react-day-picker";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 
 const CALENDAR_VIEWS = {
   MONTH: "month",
@@ -317,7 +317,6 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
   const { data: historial } = useQuery({
     queryKey: ["lead-history", lead?.id],
     queryFn: async () => {
-      // Primero obtenemos el historial
       const { data: historialData, error: historialError } = await supabase
         .from("lead_history")
         .select("*")
@@ -326,7 +325,6 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
 
       if (historialError) throw historialError;
 
-      // Luego obtenemos los usuarios relacionados
       const userIds = historialData.map(item => item.user_id).filter(Boolean);
       const { data: usersData, error: usersError } = await supabase
         .from("users")
@@ -335,7 +333,6 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
 
       if (usersError) throw usersError;
 
-      // Combinamos los datos manualmente
       const historialConUsuarios = historialData.map(item => ({
         ...item,
         users: usersData?.find(user => user.id === item.user_id)
@@ -697,6 +694,14 @@ const Dashboard = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showGestionModal, setShowGestionModal] = useState(false);
   const [showHistorialSheet, setShowHistorialSheet] = useState(false);
+  const [filterName, setFilterName] = useState("");
+  const [filterEmail, setFilterEmail] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterAssignedTo, setFilterAssignedTo] = useState("");
+  const [openName, setOpenName] = useState(false);
+  const [openEmail, setOpenEmail] = useState(false);
+  const [openStatus, setOpenStatus] = useState(false);
+  const [openAssigned, setOpenAssigned] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: metrics } = useQuery({
@@ -798,6 +803,18 @@ const Dashboard = () => {
     }
   });
 
+  const uniqueNames = Array.from(new Set(leads?.map(lead => lead.nombre_completo) || [])).filter(Boolean);
+  const uniqueEmails = Array.from(new Set(leads?.map(lead => lead.email) || [])).filter(Boolean);
+  const uniqueUsers = Array.from(new Set(leads?.map(lead => lead.users?.nombre_completo) || [])).filter(Boolean);
+
+  const filteredLeads = leads?.filter(lead => {
+    const nameMatch = !filterName || lead.nombre_completo === filterName;
+    const emailMatch = !filterEmail || lead.email === filterEmail;
+    const statusMatch = !filterStatus || lead.estado === filterStatus;
+    const assignedMatch = !filterAssignedTo || lead.users?.nombre_completo === filterAssignedTo;
+    return nameMatch && emailMatch && statusMatch && assignedMatch;
+  });
+
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -830,32 +847,153 @@ const Dashboard = () => {
       <Card className="p-6">
         <h2 className="text-lg font-semibold mb-6">Leads Recientes</h2>
         <div className="space-y-4">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="text-sm text-muted-foreground">Estado</label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar estado..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="SIN_LLAMAR">Sin Llamar</SelectItem>
-                  <SelectItem value="LLAMAR_DESPUES">Llamar Después</SelectItem>
-                  <SelectItem value="CITA_PROGRAMADA">Cita Programada</SelectItem>
-                  <SelectItem value="MATRICULA">Matrícula</SelectItem>
-                </SelectContent>
-              </Select>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="text-sm text-muted-foreground">Nombre</label>
+              <Popover open={openName} onOpenChange={setOpenName}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={openName}
+                    className="w-full justify-between"
+                  >
+                    {filterName || "Seleccionar nombre..."}
+                    <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0">
+                  <Command>
+                    <CommandInput placeholder="Buscar nombre..." />
+                    <CommandEmpty>No se encontraron resultados.</CommandEmpty>
+                    <CommandGroup>
+                      {uniqueNames.map((name) => (
+                        <CommandItem
+                          key={name}
+                          value={name}
+                          onSelect={() => {
+                            setFilterName(name === filterName ? "" : name);
+                            setOpenName(false);
+                          }}
+                        >
+                          {name}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
-            <div className="flex-1">
+
+            <div>
+              <label className="text-sm text-muted-foreground">Email</label>
+              <Popover open={openEmail} onOpenChange={setOpenEmail}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={openEmail}
+                    className="w-full justify-between"
+                  >
+                    {filterEmail || "Seleccionar email..."}
+                    <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0">
+                  <Command>
+                    <CommandInput placeholder="Buscar email..." />
+                    <CommandEmpty>No se encontraron resultados.</CommandEmpty>
+                    <CommandGroup>
+                      {uniqueEmails.map((email) => (
+                        <CommandItem
+                          key={email}
+                          value={email}
+                          onSelect={() => {
+                            setFilterEmail(email === filterEmail ? "" : email);
+                            setOpenEmail(false);
+                          }}
+                        >
+                          {email}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div>
+              <label className="text-sm text-muted-foreground">Estado</label>
+              <Popover open={openStatus} onOpenChange={setOpenStatus}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={openStatus}
+                    className="w-full justify-between"
+                  >
+                    {LEAD_STATUS_LABELS[filterStatus as LeadEstado] || "Seleccionar estado..."}
+                    <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0">
+                  <Command>
+                    <CommandInput placeholder="Buscar estado..." />
+                    <CommandEmpty>No se encontraron resultados.</CommandEmpty>
+                    <CommandGroup>
+                      {LEAD_STATUSES.map((estado) => (
+                        <CommandItem
+                          key={estado}
+                          value={estado}
+                          onSelect={() => {
+                            setFilterStatus(estado === filterStatus ? "" : estado);
+                            setOpenStatus(false);
+                          }}
+                        >
+                          {LEAD_STATUS_LABELS[estado]}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div>
               <label className="text-sm text-muted-foreground">Asignado A</label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Buscar usuario..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="user1">Usuario 1</SelectItem>
-                  <SelectItem value="user2">Usuario 2</SelectItem>
-                </SelectContent>
-              </Select>
+              <Popover open={openAssigned} onOpenChange={setOpenAssigned}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={openAssigned}
+                    className="w-full justify-between"
+                  >
+                    {filterAssignedTo || "Buscar usuario..."}
+                    <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0">
+                  <Command>
+                    <CommandInput placeholder="Buscar usuario..." />
+                    <CommandEmpty>No se encontraron resultados.</CommandEmpty>
+                    <CommandGroup>
+                      {uniqueUsers.map((user) => (
+                        <CommandItem
+                          key={user}
+                          value={user}
+                          onSelect={() => {
+                            setFilterAssignedTo(user === filterAssignedTo ? "" : user);
+                            setOpenAssigned(false);
+                          }}
+                        >
+                          {user}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 
@@ -874,7 +1012,7 @@ const Dashboard = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {leads?.map((lead) => (
+                {filteredLeads?.map((lead) => (
                   <TableRow key={lead.id}>
                     <TableCell>
                       <input type="checkbox" className="rounded border-gray-300" />
