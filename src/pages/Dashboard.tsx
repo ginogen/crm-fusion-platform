@@ -308,14 +308,12 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
   const { data: historial } = useQuery({
     queryKey: ["lead-history", lead?.id],
     queryFn: async () => {
+      console.log("Fetching history for lead:", lead.id);
+
       const { data: historialData, error: historialError } = await supabase
         .from("lead_history")
         .select(`
-          lead_id,
-          action,
-          details,
-          user_id,
-          created_at
+          *
         `)
         .eq("lead_id", Number(lead.id))
         .order("created_at", { ascending: false });
@@ -325,11 +323,15 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
         throw historialError;
       }
 
+      console.log("Raw historial data:", historialData);
+
       if (!historialData || historialData.length === 0) {
+        console.log("No history data found");
         return [];
       }
 
       const userIds = historialData.map(item => item.user_id).filter(Boolean);
+      console.log("User IDs to fetch:", userIds);
       
       let usersData = [];
       if (userIds.length > 0) {
@@ -343,6 +345,7 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
           throw usersError;
         }
         usersData = userData || [];
+        console.log("Users data:", usersData);
       }
 
       const historialConUsuarios = historialData.map(item => ({
@@ -350,11 +353,13 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
         users: usersData.find(user => user.id === item.user_id) || { nombre_completo: 'Usuario no encontrado' }
       }));
 
-      console.log("Historial procesado:", historialConUsuarios);
+      console.log("Final processed history:", historialConUsuarios);
       return historialConUsuarios;
     },
     enabled: !!lead?.id
   });
+
+  console.log("Rendered historial:", historial);
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
