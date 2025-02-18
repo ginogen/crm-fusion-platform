@@ -1,22 +1,35 @@
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Calendar } from "@/components/ui/calendar";
+import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { CalendarCheck2, Users, Calendar as CalendarIcon, GraduationCap, Eye, ClipboardList, History } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { LEAD_STATUSES, LEAD_STATUS_LABELS } from "@/lib/constants";
+import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { format } from "date-fns";
-import type { LeadEstado } from "@/lib/types";
-import ModifyLeadsDialog from "@/components/leads/ModifyLeadsDialog";
-import TaskList from "@/components/tasks/TaskList";
+import { format, addDays } from "date-fns";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import type { DateRange } from "react-day-picker";
+import { Calendar as CalendarIconLucide } from "lucide-react";
+
+const CALENDAR_VIEWS = {
+  MONTH: "month",
+  WEEK: "week",
+  DAY: "day"
+} as const;
+
+type CalendarView = typeof CALENDAR_VIEWS[keyof typeof CALENDAR_VIEWS];
+type LeadEstado = typeof LEAD_STATUSES[number];
+type TipoGestion = typeof MANAGEMENT_TYPES[number];
 
 const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
   const [formData, setFormData] = useState({
@@ -180,7 +193,7 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
 };
 
 const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
-  const [tipo, setTipo] = useState<string>("");
+  const [tipo, setTipo] = useState<TipoGestion | "">("");
   const [fecha, setFecha] = useState<Date>();
   const [observaciones, setObservaciones] = useState("");
   const queryClient = useQueryClient();
@@ -237,7 +250,7 @@ const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, o
         <div className="space-y-4">
           <div>
             <label className="text-sm font-medium">Tipo de Gestión</label>
-            <Select value={tipo} onValueChange={setTipo}>
+            <Select value={tipo} onValueChange={(value: TipoGestion) => setTipo(value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar tipo..." />
               </SelectTrigger>
@@ -448,16 +461,303 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
   );
 };
 
-const Dashboard = () => {
-  const queryClient = useQueryClient();
-  const [selectedLeads, setSelectedLeads] = useState<number[]>([]);
-  const [showModifyLeadsDialog, setShowModifyLeadsDialog] = useState(false);
-  const [allSelected, setAllSelected] = useState(false);
+const TaskList = () => {
+  const [filterTipo, setFilterTipo] = useState<string>("all");
+  const [filterEstado, setFilterEstado] = useState<string>("all");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
+  const handlePresetChange = (days: number) => {
+    const today = new Date();
+    if (days === 0) {
+      setDateRange({
+        from: today,
+        to: today
+      });
+    } else {
+      setDateRange({
+        from: today,
+        to: addDays(today, days)
+      });
+    }
+  };
+
+  const { data: tasks } = useQuery({
+    queryKey: ["tasks", filterTipo, filterEstado, dateRange],
+    queryFn: async () => {
+      let query = supabase
+        .from("tareas")
+        .select(`
+          *,
+          leads (nombre_completo, email, telefono),
+          users (nombre_completo)
+        `);
+
+      if (filterTipo !== "all") {
+        query = query.eq('tipo', filterTipo);
+      }
+      if (filterEstado !== "all") {
+        query = query.eq('estado', filterEstado);
+      }
+      if (dateRange?.from) {
+        query = query.gte('fecha', dateRange.from.toISOString());
+      }
+      if (dateRange?.to) {
+        query = query.lte('fecha', dateRange.to.toISOString());
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  return (
+    <Card className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-lg font-semibold">Listado de Tareas</h2>
+        <div className="flex gap-2">
+          <Select value={filterTipo} onValueChange={setFilterTipo}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Tipo de tarea" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas</SelectItem>
+              {MANAGEMENT_TYPES.map((tipo) => (
+                <SelectItem key={tipo} value={tipo}>
+                  {tipo}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={filterEstado} onValueChange={setFilterEstado}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Estado" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="PENDIENTE">Pendiente</SelectItem>
+              <SelectItem value="COMPLETADA">Completada</SelectItem>
+              <SelectItem value="CANCELADA">Cancelada</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                  "w-[300px] justify-start text-left font-normal",
+                  !dateRange?.from && "text-muted-foreground"
+                )}
+              >
+                <CalendarIconLucide className="mr-2 h-4 w-4" />
+                {dateRange?.from ? (
+                  dateRange.to ? (
+                    <>
+                      {format(dateRange.from, "dd/MM/yyyy")} -{" "}
+                      {format(dateRange.to, "dd/MM/yyyy")}
+                    </>
+                  ) : (
+                    format(dateRange.from, "dd/MM/yyyy")
+                  )
+                ) : (
+                  <span>Seleccionar fecha</span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end">
+              <div className="flex">
+                <div className="border-r pr-2 py-3">
+                  <div className="px-2 font-medium text-sm mb-2">Rangos rápidos</div>
+                  <div className="w-[140px]">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start text-sm font-normal hover:bg-primary/5"
+                      onClick={() => {
+                        handlePresetChange(0);
+                        setIsCalendarOpen(false);
+                      }}
+                    >
+                      Hoy
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start text-sm font-normal hover:bg-primary/5"
+                      onClick={() => {
+                        const yesterday = new Date();
+                        yesterday.setDate(yesterday.getDate() - 1);
+                        setDateRange({
+                          from: yesterday,
+                          to: yesterday
+                        });
+                        setIsCalendarOpen(false);
+                      }}
+                    >
+                      Ayer
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start text-sm font-normal hover:bg-primary/5"
+                      onClick={() => {
+                        handlePresetChange(7);
+                        setIsCalendarOpen(false);
+                      }}
+                    >
+                      Próximos 7 días
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start text-sm font-normal hover:bg-primary/5"
+                      onClick={() => {
+                        handlePresetChange(30);
+                        setIsCalendarOpen(false);
+                      }}
+                    >
+                      Próximos 30 días
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start text-sm font-normal hover:bg-primary/5"
+                      onClick={() => {
+                        const today = new Date();
+                        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+                        setDateRange({
+                          from: firstDay,
+                          to: lastDay
+                        });
+                        setIsCalendarOpen(false);
+                      }}
+                    >
+                      Este mes
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start text-sm font-normal hover:bg-primary/5"
+                      onClick={() => {
+                        const today = new Date();
+                        const firstDay = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                        const lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
+                        setDateRange({
+                          from: firstDay,
+                          to: lastDay
+                        });
+                        setIsCalendarOpen(false);
+                      }}
+                    >
+                      Mes anterior
+                    </Button>
+                  </div>
+                </div>
+                <div className="p-3">
+                  <Calendar
+                    initialFocus
+                    mode="range"
+                    defaultMonth={dateRange?.from}
+                    selected={dateRange}
+                    onSelect={setDateRange}
+                    numberOfMonths={2}
+                    showOutsideDays={false}
+                    className="rdp-custom [&_.rdp-day]:h-8 [&_.rdp-day]:w-8 [&_.rdp-day]:text-sm [&_.rdp-head_th]:text-xs [&_.rdp-head_th]:font-normal [&_.rdp-caption]:text-sm [&_.rdp-table]:border-separate [&_.rdp-table]:border-spacing-1 [&_.rdp-cell]:border-0 [&_.rdp-cell]:p-0 [&_.rdp-button]:w-8 [&_.rdp-button]:h-8 [&_.rdp-button]:p-0"
+                  />
+                  <div className="flex justify-end gap-2 mt-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setDateRange(undefined);
+                        setIsCalendarOpen(false);
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setIsCalendarOpen(false);
+                      }}
+                    >
+                      Aplicar
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
+
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Lead</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead>Responsable</TableHead>
+              <TableHead>Fecha</TableHead>
+              <TableHead>Observaciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {tasks?.map((task) => (
+              <TableRow key={task.id}>
+                <TableCell>
+                  <div>
+                    <p className="font-medium">{task.leads?.nombre_completo}</p>
+                    <p className="text-sm text-muted-foreground">{task.leads?.email}</p>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className={cn(
+                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                    task.tipo === "LLAMADA" && "bg-blue-100 text-blue-800",
+                    task.tipo === "CITA" && "bg-purple-100 text-purple-800",
+                    task.tipo === "EMAIL" && "bg-yellow-100 text-yellow-800"
+                  )}>
+                    {task.tipo}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className={cn(
+                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                    task.estado === "PENDIENTE" && "bg-yellow-100 text-yellow-800",
+                    task.estado === "COMPLETADA" && "bg-green-100 text-green-800",
+                    task.estado === "CANCELADA" && "bg-red-100 text-red-800"
+                  )}>
+                    {task.estado}
+                  </div>
+                </TableCell>
+                <TableCell>{task.users?.nombre_completo}</TableCell>
+                <TableCell>{task.fecha ? format(new Date(task.fecha), "dd/MM/yyyy HH:mm") : "-"}</TableCell>
+                <TableCell>
+                  <p className="max-w-[300px] truncate" title={task.observaciones}>
+                    {task.observaciones || "-"}
+                  </p>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </Card>
+  );
+};
+
+const Dashboard = () => {
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showGestionModal, setShowGestionModal] = useState(false);
   const [showHistorialSheet, setShowHistorialSheet] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data: metrics } = useQuery({
     queryKey: ["dashboard-metrics"],
@@ -558,33 +858,6 @@ const Dashboard = () => {
     }
   });
 
-  const handleSelectLead = (leadId: number, selected: boolean) => {
-    if (selected) {
-      setSelectedLeads(prev => [...prev, leadId]);
-    } else {
-      setSelectedLeads(prev => prev.filter(id => id !== leadId));
-    }
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    if (!leads) return;
-    
-    const leadIds = leads.map(lead => lead.id);
-    if (checked) {
-      setSelectedLeads(leadIds);
-    } else {
-      setSelectedLeads([]);
-    }
-    setAllSelected(checked);
-  };
-
-  useEffect(() => {
-    if (leads?.length && leads.length > 0) {
-      const allLeadsSelected = leads.every(lead => selectedLeads.includes(lead.id));
-      setAllSelected(allLeadsSelected);
-    }
-  }, [selectedLeads, leads]);
-
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -615,128 +888,168 @@ const Dashboard = () => {
       <TaskList />
 
       <Card className="p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-lg font-semibold">Leads Recientes</h2>
-          <div className="flex gap-2">
-            {selectedLeads.length > 0 && (
-              <>
-                <p className="text-sm text-muted-foreground self-center">
-                  {selectedLeads.length} leads seleccionados
-                </p>
-                <Button 
-                  variant="default"
-                  onClick={() => setShowModifyLeadsDialog(true)}
-                >
-                  Modificar Leads
-                </Button>
-              </>
-            )}
-            <Button variant="outline">Ver Todos</Button>
+        <h2 className="text-lg font-semibold mb-6">Leads Recientes</h2>
+        <div className="space-y-4">
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="text-sm text-muted-foreground">Estado</label>
+              <Select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar estado..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SIN_LLAMAR">Sin Llamar</SelectItem>
+                  <SelectItem value="LLAMAR_DESPUES">Llamar Después</SelectItem>
+                  <SelectItem value="CITA_PROGRAMADA">Cita Programada</SelectItem>
+                  <SelectItem value="MATRICULA">Matrícula</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1">
+              <label className="text-sm text-muted-foreground">Asignado A</label>
+              <Select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Buscar usuario..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user1">Usuario 1</SelectItem>
+                  <SelectItem value="user2">Usuario 2</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12"></TableHead>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Teléfono</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Asignado A</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {leads?.map((lead) => (
+                  <TableRow key={lead.id}>
+                    <TableCell>
+                      <input type="checkbox" className="rounded border-gray-300" />
+                    </TableCell>
+                    <TableCell>{lead.nombre_completo}</TableCell>
+                    <TableCell>{lead.email}</TableCell>
+                    <TableCell>{lead.telefono}</TableCell>
+                    <TableCell>
+                      <Select
+                        value={lead.estado}
+                        onValueChange={(value: LeadEstado) => {
+                          updateLeadStatus.mutate({ leadId: lead.id, newStatus: value });
+                        }}
+                      >
+                        <SelectTrigger 
+                          className={cn(
+                            "w-[180px]",
+                            lead.estado === "SIN_LLAMAR" && "bg-white",
+                            lead.estado === "LLAMAR_DESPUES" && "bg-blue-100",
+                            lead.estado === "CITA_PROGRAMADA" && "bg-yellow-100",
+                            lead.estado === "MATRICULA" && "bg-green-100",
+                          )}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {LEAD_STATUSES.map((estado) => (
+                            <SelectItem 
+                              key={estado} 
+                              value={estado}
+                              className={cn(
+                                estado === "SIN_LLAMAR" && "bg-white",
+                                estado === "LLAMAR_DESPUES" && "bg-blue-100",
+                                estado === "CITA_PROGRAMADA" && "bg-yellow-100",
+                                estado === "MATRICULA" && "bg-green-100",
+                              )}
+                            >
+                              {LEAD_STATUS_LABELS[estado]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>{lead.users?.nombre_completo}</TableCell>
+                    <TableCell>{format(new Date(lead.created_at), "dd/MM/yyyy")}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setSelectedLead(lead);
+                            setShowEditModal(true);
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setSelectedLead(lead);
+                            setShowGestionModal(true);
+                          }}
+                        >
+                          <ClipboardList className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setSelectedLead(lead);
+                            setShowHistorialSheet(true);
+                          }}
+                        >
+                          <History className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         </div>
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[100px]">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={(e) => handleSelectAll(e.target.checked)}
-                  />
-                </TableHead>
-                <TableHead>Nombre</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Teléfono</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Asignado a</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {leads?.map((lead) => (
-                <TableRow key={lead.id}>
-                  <TableCell className="font-medium p-0">
-                    <input
-                      type="checkbox"
-                      checked={selectedLeads.includes(lead.id)}
-                      onChange={(e) => handleSelectLead(lead.id, e.target.checked)}
-                    />
-                  </TableCell>
-                  <TableCell className="font-medium">{lead.nombre_completo}</TableCell>
-                  <TableCell>{lead.email}</TableCell>
-                  <TableCell>{lead.telefono}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center">
-                      <span className={cn(
-                        "ml-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                        lead.estado === "SIN_LLAMAR" && "bg-yellow-100 text-yellow-800",
-                        lead.estado === "EN_CONTACTO" && "bg-blue-100 text-blue-800",
-                        lead.estado === "CITA_PROGRAMADA" && "bg-purple-100 text-purple-800",
-                        lead.estado === "INTERESADO" && "bg-green-100 text-green-800",
-                        lead.estado === "NO_INTERESADO" && "bg-red-100 text-red-800",
-                        lead.estado === "MATRICULA" && "bg-gray-100 text-gray-800"
-                      )}>
-                        {LEAD_STATUS_LABELS[lead.estado as LeadEstado]}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell>{lead.users?.nombre_completo}</TableCell>
-                  <TableCell className="text-right">
-                    <Select onValueChange={(value: LeadEstado) => updateLeadStatus.mutate({ leadId: lead.id, newStatus: value })}>
-                      <SelectTrigger className="w-[180px]">
-                        <SelectValue placeholder="Cambiar estado" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(LEAD_STATUS_LABELS).map(([key, value]) => (
-                          <SelectItem key={key} value={key}>
-                            {value}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+
+        {selectedLead && (
+          <>
+            <LeadEditModal
+              lead={selectedLead}
+              isOpen={showEditModal}
+              onClose={() => {
+                setShowEditModal(false);
+                setSelectedLead(null);
+              }}
+            />
+            <GestionModal
+              lead={selectedLead}
+              isOpen={showGestionModal}
+              onClose={() => {
+                setShowGestionModal(false);
+                setSelectedLead(null);
+              }}
+            />
+            <LeadHistorialSheet
+              lead={selectedLead}
+              isOpen={showHistorialSheet}
+              onClose={() => {
+                setShowHistorialSheet(false);
+                setSelectedLead(null);
+              }}
+            />
+          </>
+        )}
       </Card>
-
-      {selectedLead && (
-        <>
-          <LeadEditModal
-            lead={selectedLead}
-            isOpen={showEditModal}
-            onClose={() => {
-              setShowEditModal(false);
-              setSelectedLead(null);
-            }}
-          />
-          <GestionModal
-            lead={selectedLead}
-            isOpen={showGestionModal}
-            onClose={() => {
-              setShowGestionModal(false);
-              setSelectedLead(null);
-            }}
-          />
-          <LeadHistorialSheet
-            lead={selectedLead}
-            isOpen={showHistorialSheet}
-            onClose={() => {
-              setShowHistorialSheet(false);
-              setSelectedLead(null);
-            }}
-          />
-        </>
-      )}
-
-      <ModifyLeadsDialog 
-        isOpen={showModifyLeadsDialog}
-        onClose={() => setShowModifyLeadsDialog(false)}
-        selectedLeads={selectedLeads}
-      />
     </div>
   );
 };
