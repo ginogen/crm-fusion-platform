@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import LeadsTable from "@/components/leads/LeadsTable";
 import {
@@ -20,6 +19,38 @@ import { MANAGEMENT_TYPES } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+
+const formatHistoryDetails = (details: string) => {
+  try {
+    const data = JSON.parse(details);
+    
+    if (data.changes && Array.isArray(data.changes)) {
+      const changedFields = data.changes.map((field: string) => {
+        const previousValue = data.previous[field];
+        const newValue = data.new[field];
+        return `${field}: ${previousValue || 'No definido'} → ${newValue || 'No definido'}`;
+      });
+      return changedFields.join('\n');
+    }
+    
+    // Si es una acción de creación o asignación
+    if (data.previous && data.new) {
+      const changes = [];
+      for (const key in data.new) {
+        if (data.previous[key] !== data.new[key]) {
+          changes.push(`${key}: ${data.previous[key] || 'No definido'} → ${data.new[key] || 'No definido'}`);
+        }
+      }
+      return changes.join('\n');
+    }
+    
+    // Si es otro tipo de detalle, lo mostramos como texto
+    return JSON.stringify(data, null, 2);
+  } catch (e) {
+    // Si no es JSON válido, devolvemos el texto original
+    return details;
+  }
+};
 
 const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
   const [formData, setFormData] = useState({
