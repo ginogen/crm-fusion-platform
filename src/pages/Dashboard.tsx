@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -509,7 +510,7 @@ const TaskList = () => {
                       Hoy
                     </Button>
                     <Button
-                      variant="ghost",
+                      variant="ghost"
                       size="sm"
                       className="w-full justify-start text-sm font-normal hover:bg-primary/5"
                       onClick={() => {
@@ -935,4 +936,48 @@ const Dashboard = () => {
                             setShowHistorialSheet(true);
                           }}
                         >
-                          <History className="
+                          <History className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      </Card>
+
+      {selectedLead && (
+        <>
+          <LeadEditModal
+            lead={selectedLead}
+            isOpen={showEditModal}
+            onClose={() => {
+              setShowEditModal(false);
+              setSelectedLead(null);
+            }}
+          />
+          <GestionModal
+            lead={selectedLead}
+            isOpen={showGestionModal}
+            onClose={() => {
+              setShowGestionModal(false);
+              setSelectedLead(null);
+            }}
+          />
+          <LeadHistorialSheet
+            lead={selectedLead}
+            isOpen={showHistorialSheet}
+            onClose={() => {
+              setShowHistorialSheet(false);
+              setSelectedLead(null);
+            }}
+          />
+        </>
+      )}
+    </div>
+  );
+};
+
+export default Dashboard;
