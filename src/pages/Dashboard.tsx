@@ -311,17 +311,16 @@ const TaskList = () => {
   const [filterTipo, setFilterTipo] = useState<string>("all");
   const [filterEstado, setFilterEstado] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
   const handlePresetChange = (days: number) => {
     const today = new Date();
     if (days === 0) {
-      // Solo hoy
       setDateRange({
         from: today,
         to: today
       });
     } else {
-      // Rango desde hoy hasta X días
       setDateRange({
         from: today,
         to: addDays(today, days)
@@ -390,7 +389,7 @@ const TaskList = () => {
             </SelectContent>
           </Select>
 
-          <Popover>
+          <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
@@ -414,47 +413,90 @@ const TaskList = () => {
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-4" align="end">
-              <div className="space-y-4">
-                <div className="flex flex-col gap-2">
-                  <div className="flex gap-2">
+            <PopoverContent className="w-auto" align="end">
+              <div className="flex">
+                <div className="border-r pr-4 space-y-3">
+                  <div className="w-[150px]">
                     <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => handlePresetChange(0)}
+                      variant="ghost"
+                      className="w-full justify-start font-normal hover:bg-primary/5"
+                      onClick={() => {
+                        handlePresetChange(0);
+                        setIsCalendarOpen(false);
+                      }}
                     >
                       Hoy
                     </Button>
                     <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => handlePresetChange(3)}
+                      variant="ghost"
+                      className="w-full justify-start font-normal hover:bg-primary/5"
+                      onClick={() => {
+                        const yesterday = new Date();
+                        yesterday.setDate(yesterday.getDate() - 1);
+                        setDateRange({
+                          from: yesterday,
+                          to: yesterday
+                        });
+                        setIsCalendarOpen(false);
+                      }}
                     >
-                      Próximos 3 días
+                      Ayer
                     </Button>
-                  </div>
-                  <div className="flex gap-2">
                     <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => handlePresetChange(7)}
+                      variant="ghost"
+                      className="w-full justify-start font-normal hover:bg-primary/5"
+                      onClick={() => {
+                        handlePresetChange(7);
+                        setIsCalendarOpen(false);
+                      }}
                     >
-                      Próximos 7 días
+                      Últimos 7 días
                     </Button>
                     <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => handlePresetChange(14)}
+                      variant="ghost"
+                      className="w-full justify-start font-normal hover:bg-primary/5"
+                      onClick={() => {
+                        handlePresetChange(30);
+                        setIsCalendarOpen(false);
+                      }}
                     >
-                      Próximos 14 días
+                      Últimos 30 días
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start font-normal hover:bg-primary/5"
+                      onClick={() => {
+                        const today = new Date();
+                        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+                        setDateRange({
+                          from: firstDay,
+                          to: lastDay
+                        });
+                        setIsCalendarOpen(false);
+                      }}
+                    >
+                      Este mes
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start font-normal hover:bg-primary/5"
+                      onClick={() => {
+                        const today = new Date();
+                        const firstDay = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                        const lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
+                        setDateRange({
+                          from: firstDay,
+                          to: lastDay
+                        });
+                        setIsCalendarOpen(false);
+                      }}
+                    >
+                      Mes anterior
                     </Button>
                   </div>
                 </div>
-                <Separator />
-                <div className="flex flex-col gap-2">
-                  <p className="text-sm text-muted-foreground">
-                    O selecciona un rango personalizado:
-                  </p>
+                <div className="pl-4 space-y-4">
                   <Calendar
                     initialFocus
                     mode="range"
@@ -462,7 +504,26 @@ const TaskList = () => {
                     selected={dateRange}
                     onSelect={setDateRange}
                     numberOfMonths={2}
+                    showOutsideDays={false}
                   />
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setDateRange(undefined);
+                        setIsCalendarOpen(false);
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setIsCalendarOpen(false);
+                      }}
+                    >
+                      Aplicar
+                    </Button>
+                  </div>
                 </div>
               </div>
             </PopoverContent>
