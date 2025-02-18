@@ -312,6 +312,23 @@ const TaskList = () => {
   const [filterEstado, setFilterEstado] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
+  const handlePresetChange = (days: number) => {
+    const today = new Date();
+    if (days === 0) {
+      // Solo hoy
+      setDateRange({
+        from: today,
+        to: today
+      });
+    } else {
+      // Rango desde hoy hasta X días
+      setDateRange({
+        from: today,
+        to: addDays(today, days)
+      });
+    }
+  };
+
   const { data: tasks } = useQuery({
     queryKey: ["tasks", filterTipo, filterEstado, dateRange],
     queryFn: async () => {
@@ -378,7 +395,7 @@ const TaskList = () => {
               <Button
                 variant="outline"
                 className={cn(
-                  "w-[240px] justify-start text-left font-normal",
+                  "w-[300px] justify-start text-left font-normal",
                   !dateRange?.from && "text-muted-foreground"
                 )}
               >
@@ -397,15 +414,57 @@ const TaskList = () => {
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
-              <Calendar
-                initialFocus
-                mode="range"
-                defaultMonth={dateRange?.from}
-                selected={dateRange}
-                onSelect={setDateRange}
-                numberOfMonths={2}
-              />
+            <PopoverContent className="w-auto p-4" align="end">
+              <div className="space-y-4">
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => handlePresetChange(0)}
+                    >
+                      Hoy
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => handlePresetChange(3)}
+                    >
+                      Próximos 3 días
+                    </Button>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => handlePresetChange(7)}
+                    >
+                      Próximos 7 días
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => handlePresetChange(14)}
+                    >
+                      Próximos 14 días
+                    </Button>
+                  </div>
+                </div>
+                <Separator />
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm text-muted-foreground">
+                    O selecciona un rango personalizado:
+                  </p>
+                  <Calendar
+                    initialFocus
+                    mode="range"
+                    defaultMonth={dateRange?.from}
+                    selected={dateRange}
+                    onSelect={setDateRange}
+                    numberOfMonths={2}
+                  />
+                </div>
+              </div>
             </PopoverContent>
           </Popover>
         </div>
