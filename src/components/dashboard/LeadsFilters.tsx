@@ -128,7 +128,7 @@ export const LeadsFilters = ({
             <SelectValue placeholder="Seleccionar estado..." />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Todos</SelectItem>
+            <SelectItem value="all">Todos</SelectItem>
             {LEAD_STATUSES.map((status) => (
               <SelectItem key={status} value={status}>
                 {LEAD_STATUS_LABELS[status]}

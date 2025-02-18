@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
@@ -14,7 +13,7 @@ import LeadHistorialSheet from "@/components/LeadHistorialSheet";
 const Dashboard = () => {
   const [filterName, setFilterName] = useState("");
   const [filterEmail, setFilterEmail] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
   const [filterAssignedTo, setFilterAssignedTo] = useState("");
   const [openName, setOpenName] = useState(false);
   const [openEmail, setOpenEmail] = useState(false);
@@ -44,7 +43,7 @@ const Dashboard = () => {
   const filteredLeads = leads?.filter(lead => {
     const nameMatch = !filterName || lead.nombre_completo === filterName;
     const emailMatch = !filterEmail || lead.email === filterEmail;
-    const statusMatch = !filterStatus || lead.estado === filterStatus;
+    const statusMatch = filterStatus === "all" || lead.estado === filterStatus;
     const assignedMatch = !filterAssignedTo || lead.users?.nombre_completo === filterAssignedTo;
     return nameMatch && emailMatch && statusMatch && assignedMatch;
   }) || [];
