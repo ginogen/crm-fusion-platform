@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { CalendarCheck2, Users, Calendar as CalendarIcon, GraduationCap, Eye, ClipboardList, History, Pencil } from "lucide-react";
+import { CalendarCheck2, Users, Calendar as CalendarIcon, GraduationCap, Eye, ClipboardList, History } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { addDays, format, startOfWeek } from "date-fns";
@@ -26,6 +26,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { DateRange } from "react-day-picker";
 
 const CALENDAR_VIEWS = {
   MONTH: "month",
@@ -309,13 +310,7 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
 const TaskList = () => {
   const [filterTipo, setFilterTipo] = useState<string>("");
   const [filterEstado, setFilterEstado] = useState<string>("");
-  const [dateRange, setDateRange] = useState<{
-    from: Date | undefined;
-    to: Date | undefined;
-  }>({
-    from: undefined,
-    to: undefined,
-  });
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
   const { data: tasks } = useQuery({
     queryKey: ["tasks", filterTipo, filterEstado, dateRange],
@@ -334,10 +329,10 @@ const TaskList = () => {
       if (filterEstado) {
         query = query.eq('estado', filterEstado);
       }
-      if (dateRange.from) {
+      if (dateRange?.from) {
         query = query.gte('fecha', dateRange.from.toISOString());
       }
-      if (dateRange.to) {
+      if (dateRange?.to) {
         query = query.lte('fecha', dateRange.to.toISOString());
       }
 
@@ -384,11 +379,11 @@ const TaskList = () => {
                 variant="outline"
                 className={cn(
                   "w-[240px] justify-start text-left font-normal",
-                  !dateRange.from && "text-muted-foreground"
+                  !dateRange?.from && "text-muted-foreground"
                 )}
               >
                 <CalendarIconLucide className="mr-2 h-4 w-4" />
-                {dateRange.from ? (
+                {dateRange?.from ? (
                   dateRange.to ? (
                     <>
                       {format(dateRange.from, "dd/MM/yyyy")} -{" "}
@@ -406,8 +401,8 @@ const TaskList = () => {
               <Calendar
                 initialFocus
                 mode="range"
-                defaultMonth={dateRange.from}
-                selected={{ from: dateRange.from, to: dateRange.to }}
+                defaultMonth={dateRange?.from}
+                selected={dateRange}
                 onSelect={setDateRange}
                 numberOfMonths={2}
               />
