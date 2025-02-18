@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { Pencil, ClipboardList, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { LeadEstado } from "@/lib/types";
+import { useEffect, useState } from "react";
 
 interface LeadsTableProps {
   onEdit?: (lead: any) => void;
@@ -36,6 +37,7 @@ const LeadsTable = ({
   onSelectLead
 }: LeadsTableProps) => {
   const queryClient = useQueryClient();
+  const [allSelected, setAllSelected] = useState(false);
 
   const { data: leads } = useQuery({
     queryKey: ["leads"],
@@ -49,6 +51,34 @@ const LeadsTable = ({
       return data;
     },
   });
+
+  useEffect(() => {
+    if (leads?.length && leads.length > 0) {
+      const allLeadsSelected = leads.every(lead => selectedLeads.includes(lead.id));
+      setAllSelected(allLeadsSelected);
+    }
+  }, [selectedLeads, leads]);
+
+  const handleSelectAll = (checked: boolean) => {
+    if (!leads) return;
+    
+    const leadIds = leads.map(lead => lead.id);
+    if (checked) {
+      // Seleccionar todos los leads que no estén ya seleccionados
+      leadIds.forEach(id => {
+        if (!selectedLeads.includes(id)) {
+          onSelectLead?.(id, true);
+        }
+      });
+    } else {
+      // Deseleccionar todos los leads
+      leadIds.forEach(id => {
+        if (selectedLeads.includes(id)) {
+          onSelectLead?.(id, false);
+        }
+      });
+    }
+  };
 
   const updateLeadStatus = useMutation({
     mutationFn: async ({ leadId, newStatus }: { leadId: number, newStatus: LeadEstado }) => {
@@ -91,7 +121,14 @@ const LeadsTable = ({
         <TableHeader>
           <TableRow>
             {showCheckboxes && (
-              <TableHead className="w-12"></TableHead>
+              <TableHead className="w-12">
+                <input 
+                  type="checkbox" 
+                  className="rounded border-gray-300"
+                  checked={allSelected}
+                  onChange={(e) => handleSelectAll(e.target.checked)}
+                />
+              </TableHead>
             )}
             <TableHead>Nombre</TableHead>
             <TableHead>Email</TableHead>

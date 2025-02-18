@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Upload, UserPlus, Download } from "lucide-react";
 import LeadsTable from "@/components/leads/LeadsTable";
+import ModifyLeadsDialog from "@/components/leads/ModifyLeadsDialog";
 import { format } from "date-fns";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -428,6 +430,7 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
 const Datos = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
+  const [showModifyLeadsDialog, setShowModifyLeadsDialog] = useState(false);
   const [formData, setFormData] = useState<NewLeadForm>(initialFormState);
   const [isDuplicate, setIsDuplicate] = useState<boolean | null>(null);
   const [csvData, setCsvData] = useState<NewLeadForm[]>([]);
@@ -566,9 +569,17 @@ const Datos = () => {
         <h1 className="text-2xl font-bold">Datos</h1>
         <div className="flex gap-2">
           {selectedLeads.length > 0 && (
-            <p className="text-sm text-muted-foreground">
-              {selectedLeads.length} leads seleccionados
-            </p>
+            <>
+              <p className="text-sm text-muted-foreground self-center">
+                {selectedLeads.length} leads seleccionados
+              </p>
+              <Button 
+                variant="default"
+                onClick={() => setShowModifyLeadsDialog(true)}
+              >
+                Modificar Leads
+              </Button>
+            </>
           )}
           <Dialog open={isBulkDialogOpen} onOpenChange={setIsBulkDialogOpen}>
             <DialogTrigger asChild>
@@ -767,6 +778,12 @@ const Datos = () => {
           />
         </>
       )}
+
+      <ModifyLeadsDialog 
+        isOpen={showModifyLeadsDialog}
+        onClose={() => setShowModifyLeadsDialog(false)}
+        selectedLeads={selectedLeads}
+      />
     </div>
   );
 };
