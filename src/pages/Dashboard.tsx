@@ -311,24 +311,40 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
       const { data: historialData, error: historialError } = await supabase
         .from("lead_history")
         .select("*")
-        .eq("lead_id", lead.id)
+        .eq("lead_id", Number(lead.id))
         .order("created_at", { ascending: false });
 
-      if (historialError) throw historialError;
+      if (historialError) {
+        console.error("Error fetching lead history:", historialError);
+        throw historialError;
+      }
 
-      const userIds = historialData.map(item => item.user_id);
-      const { data: usersData, error: usersError } = await supabase
-        .from("users")
-        .select("id, nombre_completo")
-        .in("id", userIds);
+      if (!historialData || historialData.length === 0) {
+        return [];
+      }
 
-      if (usersError) throw usersError;
+      const userIds = historialData.map(item => item.user_id).filter(Boolean);
+      
+      let usersData = [];
+      if (userIds.length > 0) {
+        const { data: userData, error: usersError } = await supabase
+          .from("users")
+          .select("id, nombre_completo")
+          .in("id", userIds);
+
+        if (usersError) {
+          console.error("Error fetching users:", usersError);
+          throw usersError;
+        }
+        usersData = userData || [];
+      }
 
       const historialConUsuarios = historialData.map(item => ({
         ...item,
-        users: usersData.find(user => user.id === item.user_id)
+        users: usersData.find(user => user.id === item.user_id) || { nombre_completo: 'Usuario no encontrado' }
       }));
 
+      console.log("Historial procesado:", historialConUsuarios);
       return historialConUsuarios;
     },
     enabled: !!lead?.id
@@ -361,26 +377,30 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
           <div className="space-y-4">
             <h3 className="font-semibold">Historial de Acciones</h3>
             <div className="space-y-4">
-              {historial?.map((item) => (
-                <div key={item.id} className="border rounded-lg p-4 space-y-2">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-medium">{item.action}</p>
+              {historial && historial.length > 0 ? (
+                historial.map((item) => (
+                  <div key={item.id} className="border rounded-lg p-4 space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-medium">{item.action}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Por: {item.users?.nombre_completo}
+                        </p>
+                      </div>
                       <p className="text-sm text-muted-foreground">
-                        Por: {item.users?.nombre_completo}
+                        {format(new Date(item.created_at), "dd/MM/yyyy HH:mm")}
                       </p>
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {format(new Date(item.created_at), "dd/MM/yyyy HH:mm")}
-                    </p>
+                    {item.details && (
+                      <p className="text-sm whitespace-pre-wrap">
+                        {typeof item.details === 'string' ? item.details : JSON.stringify(item.details, null, 2)}
+                      </p>
+                    )}
                   </div>
-                  {item.details && (
-                    <p className="text-sm whitespace-pre-wrap">
-                      {typeof item.details === 'string' ? item.details : JSON.stringify(item.details, null, 2)}
-                    </p>
-                  )}
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="text-muted-foreground text-sm">No hay registros en el historial</p>
+              )}
             </div>
           </div>
         </div>
