@@ -16,6 +16,16 @@ import { addDays, format, startOfWeek } from "date-fns";
 import { toast } from "sonner";
 import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import {
+  ChevronDown,
+  CalendarIcon as CalendarIconLucide,
+  Filter
+} from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 const CALENDAR_VIEWS = {
   MONTH: "month",
@@ -293,6 +303,173 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
         </div>
       </SheetContent>
     </Sheet>
+  );
+};
+
+const TaskList = () => {
+  const [filterTipo, setFilterTipo] = useState<string>("");
+  const [filterEstado, setFilterEstado] = useState<string>("");
+  const [dateRange, setDateRange] = useState<{
+    from: Date | undefined;
+    to: Date | undefined;
+  }>({
+    from: undefined,
+    to: undefined,
+  });
+
+  const { data: tasks } = useQuery({
+    queryKey: ["tasks", filterTipo, filterEstado, dateRange],
+    queryFn: async () => {
+      let query = supabase
+        .from("tareas")
+        .select(`
+          *,
+          leads (nombre_completo, email, telefono),
+          users (nombre_completo)
+        `);
+
+      if (filterTipo) {
+        query = query.eq('tipo', filterTipo);
+      }
+      if (filterEstado) {
+        query = query.eq('estado', filterEstado);
+      }
+      if (dateRange.from) {
+        query = query.gte('fecha', dateRange.from.toISOString());
+      }
+      if (dateRange.to) {
+        query = query.lte('fecha', dateRange.to.toISOString());
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  return (
+    <Card className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-lg font-semibold">Listado de Tareas</h2>
+        <div className="flex gap-2">
+          <Select value={filterTipo} onValueChange={setFilterTipo}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Tipo de tarea" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Todas</SelectItem>
+              {MANAGEMENT_TYPES.map((tipo) => (
+                <SelectItem key={tipo} value={tipo}>
+                  {tipo}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={filterEstado} onValueChange={setFilterEstado}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Estado" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Todos</SelectItem>
+              <SelectItem value="PENDIENTE">Pendiente</SelectItem>
+              <SelectItem value="COMPLETADA">Completada</SelectItem>
+              <SelectItem value="CANCELADA">Cancelada</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                  "w-[240px] justify-start text-left font-normal",
+                  !dateRange.from && "text-muted-foreground"
+                )}
+              >
+                <CalendarIconLucide className="mr-2 h-4 w-4" />
+                {dateRange.from ? (
+                  dateRange.to ? (
+                    <>
+                      {format(dateRange.from, "dd/MM/yyyy")} -{" "}
+                      {format(dateRange.to, "dd/MM/yyyy")}
+                    </>
+                  ) : (
+                    format(dateRange.from, "dd/MM/yyyy")
+                  )
+                ) : (
+                  <span>Seleccionar fecha</span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end">
+              <Calendar
+                initialFocus
+                mode="range"
+                defaultMonth={dateRange.from}
+                selected={{ from: dateRange.from, to: dateRange.to }}
+                onSelect={setDateRange}
+                numberOfMonths={2}
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
+
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Lead</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead>Responsable</TableHead>
+              <TableHead>Fecha</TableHead>
+              <TableHead>Observaciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {tasks?.map((task) => (
+              <TableRow key={task.id}>
+                <TableCell>
+                  <div>
+                    <p className="font-medium">{task.leads?.nombre_completo}</p>
+                    <p className="text-sm text-muted-foreground">{task.leads?.email}</p>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className={cn(
+                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                    task.tipo === "LLAMADA" && "bg-blue-100 text-blue-800",
+                    task.tipo === "CITA" && "bg-purple-100 text-purple-800",
+                    task.tipo === "EMAIL" && "bg-yellow-100 text-yellow-800"
+                  )}>
+                    {task.tipo}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className={cn(
+                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                    task.estado === "PENDIENTE" && "bg-yellow-100 text-yellow-800",
+                    task.estado === "COMPLETADA" && "bg-green-100 text-green-800",
+                    task.estado === "CANCELADA" && "bg-red-100 text-red-800"
+                  )}>
+                    {task.estado}
+                  </div>
+                </TableCell>
+                <TableCell>{task.users?.nombre_completo}</TableCell>
+                <TableCell>{task.fecha ? format(new Date(task.fecha), "dd/MM/yyyy HH:mm") : "-"}</TableCell>
+                <TableCell>
+                  <p className="max-w-[300px] truncate" title={task.observaciones}>
+                    {task.observaciones || "-"}
+                  </p>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </Card>
   );
 };
 
@@ -646,6 +823,8 @@ const Dashboard = () => {
           </div>
         </div>
       </Card>
+
+      <TaskList />
 
       {selectedLead && (
         <>
