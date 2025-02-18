@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { addDays, format, startOfWeek } from "date-fns";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -13,10 +14,9 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { CalendarCheck2, Users, Calendar as CalendarIcon, GraduationCap, Eye, ClipboardList, History } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { addDays, format, startOfWeek } from "date-fns";
-import { toast } from "sonner";
 import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   ChevronDown,
   CalendarIcon as CalendarIconLucide,
