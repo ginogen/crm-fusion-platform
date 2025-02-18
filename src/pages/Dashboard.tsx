@@ -599,9 +599,7 @@ const TaskList = () => {
 };
 
 const Dashboard = () => {
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedLead, setSelectedLead] = useState<any>(null);
-  const [calendarView, setCalendarView] = useState<CalendarView>(CALENDAR_VIEWS.MONTH);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showGestionModal, setShowGestionModal] = useState(false);
   const [showHistorialSheet, setShowHistorialSheet] = useState(false);
@@ -671,48 +669,6 @@ const Dashboard = () => {
     },
   });
 
-  const { data: tasks } = useQuery({
-    queryKey: ["tasks", selectedDate],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("tareas")
-        .select(`
-          *,
-          leads (nombre_completo, email, telefono),
-          users (nombre_completo)
-        `)
-        .gte("fecha", selectedDate?.toISOString() || "")
-        .lte("fecha", selectedDate?.toISOString() || "");
-
-      return data;
-    },
-  });
-
-  const getFilteredTasks = () => {
-    if (!tasks) return [];
-    
-    const today = new Date(selectedDate || new Date());
-    
-    switch (calendarView) {
-      case CALENDAR_VIEWS.DAY:
-        return tasks.filter(task => {
-          const taskDate = new Date(task.fecha);
-          return taskDate.toDateString() === today.toDateString();
-        });
-      
-      case CALENDAR_VIEWS.WEEK:
-        const weekStart = startOfWeek(today);
-        const weekEnd = addDays(weekStart, 7);
-        return tasks.filter(task => {
-          const taskDate = new Date(task.fecha);
-          return taskDate >= weekStart && taskDate < weekEnd;
-        });
-      
-      default:
-        return tasks;
-    }
-  };
-
   const updateLeadStatus = useMutation({
     mutationFn: async ({ leadId, newStatus }: { leadId: number, newStatus: LeadEstado }) => {
       const { data: lead } = await supabase
@@ -775,44 +731,7 @@ const Dashboard = () => {
         ))}
       </div>
 
-      <Card className="p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">Calendario de Tareas</h2>
-          <div className="flex gap-2">
-            <Button 
-              variant={calendarView === CALENDAR_VIEWS.MONTH ? "default" : "outline"} 
-              size="sm"
-              onClick={() => setCalendarView(CALENDAR_VIEWS.MONTH)}
-            >
-              Mes
-            </Button>
-            <Button 
-              variant={calendarView === CALENDAR_VIEWS.WEEK ? "default" : "outline"} 
-              size="sm"
-              onClick={() => setCalendarView(CALENDAR_VIEWS.WEEK)}
-            >
-              Semana
-            </Button>
-            <Button 
-              variant={calendarView === CALENDAR_VIEWS.DAY ? "default" : "outline"} 
-              size="sm"
-              onClick={() => setCalendarView(CALENDAR_VIEWS.DAY)}
-            >
-              Día
-            </Button>
-          </div>
-        </div>
-        <div className="relative">
-          <Calendar
-            mode="single"
-            selected={selectedDate}
-            onSelect={setSelectedDate}
-            className="rounded-md border"
-            view={calendarView}
-            tasks={getFilteredTasks()}
-          />
-        </div>
-      </Card>
+      <TaskList />
 
       <Card className="p-6">
         <h2 className="text-lg font-semibold mb-6">Leads Recientes</h2>
@@ -948,8 +867,6 @@ const Dashboard = () => {
           </div>
         </div>
       </Card>
-
-      <TaskList />
 
       {selectedLead && (
         <>
