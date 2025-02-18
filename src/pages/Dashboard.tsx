@@ -1,27 +1,272 @@
-
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { CalendarCheck2, Users, Calendar as CalendarIcon, GraduationCap, Eye, ClipboardList, History } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS } from "@/lib/constants";
+import { LEAD_STATUSES, LEAD_STATUS_LABELS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { DateRange } from "react-day-picker";
 import type { LeadEstado } from "@/lib/types";
 import ModifyLeadsDialog from "@/components/leads/ModifyLeadsDialog";
+
+// Componente TaskList separado
+const TaskList = () => {
+  const { data: tasks } = useQuery({
+    queryKey: ["tasks"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("tareas")
+        .select(`
+          *,
+          leads (nombre_completo)
+        `)
+        .order('fecha', { ascending: true })
+        .limit(5);
+      return data;
+    }
+  });
+
+  if (!tasks || tasks.length === 0) {
+    return <Card className="p-6">
+      <p className="text-muted-foreground">No hay tareas pendientes</p>
+    </Card>;
+  }
+
+  return (
+    <Card className="p-6">
+      <h2 className="text-lg font-semibold mb-4">Tareas Pendientes</h2>
+      <div className="space-y-4">
+        {tasks.map((task) => (
+          <div key={task.id} className="flex justify-between items-start border-b pb-4">
+            <div>
+              <p className="font-medium">{task.tipo}</p>
+              <p className="text-sm text-muted-foreground">
+                Lead: {task.leads?.nombre_completo}
+              </p>
+              <p className="text-sm text-muted-foreground">{task.observaciones}</p>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {format(new Date(task.fecha), "dd/MM/yyyy HH:mm")}
+            </p>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+};
+
+// Componentes de modales
+const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
+  const queryClient = useQueryClient();
+  const [formData, setFormData] = useState({
+    nombre_completo: lead?.nombre_completo || "",
+    email: lead?.email || "",
+    telefono: lead?.telefono || "",
+    origen: lead?.origen || "",
+    pais: lead?.pais || "",
+    filial: lead?.filial || "",
+    observaciones: lead?.observaciones || ""
+  });
+
+  const updateLead = useMutation({
+    mutationFn: async (data: any) => {
+      const { error } = await supabase
+        .from("leads")
+        .update(data)
+        .eq("id", lead.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      toast.success("Lead actualizado correctamente");
+      onClose();
+    }
+  });
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar Lead</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Nombre</Label>
+              <Input
+                value={formData.nombre_completo}
+                onChange={(e) => setFormData(prev => ({ ...prev, nombre_completo: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input
+                value={formData.email}
+                onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>Teléfono</Label>
+              <Input
+                value={formData.telefono}
+                onChange={(e) => setFormData(prev => ({ ...prev, telefono: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>Origen</Label>
+              <Input
+                value={formData.origen}
+                onChange={(e) => setFormData(prev => ({ ...prev, origen: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>País</Label>
+              <Input
+                value={formData.pais}
+                onChange={(e) => setFormData(prev => ({ ...prev, pais: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>Filial</Label>
+              <Input
+                value={formData.filial}
+                onChange={(e) => setFormData(prev => ({ ...prev, filial: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>Observaciones</Label>
+              <Input
+                value={formData.observaciones}
+                onChange={(e) => setFormData(prev => ({ ...prev, observaciones: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button onClick={() => updateLead.mutate(formData)}>Guardar</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
+  const [tipo, setTipo] = useState("");
+  const [fecha, setFecha] = useState<Date>();
+  const [observaciones, setObservaciones] = useState("");
+  const queryClient = useQueryClient();
+
+  const createGestion = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("tareas")
+        .insert({
+          lead_id: lead.id,
+          tipo,
+          fecha: fecha?.toISOString(),
+          observaciones
+        });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success("Gestión registrada correctamente");
+      onClose();
+    }
+  });
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Nueva Gestión</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium">Tipo de Gestión</label>
+            <Select>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar tipo..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="LLAMADA">Llamada</SelectItem>
+                <SelectItem value="WHATSAPP">Whatsapp</SelectItem>
+                <SelectItem value="CITA">Cita</SelectItem>
+                <SelectItem value="EMAIL">Email</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium">Fecha</label>
+            <Input
+              type="datetime-local"
+              value={fecha ? format(fecha, "yyyy-MM-dd'T'HH:mm") : ""}
+              onChange={(e) => setFecha(new Date(e.target.value))}
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium">Observaciones</label>
+            <Textarea
+              value={observaciones}
+              onChange={(e) => setObservaciones(e.target.value)}
+              placeholder="Ingrese las observaciones..."
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button onClick={() => createGestion.mutate()}>Guardar</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
+  const { data: historial } = useQuery({
+    queryKey: ["lead-history", lead?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("lead_history")
+        .select("*")
+        .eq("lead_id", lead.id)
+        .order("created_at", { ascending: false });
+      return data;
+    },
+    enabled: !!lead?.id
+  });
+
+  return (
+    <Sheet open={isOpen} onOpenChange={onClose}>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Historial del Lead</SheetTitle>
+        </SheetHeader>
+        <div className="mt-6">
+          {historial?.map((item) => (
+            <div key={item.id}>
+              <p>{item.action}</p>
+              <p>{item.details}</p>
+            </div>
+          ))}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+};
 
 const Dashboard = () => {
   const queryClient = useQueryClient();
