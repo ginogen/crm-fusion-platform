@@ -1,4 +1,3 @@
-<lov-code>
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,6 +41,9 @@ import {
   CommandInput,
   CommandItem,
 } from "@/components/ui/command";
+import LeadEditModal from "@/components/LeadEditModal";
+import GestionModal from "@/components/GestionModal";
+import LeadHistorialSheet from "@/components/LeadHistorialSheet";
 
 const CALENDAR_VIEWS = {
   MONTH: "month",
@@ -53,7 +55,7 @@ type CalendarView = typeof CALENDAR_VIEWS[keyof typeof CALENDAR_VIEWS];
 type LeadEstado = typeof LEAD_STATUSES[number];
 type TipoGestion = typeof MANAGEMENT_TYPES[number];
 
-const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
+const LeadEditModalComponent = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
   const [formData, setFormData] = useState({
     nombre_completo: lead?.nombre_completo || "",
     email: lead?.email || "",
@@ -214,7 +216,7 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
   );
 };
 
-const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
+const GestionModalComponent = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
   const [tipo, setTipo] = useState<TipoGestion | "">("");
   const [fecha, setFecha] = useState<Date>();
   const [observaciones, setObservaciones] = useState("");
@@ -326,7 +328,7 @@ const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, o
   );
 };
 
-const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
+const LeadHistorialSheetComponent = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
   const { data: historial } = useQuery({
     queryKey: ["lead-history", lead?.id],
     queryFn: async () => {
@@ -920,8 +922,4 @@ const Dashboard = () => {
                     className="w-full justify-between"
                   >
                     {filterEmail || "Seleccionar email..."}
-                    <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-full p-0">
-                  {leads && leads.length >
+                    <Search className="ml-2 h-4 w-4 shrink-0 opacity
