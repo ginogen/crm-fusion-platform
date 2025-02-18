@@ -1,0 +1,2 @@
+
+export type LeadEstado = "SIN_LLAMAR" | "LLAMAR_DESPUES" | "CITA_PROGRAMADA" | "MATRICULA";

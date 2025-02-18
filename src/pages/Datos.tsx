@@ -1,7 +1,5 @@
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,16 +11,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Pencil, ClipboardList, History, Upload, UserPlus, Download } from "lucide-react";
+import { Upload, UserPlus, Download } from "lucide-react";
+import LeadsTable from "@/components/leads/LeadsTable";
 
 interface NewLeadForm {
   nombre_completo: string;
@@ -61,19 +53,10 @@ const Datos = () => {
   const [isDuplicate, setIsDuplicate] = useState<boolean | null>(null);
   const [csvData, setCsvData] = useState<NewLeadForm[]>([]);
   const [previewData, setPreviewData] = useState<NewLeadForm[]>([]);
-
-  const { data: leads, refetch } = useQuery({
-    queryKey: ["leads"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("leads")
-        .select(`
-          *,
-          users (nombre_completo)
-        `);
-      return data;
-    },
-  });
+  const [selectedLead, setSelectedLead] = useState<any>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showGestionModal, setShowGestionModal] = useState(false);
+  const [showHistorialSheet, setShowHistorialSheet] = useState(false);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -117,7 +100,6 @@ const Datos = () => {
     toast.success("Lead guardado exitosamente");
     setFormData(initialFormState);
     setIsDialogOpen(false);
-    refetch();
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -130,7 +112,6 @@ const Datos = () => {
       const lines = text.split('\n');
       const headers = lines[0].split(',').map(h => h.trim());
 
-      // Validar encabezados
       const isValidHeaders = CSV_HEADERS.every(header => 
         headers.includes(header)
       );
@@ -140,7 +121,6 @@ const Datos = () => {
         return;
       }
 
-      // Procesar datos
       const parsedData = lines.slice(1).map(line => {
         const values = line.split(',').map(v => v.trim());
         return {
@@ -155,7 +135,7 @@ const Datos = () => {
       }).filter(lead => lead.nombre_completo && lead.email && lead.telefono);
 
       setCsvData(parsedData);
-      setPreviewData(parsedData.slice(0, 5)); // Mostrar solo los primeros 5 registros
+      setPreviewData(parsedData.slice(0, 5));
       toast.success(`${parsedData.length} leads encontrados en el archivo`);
     };
 
@@ -179,7 +159,6 @@ const Datos = () => {
     setCsvData([]);
     setPreviewData([]);
     setIsBulkDialogOpen(false);
-    refetch();
   };
 
   const downloadTemplate = () => {
@@ -232,31 +211,9 @@ const Datos = () => {
                 {previewData.length > 0 && (
                   <div className="space-y-4">
                     <h3 className="font-medium">Vista Previa (5 primeros registros)</h3>
-                    <div className="rounded-md border overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Nombre</TableHead>
-                            <TableHead>Email</TableHead>
-                            <TableHead>Teléfono</TableHead>
-                            <TableHead>País</TableHead>
-                            <TableHead>Filial</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {previewData.map((lead, index) => (
-                            <TableRow key={index}>
-                              <TableCell>{lead.nombre_completo}</TableCell>
-                              <TableCell>{lead.email}</TableCell>
-                              <TableCell>{lead.telefono}</TableCell>
-                              <TableCell>{lead.pais}</TableCell>
-                              <TableCell>{lead.filial}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                    <div className="rounded-md border">
+                      <LeadsTable />
                     </div>
-
                     <div className="flex justify-end">
                       <Button onClick={handleBulkUpload}>
                         Cargar {csvData.length} Leads
@@ -371,59 +328,20 @@ const Datos = () => {
         </div>
       </div>
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-12"></TableHead>
-              <TableHead>Nombre</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Teléfono</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead>Asignado A</TableHead>
-              <TableHead>Fecha</TableHead>
-              <TableHead>Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {leads?.map((lead) => (
-              <TableRow key={lead.id}>
-                <TableCell>
-                  <input type="checkbox" className="rounded border-gray-300" />
-                </TableCell>
-                <TableCell>{lead.nombre_completo}</TableCell>
-                <TableCell>{lead.email}</TableCell>
-                <TableCell>{lead.telefono}</TableCell>
-                <TableCell>
-                  <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                    ${lead.estado === 'LLAMAR_DESPUES' ? 'bg-blue-100 text-blue-800' :
-                      lead.estado === 'CITA_PROGRAMADA' ? 'bg-yellow-100 text-yellow-800' :
-                      lead.estado === 'MATRICULA' ? 'bg-green-100 text-green-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                    {lead.estado}
-                  </div>
-                </TableCell>
-                <TableCell>{lead.users?.nombre_completo}</TableCell>
-                <TableCell>{new Date(lead.created_at).toLocaleDateString()}</TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
-                    <button className="text-gray-600 hover:text-gray-900">
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button className="text-gray-600 hover:text-gray-900">
-                      <ClipboardList className="h-4 w-4" />
-                    </button>
-                    <button className="text-gray-600 hover:text-gray-900">
-                      <History className="h-4 w-4" />
-                    </button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      <LeadsTable 
+        onEdit={(lead) => {
+          setSelectedLead(lead);
+          setShowEditModal(true);
+        }}
+        onGestion={(lead) => {
+          setSelectedLead(lead);
+          setShowGestionModal(true);
+        }}
+        onHistorial={(lead) => {
+          setSelectedLead(lead);
+          setShowHistorialSheet(true);
+        }}
+      />
     </div>
   );
 };
