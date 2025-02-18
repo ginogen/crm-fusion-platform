@@ -15,6 +15,122 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { LeadEstado } from "@/lib/types";
+
+const TasksSummary = () => {
+  const { data: tasks } = useQuery({
+    queryKey: ["tasks"],
+    queryFn: async () => {
+      const { data: tasksData, error } = await supabase
+        .from("tareas")
+        .select(`
+          *,
+          leads (
+            nombre_completo,
+            email,
+            telefono
+          )
+        `)
+        .order('fecha', { ascending: true });
+
+      if (error) throw error;
+      return tasksData || [];
+    }
+  });
+
+  const today = new Date();
+  const pendingTasks = tasks?.filter(task => 
+    task.fecha && new Date(task.fecha) > today
+  ) || [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Próximas Tareas</CardTitle>
+        <CardDescription>Listado de tareas pendientes</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {pendingTasks.length > 0 ? (
+            pendingTasks.map((task) => (
+              <div key={task.id} className="flex justify-between items-start border-b pb-4">
+                <div>
+                  <p className="font-medium">{task.tipo}</p>
+                  <p className="text-sm text-muted-foreground">Lead: {task.leads?.nombre_completo}</p>
+                  <p className="text-sm text-muted-foreground">{task.observaciones}</p>
+                </div>
+                <p className="text-sm">
+                  {format(new Date(task.fecha), "dd/MM/yyyy HH:mm")}
+                </p>
+              </div>
+            ))
+          ) : (
+            <p className="text-muted-foreground text-sm">No hay tareas pendientes</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+const LeadsSummary = () => {
+  const { data: leadsSummary } = useQuery({
+    queryKey: ["leads-summary"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("leads")
+        .select("estado")
+        .not("estado", "is", null);
+
+      if (error) throw error;
+
+      const summary = data.reduce((acc: Record<LeadEstado, number>, lead) => {
+        acc[lead.estado] = (acc[lead.estado] || 0) + 1;
+        return acc;
+      }, {} as Record<LeadEstado, number>);
+
+      return summary;
+    }
+  });
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Sin Llamar</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">{leadsSummary?.SIN_LLAMAR || 0}</div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Llamar Después</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">{leadsSummary?.LLAMAR_DESPUES || 0}</div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Cita Programada</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">{leadsSummary?.CITA_PROGRAMADA || 0}</div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Matrícula</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">{leadsSummary?.MATRICULA || 0}</div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
 
 const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
   const [formData, setFormData] = useState({
@@ -398,23 +514,32 @@ const Dashboard = () => {
         </div>
       </div>
 
-      <LeadsTable 
-        showCheckboxes={true}
-        selectedLeads={selectedLeads}
-        onSelectLead={handleSelectLead}
-        onEdit={(lead) => {
-          setSelectedLead(lead);
-          setShowEditModal(true);
-        }}
-        onGestion={(lead) => {
-          setSelectedLead(lead);
-          setShowGestionModal(true);
-        }}
-        onHistorial={(lead) => {
-          setSelectedLead(lead);
-          setShowHistorialSheet(true);
-        }}
-      />
+      <LeadsSummary />
+
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-[2fr_1fr]">
+        <div className="space-y-4">
+          <LeadsTable 
+            showCheckboxes={true}
+            selectedLeads={selectedLeads}
+            onSelectLead={handleSelectLead}
+            onEdit={(lead) => {
+              setSelectedLead(lead);
+              setShowEditModal(true);
+            }}
+            onGestion={(lead) => {
+              setSelectedLead(lead);
+              setShowGestionModal(true);
+            }}
+            onHistorial={(lead) => {
+              setSelectedLead(lead);
+              setShowHistorialSheet(true);
+            }}
+          />
+        </div>
+        <div>
+          <TasksSummary />
+        </div>
+      </div>
 
       {selectedLead && (
         <>
