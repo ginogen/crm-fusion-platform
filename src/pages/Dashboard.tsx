@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -777,7 +776,7 @@ const Dashboard = () => {
           *,
           users (nombre_completo)
         `);
-      return data;
+      return data || [];
     },
   });
 
@@ -826,7 +825,7 @@ const Dashboard = () => {
     const statusMatch = !filterStatus || lead.estado === filterStatus;
     const assignedMatch = !filterAssignedTo || lead.users?.nombre_completo === filterAssignedTo;
     return nameMatch && emailMatch && statusMatch && assignedMatch;
-  });
+  }) || [];
 
   return (
     <div className="space-y-8 animate-fade-in">
