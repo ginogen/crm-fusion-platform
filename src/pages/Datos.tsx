@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -434,9 +433,18 @@ const Datos = () => {
   const [csvData, setCsvData] = useState<NewLeadForm[]>([]);
   const [previewData, setPreviewData] = useState<NewLeadForm[]>([]);
   const [selectedLead, setSelectedLead] = useState<any>(null);
+  const [selectedLeads, setSelectedLeads] = useState<number[]>([]);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showGestionModal, setShowGestionModal] = useState(false);
   const [showHistorialSheet, setShowHistorialSheet] = useState(false);
+
+  const handleSelectLead = (leadId: number, selected: boolean) => {
+    if (selected) {
+      setSelectedLeads(prev => [...prev, leadId]);
+    } else {
+      setSelectedLeads(prev => prev.filter(id => id !== leadId));
+    }
+  };
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -557,6 +565,11 @@ const Datos = () => {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Datos</h1>
         <div className="flex gap-2">
+          {selectedLeads.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              {selectedLeads.length} leads seleccionados
+            </p>
+          )}
           <Dialog open={isBulkDialogOpen} onOpenChange={setIsBulkDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline">
@@ -709,6 +722,9 @@ const Datos = () => {
       </div>
 
       <LeadsTable 
+        showCheckboxes={true}
+        selectedLeads={selectedLeads}
+        onSelectLead={handleSelectLead}
         onEdit={(lead) => {
           setSelectedLead(lead);
           setShowEditModal(true);
