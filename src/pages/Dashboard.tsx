@@ -308,8 +308,8 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
 };
 
 const TaskList = () => {
-  const [filterTipo, setFilterTipo] = useState<string>("");
-  const [filterEstado, setFilterEstado] = useState<string>("");
+  const [filterTipo, setFilterTipo] = useState<string>("all");
+  const [filterEstado, setFilterEstado] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
   const { data: tasks } = useQuery({
@@ -323,10 +323,10 @@ const TaskList = () => {
           users (nombre_completo)
         `);
 
-      if (filterTipo) {
+      if (filterTipo !== "all") {
         query = query.eq('tipo', filterTipo);
       }
-      if (filterEstado) {
+      if (filterEstado !== "all") {
         query = query.eq('estado', filterEstado);
       }
       if (dateRange?.from) {
@@ -352,7 +352,7 @@ const TaskList = () => {
               <SelectValue placeholder="Tipo de tarea" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Todas</SelectItem>
+              <SelectItem value="all">Todas</SelectItem>
               {MANAGEMENT_TYPES.map((tipo) => (
                 <SelectItem key={tipo} value={tipo}>
                   {tipo}
@@ -366,7 +366,7 @@ const TaskList = () => {
               <SelectValue placeholder="Estado" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Todos</SelectItem>
+              <SelectItem value="all">Todos</SelectItem>
               <SelectItem value="PENDIENTE">Pendiente</SelectItem>
               <SelectItem value="COMPLETADA">Completada</SelectItem>
               <SelectItem value="CANCELADA">Cancelada</SelectItem>
