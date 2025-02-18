@@ -1,3 +1,4 @@
+<lov-code>
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -923,4 +924,4 @@ const Dashboard = () => {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-full p-0">
-                  {leads && leads.length > 0 ?
+                  {leads && leads.length >
