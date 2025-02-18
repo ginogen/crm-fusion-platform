@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -29,6 +29,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS } from "@/lib/constants";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import TaskList from "@/components/TaskList";
 
 const Dashboard = () => {
   const [filterName, setFilterName] = useState("");
@@ -57,7 +58,6 @@ const Dashboard = () => {
     },
   });
 
-  // Solo calculamos los valores únicos si tenemos datos
   const uniqueNames = leads ? Array.from(new Set(leads.map(lead => lead.nombre_completo))).filter(Boolean) : [];
   const uniqueEmails = leads ? Array.from(new Set(leads.map(lead => lead.email))).filter(Boolean) : [];
   const uniqueUsers = leads ? Array.from(new Set(leads.map(lead => lead.users?.nombre_completo))).filter(Boolean) : [];
