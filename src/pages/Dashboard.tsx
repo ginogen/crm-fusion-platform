@@ -308,17 +308,28 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
   const { data: historial } = useQuery({
     queryKey: ["lead-history", lead?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: historialData, error: historialError } = await supabase
         .from("lead_history")
-        .select(`
-          *,
-          users (nombre_completo)
-        `)
+        .select("*")
         .eq("lead_id", lead.id)
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      return data;
+      if (historialError) throw historialError;
+
+      const userIds = historialData.map(item => item.user_id);
+      const { data: usersData, error: usersError } = await supabase
+        .from("users")
+        .select("id, nombre_completo")
+        .in("id", userIds);
+
+      if (usersError) throw usersError;
+
+      const historialConUsuarios = historialData.map(item => ({
+        ...item,
+        users: usersData.find(user => user.id === item.user_id)
+      }));
+
+      return historialConUsuarios;
     },
     enabled: !!lead?.id
   });
