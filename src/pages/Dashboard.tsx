@@ -937,6 +937,35 @@ const Dashboard = () => {
             </Table>
           </div>
         </div>
+
+        {selectedLead && (
+          <>
+            <LeadEditModal
+              lead={selectedLead}
+              isOpen={showEditModal}
+              onClose={() => {
+                setShowEditModal(false);
+                setSelectedLead(null);
+              }}
+            />
+            <GestionModal
+              lead={selectedLead}
+              isOpen={showGestionModal}
+              onClose={() => {
+                setShowGestionModal(false);
+                setSelectedLead(null);
+              }}
+            />
+            <LeadHistorialSheet
+              lead={selectedLead}
+              isOpen={showHistorialSheet}
+              onClose={() => {
+                setShowHistorialSheet(false);
+                setSelectedLead(null);
+              }}
+            />
+          </>
+        )}
       </Card>
     </div>
   );
