@@ -317,17 +317,31 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
   const { data: historial } = useQuery({
     queryKey: ["lead-history", lead?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Primero obtenemos el historial
+      const { data: historialData, error: historialError } = await supabase
         .from("lead_history")
-        .select(`
-          *,
-          users (nombre_completo)
-        `)
+        .select("*")
         .eq("lead_id", lead.id)
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      return data;
+      if (historialError) throw historialError;
+
+      // Luego obtenemos los usuarios relacionados
+      const userIds = historialData.map(item => item.user_id).filter(Boolean);
+      const { data: usersData, error: usersError } = await supabase
+        .from("users")
+        .select("id, nombre_completo")
+        .in("id", userIds);
+
+      if (usersError) throw usersError;
+
+      // Combinamos los datos manualmente
+      const historialConUsuarios = historialData.map(item => ({
+        ...item,
+        users: usersData?.find(user => user.id === item.user_id)
+      }));
+
+      return historialConUsuarios;
     },
     enabled: !!lead?.id
   });
