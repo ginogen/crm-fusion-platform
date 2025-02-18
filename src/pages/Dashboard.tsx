@@ -304,6 +304,51 @@ const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, o
   );
 };
 
+const formatHistoryDetails = (details: string) => {
+  try {
+    const data = JSON.parse(details);
+    
+    if (data.changes && Array.isArray(data.changes)) {
+      const changedFields = data.changes.map((field: string) => {
+        const previousValue = data.previous[field];
+        const newValue = data.new[field];
+        return `${field}: ${previousValue || 'No definido'} → ${newValue || 'No definido'}`;
+      });
+      return changedFields.join('\n');
+    }
+    
+    // Si es una acción de creación o asignación
+    if (data.previous && data.new) {
+      const changes = [];
+      for (const key in data.new) {
+        if (data.previous[key] !== data.new[key]) {
+          changes.push(`${key}: ${data.previous[key] || 'No definido'} → ${data.new[key] || 'No definido'}`);
+        }
+      }
+      return changes.join('\n');
+    }
+    
+    // Si es otro tipo de detalle, lo mostramos como texto
+    return JSON.stringify(data, null, 2);
+  } catch (e) {
+    // Si no es JSON válido, devolvemos el texto original
+    return details;
+  }
+};
+
+const formatAction = (action: string) => {
+  const actionMap: { [key: string]: string } = {
+    'LEAD_CREATED': 'Lead Creado',
+    'LEAD_UPDATED': 'Lead Actualizado',
+    'LEAD_ASSIGNED': 'Lead Asignado',
+    'STATUS_CHANGED': 'Estado Cambiado',
+    'COMMENT_ADDED': 'Comentario Agregado',
+    // Agrega más mappings según necesites
+  };
+  
+  return actionMap[action] || action;
+};
+
 const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
   const { data: historial } = useQuery({
     queryKey: ["lead-history", lead?.id],
@@ -312,9 +357,7 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
 
       const { data: historialData, error: historialError } = await supabase
         .from("lead_history")
-        .select(`
-          *
-        `)
+        .select('*')
         .eq("lead_id", Number(lead.id))
         .order("created_at", { ascending: false });
 
@@ -359,8 +402,6 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
     enabled: !!lead?.id
   });
 
-  console.log("Rendered historial:", historial);
-
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
@@ -393,7 +434,7 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
                   <div key={index} className="border rounded-lg p-4 space-y-2">
                     <div className="flex justify-between items-start">
                       <div>
-                        <p className="font-medium">{item.action}</p>
+                        <p className="font-medium">{formatAction(item.action)}</p>
                         <p className="text-sm text-muted-foreground">
                           Por: {item.users?.nombre_completo}
                         </p>
@@ -403,9 +444,9 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
                       </p>
                     </div>
                     {item.details && (
-                      <p className="text-sm whitespace-pre-wrap">
-                        {typeof item.details === 'string' ? item.details : JSON.stringify(item.details, null, 2)}
-                      </p>
+                      <div className="mt-2 text-sm text-muted-foreground bg-muted p-3 rounded-md whitespace-pre-line">
+                        {formatHistoryDetails(item.details)}
+                      </div>
                     )}
                   </div>
                 ))
