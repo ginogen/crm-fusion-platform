@@ -10,18 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { 
-  CalendarCheck2, 
-  Users, 
-  Calendar as CalendarIcon, 
-  GraduationCap, 
-  Eye, 
-  ClipboardList, 
-  History,
-  Search,
-  ChevronDown,
-  Filter
-} from "lucide-react";
+import { CalendarCheck2, Users, Calendar as CalendarIcon, GraduationCap, Eye, ClipboardList, History } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { addDays, format, startOfWeek } from "date-fns";
@@ -29,21 +18,17 @@ import { toast } from "sonner";
 import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import {
+  ChevronDown,
+  CalendarIcon as CalendarIconLucide,
+  Filter
+} from "lucide-react";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { DateRange } from "react-day-picker";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-} from "@/components/ui/command";
-import LeadEditModal from "@/components/LeadEditModal";
-import GestionModal from "@/components/GestionModal";
-import LeadHistorialSheet from "@/components/LeadHistorialSheet";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 
 const CALENDAR_VIEWS = {
   MONTH: "month",
@@ -55,7 +40,7 @@ type CalendarView = typeof CALENDAR_VIEWS[keyof typeof CALENDAR_VIEWS];
 type LeadEstado = typeof LEAD_STATUSES[number];
 type TipoGestion = typeof MANAGEMENT_TYPES[number];
 
-const LeadEditModalComponent = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
+const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
   const [formData, setFormData] = useState({
     nombre_completo: lead?.nombre_completo || "",
     email: lead?.email || "",
@@ -216,7 +201,7 @@ const LeadEditModalComponent = ({ lead, isOpen, onClose }: { lead: any, isOpen: 
   );
 };
 
-const GestionModalComponent = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
+const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
   const [tipo, setTipo] = useState<TipoGestion | "">("");
   const [fecha, setFecha] = useState<Date>();
   const [observaciones, setObservaciones] = useState("");
@@ -328,7 +313,7 @@ const GestionModalComponent = ({ lead, isOpen, onClose }: { lead: any, isOpen: b
   );
 };
 
-const LeadHistorialSheetComponent = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
+const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
   const { data: historial } = useQuery({
     queryKey: ["lead-history", lead?.id],
     queryFn: async () => {
@@ -504,7 +489,7 @@ const TaskList = () => {
                   !dateRange?.from && "text-muted-foreground"
                 )}
               >
-                <CalendarIcon className="mr-2 h-4 w-4" />
+                <CalendarIconLucide className="mr-2 h-4 w-4" />
                 {dateRange?.from ? (
                   dateRange.to ? (
                     <>
@@ -770,7 +755,7 @@ const Dashboard = () => {
     },
   });
 
-  const { data: leads, isLoading } = useQuery({
+  const { data: leads } = useQuery({
     queryKey: ["leads"],
     queryFn: async () => {
       const { data } = await supabase
@@ -779,7 +764,7 @@ const Dashboard = () => {
           *,
           users (nombre_completo)
         `);
-      return data || [];
+      return data;
     },
   });
 
@@ -818,10 +803,9 @@ const Dashboard = () => {
     }
   });
 
-  // Solo calculamos los valores únicos si tenemos datos
-  const uniqueNames = leads ? Array.from(new Set(leads.map(lead => lead.nombre_completo) || [])).filter(Boolean) : [];
-  const uniqueEmails = leads ? Array.from(new Set(leads.map(lead => lead.email) || [])).filter(Boolean) : [];
-  const uniqueUsers = leads ? Array.from(new Set(leads.map(lead => lead.users?.nombre_completo) || [])).filter(Boolean) : [];
+  const uniqueNames = Array.from(new Set(leads?.map(lead => lead.nombre_completo) || [])).filter(Boolean);
+  const uniqueEmails = Array.from(new Set(leads?.map(lead => lead.email) || [])).filter(Boolean);
+  const uniqueUsers = Array.from(new Set(leads?.map(lead => lead.users?.nombre_completo) || [])).filter(Boolean);
 
   const filteredLeads = leads?.filter(lead => {
     const nameMatch = !filterName || lead.nombre_completo === filterName;
@@ -829,11 +813,7 @@ const Dashboard = () => {
     const statusMatch = !filterStatus || lead.estado === filterStatus;
     const assignedMatch = !filterAssignedTo || lead.users?.nombre_completo === filterAssignedTo;
     return nameMatch && emailMatch && statusMatch && assignedMatch;
-  }) || [];
-
-  if (isLoading) {
-    return <div className="flex items-center justify-center h-screen">Cargando...</div>;
-  }
+  });
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -883,30 +863,24 @@ const Dashboard = () => {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-full p-0">
-                  {leads && leads.length > 0 ? (
-                    <Command>
-                      <CommandInput placeholder="Buscar nombre..." />
-                      <CommandEmpty>No se encontraron resultados.</CommandEmpty>
-                      <CommandGroup>
-                        {uniqueNames.map((name) => (
-                          <CommandItem
-                            key={name}
-                            value={name}
-                            onSelect={() => {
-                              setFilterName(name === filterName ? "" : name);
-                              setOpenName(false);
-                            }}
-                          >
-                            {name}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </Command>
-                  ) : (
-                    <div className="p-4 text-sm text-muted-foreground">
-                      No hay datos disponibles
-                    </div>
-                  )}
+                  <Command>
+                    <CommandInput placeholder="Buscar nombre..." />
+                    <CommandEmpty>No se encontraron resultados.</CommandEmpty>
+                    <CommandGroup>
+                      {uniqueNames.map((name) => (
+                        <CommandItem
+                          key={name}
+                          value={name}
+                          onSelect={() => {
+                            setFilterName(name === filterName ? "" : name);
+                            setOpenName(false);
+                          }}
+                        >
+                          {name}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </Command>
                 </PopoverContent>
               </Popover>
             </div>
@@ -922,4 +896,240 @@ const Dashboard = () => {
                     className="w-full justify-between"
                   >
                     {filterEmail || "Seleccionar email..."}
-                    <Search className="ml-2 h-4 w-4 shrink-0 opacity
+                    <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0">
+                  <Command>
+                    <CommandInput placeholder="Buscar email..." />
+                    <CommandEmpty>No se encontraron resultados.</CommandEmpty>
+                    <CommandGroup>
+                      {uniqueEmails.map((email) => (
+                        <CommandItem
+                          key={email}
+                          value={email}
+                          onSelect={() => {
+                            setFilterEmail(email === filterEmail ? "" : email);
+                            setOpenEmail(false);
+                          }}
+                        >
+                          {email}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div>
+              <label className="text-sm text-muted-foreground">Estado</label>
+              <Popover open={openStatus} onOpenChange={setOpenStatus}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={openStatus}
+                    className="w-full justify-between"
+                  >
+                    {LEAD_STATUS_LABELS[filterStatus as LeadEstado] || "Seleccionar estado..."}
+                    <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0">
+                  <Command>
+                    <CommandInput placeholder="Buscar estado..." />
+                    <CommandEmpty>No se encontraron resultados.</CommandEmpty>
+                    <CommandGroup>
+                      {LEAD_STATUSES.map((estado) => (
+                        <CommandItem
+                          key={estado}
+                          value={estado}
+                          onSelect={() => {
+                            setFilterStatus(estado === filterStatus ? "" : estado);
+                            setOpenStatus(false);
+                          }}
+                        >
+                          {LEAD_STATUS_LABELS[estado]}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div>
+              <label className="text-sm text-muted-foreground">Asignado A</label>
+              <Popover open={openAssigned} onOpenChange={setOpenAssigned}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={openAssigned}
+                    className="w-full justify-between"
+                  >
+                    {filterAssignedTo || "Buscar usuario..."}
+                    <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0">
+                  <Command>
+                    <CommandInput placeholder="Buscar usuario..." />
+                    <CommandEmpty>No se encontraron resultados.</CommandEmpty>
+                    <CommandGroup>
+                      {uniqueUsers.map((user) => (
+                        <CommandItem
+                          key={user}
+                          value={user}
+                          onSelect={() => {
+                            setFilterAssignedTo(user === filterAssignedTo ? "" : user);
+                            setOpenAssigned(false);
+                          }}
+                        >
+                          {user}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12"></TableHead>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Teléfono</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Asignado A</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredLeads?.map((lead) => (
+                  <TableRow key={lead.id}>
+                    <TableCell>
+                      <input type="checkbox" className="rounded border-gray-300" />
+                    </TableCell>
+                    <TableCell>{lead.nombre_completo}</TableCell>
+                    <TableCell>{lead.email}</TableCell>
+                    <TableCell>{lead.telefono}</TableCell>
+                    <TableCell>
+                      <Select
+                        value={lead.estado}
+                        onValueChange={(value: LeadEstado) => {
+                          updateLeadStatus.mutate({ leadId: lead.id, newStatus: value });
+                        }}
+                      >
+                        <SelectTrigger 
+                          className={cn(
+                            "w-[180px]",
+                            lead.estado === "SIN_LLAMAR" && "bg-white",
+                            lead.estado === "LLAMAR_DESPUES" && "bg-blue-100",
+                            lead.estado === "CITA_PROGRAMADA" && "bg-yellow-100",
+                            lead.estado === "MATRICULA" && "bg-green-100",
+                          )}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {LEAD_STATUSES.map((estado) => (
+                            <SelectItem 
+                              key={estado} 
+                              value={estado}
+                              className={cn(
+                                estado === "SIN_LLAMAR" && "bg-white",
+                                estado === "LLAMAR_DESPUES" && "bg-blue-100",
+                                estado === "CITA_PROGRAMADA" && "bg-yellow-100",
+                                estado === "MATRICULA" && "bg-green-100",
+                              )}
+                            >
+                              {LEAD_STATUS_LABELS[estado]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>{lead.users?.nombre_completo}</TableCell>
+                    <TableCell>{format(new Date(lead.created_at), "dd/MM/yyyy")}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setSelectedLead(lead);
+                            setShowEditModal(true);
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setSelectedLead(lead);
+                            setShowGestionModal(true);
+                          }}
+                        >
+                          <ClipboardList className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setSelectedLead(lead);
+                            setShowHistorialSheet(true);
+                          }}
+                        >
+                          <History className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      </Card>
+
+      {selectedLead && (
+        <>
+          <LeadEditModal
+            lead={selectedLead}
+            isOpen={showEditModal}
+            onClose={() => {
+              setShowEditModal(false);
+              setSelectedLead(null);
+            }}
+          />
+          <GestionModal
+            lead={selectedLead}
+            isOpen={showGestionModal}
+            onClose={() => {
+              setShowGestionModal(false);
+              setSelectedLead(null);
+            }}
+          />
+          <LeadHistorialSheet
+            lead={selectedLead}
+            isOpen={showHistorialSheet}
+            onClose={() => {
+              setShowHistorialSheet(false);
+              setSelectedLead(null);
+            }}
+          />
+        </>
+      )}
+    </div>
+  );
+};
+
+export default Dashboard;
