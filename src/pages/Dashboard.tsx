@@ -20,6 +20,7 @@ import { format, addDays } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { DateRange } from "react-day-picker";
 import { Calendar as CalendarIconLucide } from "lucide-react";
+import ModifyLeadsDialog from "@/components/leads/ModifyLeadsDialog";
 
 const CALENDAR_VIEWS = {
   MONTH: "month",
@@ -753,11 +754,15 @@ const TaskList = () => {
 };
 
 const Dashboard = () => {
+  const queryClient = useQueryClient();
+  const [selectedLeads, setSelectedLeads] = useState<number[]>([]);
+  const [showModifyLeadsDialog, setShowModifyLeadsDialog] = useState(false);
+  const [allSelected, setAllSelected] = useState(false);
+
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showGestionModal, setShowGestionModal] = useState(false);
   const [showHistorialSheet, setShowHistorialSheet] = useState(false);
-  const queryClient = useQueryClient();
 
   const { data: metrics } = useQuery({
     queryKey: ["dashboard-metrics"],
@@ -858,6 +863,33 @@ const Dashboard = () => {
     }
   });
 
+  const handleSelectLead = (leadId: number, selected: boolean) => {
+    if (selected) {
+      setSelectedLeads(prev => [...prev, leadId]);
+    } else {
+      setSelectedLeads(prev => prev.filter(id => id !== leadId));
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (!leads) return;
+    
+    const leadIds = leads.map(lead => lead.id);
+    if (checked) {
+      setSelectedLeads(leadIds);
+    } else {
+      setSelectedLeads([]);
+    }
+    setAllSelected(checked);
+  };
+
+  useEffect(() => {
+    if (leads?.length && leads.length > 0) {
+      const allLeadsSelected = leads.every(lead => selectedLeads.includes(lead.id));
+      setAllSelected(allLeadsSelected);
+    }
+  }, [selectedLeads, leads]);
+
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -888,170 +920,7 @@ const Dashboard = () => {
       <TaskList />
 
       <Card className="p-6">
-        <h2 className="text-lg font-semibold mb-6">Leads Recientes</h2>
-        <div className="space-y-4">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="text-sm text-muted-foreground">Estado</label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar estado..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="SIN_LLAMAR">Sin Llamar</SelectItem>
-                  <SelectItem value="LLAMAR_DESPUES">Llamar Después</SelectItem>
-                  <SelectItem value="CITA_PROGRAMADA">Cita Programada</SelectItem>
-                  <SelectItem value="MATRICULA">Matrícula</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex-1">
-              <label className="text-sm text-muted-foreground">Asignado A</label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Buscar usuario..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="user1">Usuario 1</SelectItem>
-                  <SelectItem value="user2">Usuario 2</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12"></TableHead>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Teléfono</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Asignado A</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {leads?.map((lead) => (
-                  <TableRow key={lead.id}>
-                    <TableCell>
-                      <input type="checkbox" className="rounded border-gray-300" />
-                    </TableCell>
-                    <TableCell>{lead.nombre_completo}</TableCell>
-                    <TableCell>{lead.email}</TableCell>
-                    <TableCell>{lead.telefono}</TableCell>
-                    <TableCell>
-                      <Select
-                        value={lead.estado}
-                        onValueChange={(value: LeadEstado) => {
-                          updateLeadStatus.mutate({ leadId: lead.id, newStatus: value });
-                        }}
-                      >
-                        <SelectTrigger 
-                          className={cn(
-                            "w-[180px]",
-                            lead.estado === "SIN_LLAMAR" && "bg-white",
-                            lead.estado === "LLAMAR_DESPUES" && "bg-blue-100",
-                            lead.estado === "CITA_PROGRAMADA" && "bg-yellow-100",
-                            lead.estado === "MATRICULA" && "bg-green-100",
-                          )}
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {LEAD_STATUSES.map((estado) => (
-                            <SelectItem 
-                              key={estado} 
-                              value={estado}
-                              className={cn(
-                                estado === "SIN_LLAMAR" && "bg-white",
-                                estado === "LLAMAR_DESPUES" && "bg-blue-100",
-                                estado === "CITA_PROGRAMADA" && "bg-yellow-100",
-                                estado === "MATRICULA" && "bg-green-100",
-                              )}
-                            >
-                              {LEAD_STATUS_LABELS[estado]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>{lead.users?.nombre_completo}</TableCell>
-                    <TableCell>{format(new Date(lead.created_at), "dd/MM/yyyy")}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedLead(lead);
-                            setShowEditModal(true);
-                          }}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedLead(lead);
-                            setShowGestionModal(true);
-                          }}
-                        >
-                          <ClipboardList className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedLead(lead);
-                            setShowHistorialSheet(true);
-                          }}
-                        >
-                          <History className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
-
-        {selectedLead && (
-          <>
-            <LeadEditModal
-              lead={selectedLead}
-              isOpen={showEditModal}
-              onClose={() => {
-                setShowEditModal(false);
-                setSelectedLead(null);
-              }}
-            />
-            <GestionModal
-              lead={selectedLead}
-              isOpen={showGestionModal}
-              onClose={() => {
-                setShowGestionModal(false);
-                setSelectedLead(null);
-              }}
-            />
-            <LeadHistorialSheet
-              lead={selectedLead}
-              isOpen={showHistorialSheet}
-              onClose={() => {
-                setShowHistorialSheet(false);
-                setSelectedLead(null);
-              }}
-            />
-          </>
-        )}
-      </Card>
-    </div>
-  );
-};
-
-export default Dashboard;
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-lg font-semibold">Leads Recientes</h2>
+          <div className="flex gap-2">
+            {selectedLeads.length > 0 && (
