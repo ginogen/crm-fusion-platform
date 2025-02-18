@@ -29,6 +29,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS } from "@/lib/constants";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import TaskList from "@/components/TaskList";
+import LeadEditModal from "@/components/LeadEditModal";
+import GestionModal from "@/components/GestionModal";
+import LeadHistorialSheet from "@/components/LeadHistorialSheet";
 
 const Dashboard = () => {
   const [filterName, setFilterName] = useState("");
