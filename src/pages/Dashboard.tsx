@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import LeadsTable from "@/components/leads/LeadsTable";
@@ -344,7 +345,7 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
                     </div>
                     {item.details && (
                       <div className="mt-2 text-sm text-muted-foreground bg-muted p-3 rounded-md whitespace-pre-line">
-                        {formatHistoryDetails(item.details)}
+                        {JSON.stringify(JSON.parse(item.details), null, 2)}
                       </div>
                     )}
                   </div>
