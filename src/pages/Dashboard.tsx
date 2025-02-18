@@ -310,7 +310,13 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
     queryFn: async () => {
       const { data: historialData, error: historialError } = await supabase
         .from("lead_history")
-        .select("*")
+        .select(`
+          lead_id,
+          action,
+          details,
+          user_id,
+          created_at
+        `)
         .eq("lead_id", Number(lead.id))
         .order("created_at", { ascending: false });
 
@@ -378,8 +384,8 @@ const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: bool
             <h3 className="font-semibold">Historial de Acciones</h3>
             <div className="space-y-4">
               {historial && historial.length > 0 ? (
-                historial.map((item) => (
-                  <div key={item.id} className="border rounded-lg p-4 space-y-2">
+                historial.map((item, index) => (
+                  <div key={index} className="border rounded-lg p-4 space-y-2">
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-medium">{item.action}</p>
