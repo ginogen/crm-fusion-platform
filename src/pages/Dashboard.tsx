@@ -413,13 +413,15 @@ const TaskList = () => {
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto" align="end">
+            <PopoverContent className="w-auto p-0" align="end">
               <div className="flex">
-                <div className="border-r pr-4 space-y-3">
-                  <div className="w-[150px]">
+                <div className="border-r pr-2 py-3">
+                  <div className="px-2 font-medium text-sm mb-2">Rangos rápidos</div>
+                  <div className="w-[140px]">
                     <Button
                       variant="ghost"
-                      className="w-full justify-start font-normal hover:bg-primary/5"
+                      size="sm"
+                      className="w-full justify-start text-sm font-normal hover:bg-primary/5"
                       onClick={() => {
                         handlePresetChange(0);
                         setIsCalendarOpen(false);
@@ -429,7 +431,8 @@ const TaskList = () => {
                     </Button>
                     <Button
                       variant="ghost"
-                      className="w-full justify-start font-normal hover:bg-primary/5"
+                      size="sm"
+                      className="w-full justify-start text-sm font-normal hover:bg-primary/5"
                       onClick={() => {
                         const yesterday = new Date();
                         yesterday.setDate(yesterday.getDate() - 1);
@@ -444,27 +447,30 @@ const TaskList = () => {
                     </Button>
                     <Button
                       variant="ghost"
-                      className="w-full justify-start font-normal hover:bg-primary/5"
+                      size="sm"
+                      className="w-full justify-start text-sm font-normal hover:bg-primary/5"
                       onClick={() => {
                         handlePresetChange(7);
                         setIsCalendarOpen(false);
                       }}
                     >
-                      Últimos 7 días
+                      Próximos 7 días
                     </Button>
                     <Button
                       variant="ghost"
-                      className="w-full justify-start font-normal hover:bg-primary/5"
+                      size="sm"
+                      className="w-full justify-start text-sm font-normal hover:bg-primary/5"
                       onClick={() => {
                         handlePresetChange(30);
                         setIsCalendarOpen(false);
                       }}
                     >
-                      Últimos 30 días
+                      Próximos 30 días
                     </Button>
                     <Button
                       variant="ghost"
-                      className="w-full justify-start font-normal hover:bg-primary/5"
+                      size="sm"
+                      className="w-full justify-start text-sm font-normal hover:bg-primary/5"
                       onClick={() => {
                         const today = new Date();
                         const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -480,7 +486,8 @@ const TaskList = () => {
                     </Button>
                     <Button
                       variant="ghost"
-                      className="w-full justify-start font-normal hover:bg-primary/5"
+                      size="sm"
+                      className="w-full justify-start text-sm font-normal hover:bg-primary/5"
                       onClick={() => {
                         const today = new Date();
                         const firstDay = new Date(today.getFullYear(), today.getMonth() - 1, 1);
@@ -496,7 +503,7 @@ const TaskList = () => {
                     </Button>
                   </div>
                 </div>
-                <div className="pl-4 space-y-4">
+                <div className="p-3">
                   <Calendar
                     initialFocus
                     mode="range"
@@ -505,9 +512,11 @@ const TaskList = () => {
                     onSelect={setDateRange}
                     numberOfMonths={2}
                     showOutsideDays={false}
+                    className="rdp-custom [&_.rdp-day]:h-8 [&_.rdp-day]:w-8 [&_.rdp-day]:text-sm [&_.rdp-head_th]:text-xs [&_.rdp-head_th]:font-normal [&_.rdp-caption]:text-sm"
                   />
-                  <div className="flex justify-end gap-2">
+                  <div className="flex justify-end gap-2 mt-3">
                     <Button
+                      size="sm"
                       variant="outline"
                       onClick={() => {
                         setDateRange(undefined);
@@ -517,6 +526,7 @@ const TaskList = () => {
                       Cancelar
                     </Button>
                     <Button
+                      size="sm"
                       onClick={() => {
                         setIsCalendarOpen(false);
                       }}
