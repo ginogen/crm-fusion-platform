@@ -35,29 +35,16 @@ function Calendar({
     };
   };
 
-  const today = new Date();
-  const weekStart = startOfWeek(today, { locale: es });
-  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-
-  const modifiers = {
-    hasTasks: tasks.map(task => new Date(task.fecha)),
-  };
-
-  const modifiersStyles = {
-    hasTasks: {
-      backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    },
-  };
-
   if (view === "week") {
+    const today = new Date();
+    const weekStart = startOfWeek(today, { locale: es });
+    const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
     return (
       <div className="w-full">
-        <div className="grid grid-cols-7 gap-px">
+        <div className="grid grid-cols-7 gap-px divide-x divide-gray-200">
           {weekDates.map((date) => (
-            <div
-              key={date.toISOString()}
-              className="min-h-[256px] border p-2 relative"
-            >
+            <div key={date.toISOString()} className="min-h-[256px] p-2 relative">
               <div className="text-sm font-medium mb-2">
                 {format(date, 'EEEE', { locale: es })}
               </div>
@@ -100,67 +87,38 @@ function Calendar({
       locale={es}
       classNames={{
         months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
-        month: "space-y-4 w-full",
-        caption: "flex justify-between pt-1 relative items-center px-8",
-        caption_label: "text-base font-medium",
-        nav: "space-x-1 flex items-center",
+        month: "space-y-4",
+        caption: "flex justify-center pt-1 relative items-center gap-1",
+        caption_label: "text-sm font-medium",
+        nav: "flex items-center gap-1",
         nav_button: cn(
           buttonVariants({ variant: "outline" }),
-          "size-7 bg-transparent p-0 opacity-50 hover:opacity-100"
+          "h-7 w-7 bg-transparent p-0 text-muted-foreground hover:opacity-100"
         ),
-        nav_button_previous: "absolute left-1",
-        nav_button_next: "absolute right-1",
         table: "w-full border-collapse",
         head_row: "flex w-full",
-        head_cell: "text-muted-foreground rounded-md w-full h-10 font-normal text-[0.9rem] flex items-center justify-center",
-        row: "flex w-full mt-0",
+        head_cell: "text-muted-foreground rounded-md w-9 font-normal text-[0.8rem] h-9",
+        row: "flex w-full",
         cell: cn(
-          "relative min-h-[128px] w-full text-center text-sm p-0 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20 border border-border",
-          view === "day" && "min-h-[512px]"
+          "relative p-0 text-center text-sm focus-within:relative focus-within:z-20",
+          props.mode === "range" ? "[&:has([aria-selected])]:bg-accent rounded-none first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md" : ""
         ),
         day: cn(
-          buttonVariants({ variant: "ghost" }),
-          "h-9 w-9 p-0 font-normal absolute top-1 right-1 aria-selected:opacity-100"
+          "h-9 w-9 p-0 font-normal text-sm aria-selected:opacity-100 hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
         ),
         day_range_end: "day-range-end",
-        day_selected:
-          "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
+        day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
         day_today: "bg-accent text-accent-foreground",
-        day_outside:
-          "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30",
+        day_outside: "text-muted-foreground opacity-50",
         day_disabled: "text-muted-foreground opacity-50",
-        day_range_middle:
-          "aria-selected:bg-accent aria-selected:text-accent-foreground",
+        day_range_middle: "aria-selected:bg-accent aria-selected:text-accent-foreground",
         day_hidden: "invisible",
         ...classNames,
       }}
       components={{
-        IconLeft: ({ ..._props }) => <ChevronLeft className="h-4 w-4" />,
-        IconRight: ({ ..._props }) => <ChevronRight className="h-4 w-4" />,
+        IconLeft: ({ ...props }) => <ChevronLeft className="h-4 w-4" />,
+        IconRight: ({ ...props }) => <ChevronRight className="h-4 w-4" />,
       }}
-      modifiers={modifiers}
-      modifiersStyles={modifiersStyles}
-      footer={
-        <div className="space-y-2">
-          {tasks.map((task) => {
-            const taskDate = new Date(task.fecha);
-            const style = handleTaskPosition(taskDate);
-            
-            return (
-              <div
-                key={task.id}
-                className="absolute bg-blue-100 text-blue-700 p-2 rounded text-xs hover:bg-blue-200 transition-colors cursor-pointer"
-                style={style}
-              >
-                <div className="font-medium truncate">
-                  {task.tipo} {format(taskDate, 'HH:mm')}
-                </div>
-                <div className="truncate">{task.leads?.nombre_completo}</div>
-              </div>
-            );
-          })}
-        </div>
-      }
       {...props}
     />
   );
