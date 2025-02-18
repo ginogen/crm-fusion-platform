@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -39,8 +39,30 @@ type LeadEstado = typeof LEAD_STATUSES[number];
 type TipoGestion = typeof MANAGEMENT_TYPES[number];
 
 const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
-  const [formData, setFormData] = useState(lead);
+  const [formData, setFormData] = useState({
+    nombre_completo: lead?.nombre_completo || "",
+    email: lead?.email || "",
+    telefono: lead?.telefono || "",
+    origen: lead?.origen || "",
+    pais: lead?.pais || "",
+    filial: lead?.filial || "",
+    observaciones: lead?.observaciones || ""
+  });
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (lead) {
+      setFormData({
+        nombre_completo: lead.nombre_completo || "",
+        email: lead.email || "",
+        telefono: lead.telefono || "",
+        origen: lead.origen || "",
+        pais: lead.pais || "",
+        filial: lead.filial || "",
+        observaciones: lead.observaciones || ""
+      });
+    }
+  }, [lead]);
 
   const updateLead = useMutation({
     mutationFn: async (data: any) => {
@@ -73,49 +95,105 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
     }
   });
 
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-[700px]">
         <DialogHeader>
           <DialogTitle>Editar Lead</DialogTitle>
-          <DialogDescription>
-            Modifica la información del lead
-          </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <label className="text-sm font-medium">Nombre Completo</label>
-            <Input
-              value={formData.nombre_completo}
-              onChange={(e) => setFormData(prev => ({ ...prev, nombre_completo: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Email</label>
-            <Input
-              value={formData.email}
-              onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Teléfono</label>
-            <Input
-              value={formData.telefono}
-              onChange={(e) => setFormData(prev => ({ ...prev, telefono: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Observaciones</label>
-            <Textarea
-              value={formData.observaciones || ""}
-              onChange={(e) => setFormData(prev => ({ ...prev, observaciones: e.target.value }))}
-            />
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          updateLead.mutate(formData);
+        }} className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="nombre_completo">Nombre Completo</Label>
+              <Input
+                id="nombre_completo"
+                name="nombre_completo"
+                value={formData.nombre_completo}
+                onChange={handleInputChange}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                value={formData.email}
+                onChange={handleInputChange}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="telefono">Teléfono</Label>
+              <Input
+                id="telefono"
+                name="telefono"
+                value={formData.telefono}
+                onChange={handleInputChange}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="origen">Origen</Label>
+              <Input
+                id="origen"
+                name="origen"
+                value={formData.origen}
+                onChange={handleInputChange}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pais">País</Label>
+              <Input
+                id="pais"
+                name="pais"
+                value={formData.pais}
+                onChange={handleInputChange}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="filial">Filial</Label>
+              <Input
+                id="filial"
+                name="filial"
+                value={formData.filial}
+                onChange={handleInputChange}
+                required
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="observaciones">Observaciones</Label>
+              <Textarea
+                id="observaciones"
+                name="observaciones"
+                value={formData.observaciones}
+                onChange={handleInputChange}
+                className="min-h-[100px]"
+              />
+            </div>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>Cancelar</Button>
-            <Button onClick={() => updateLead.mutate(formData)}>Guardar</Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit">
+              Actualizar
+            </Button>
           </div>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   );
