@@ -16,6 +16,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { format, addDays } from "date-fns";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import type { DateRange } from "react-day-picker";
+import { Calendar as CalendarIconLucide } from "lucide-react";
 
 const CALENDAR_VIEWS = {
   MONTH: "month",
@@ -937,3 +941,5 @@ const Dashboard = () => {
     </div>
   );
 };
+
+export default Dashboard;
