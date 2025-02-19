@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,9 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { useAuth } from '../lib/hooks/useAuth';
 
 export default function Auth() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,8 +27,9 @@ export default function Auth() {
 
       if (error) throw error;
       
+      login(data.session?.access_token || '');
       toast.success("¡Sesión iniciada exitosamente!");
-      navigate("/"); // Cambiado a Dashboard (ruta /)
+      navigate("/");
     } catch (error: any) {
       toast.error(error.message || "Error al iniciar sesión");
     } finally {

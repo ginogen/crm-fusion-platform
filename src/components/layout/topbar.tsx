@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { useAuth } from '../../lib/hooks/useAuth';
 
 type Lead = {
   id: string;
@@ -52,6 +53,7 @@ export const Topbar = ({ onEditLead, onGestionLead }: TopbarProps) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
+  const { logout } = useAuth();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -249,9 +251,12 @@ export const Topbar = ({ onEditLead, onGestionLead }: TopbarProps) => {
             </div>
           )}
         </div>
-        <Button variant="ghost" size="icon" className="hover:bg-gray-100">
-          <LogOut className="h-5 w-5" />
-        </Button>
+        <button 
+          onClick={logout}
+          className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700"
+        >
+          Cerrar sesión
+        </button>
       </div>
     </div>
   );
