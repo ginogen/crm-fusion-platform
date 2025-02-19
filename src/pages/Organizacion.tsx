@@ -72,13 +72,8 @@ interface EstructuraVinculadaProps {
 const EstructuraVinculada = ({ estructura, usuarios, isOpen, onToggle, estructuraPadre }: EstructuraVinculadaProps) => {
   return (
     <div className="border rounded-lg bg-white mb-2">
-      <div 
-        className="flex items-center justify-between p-4"
-      >
-        <div 
-          className="flex-1 cursor-pointer"
-          onClick={onToggle}
-        >
+      <div className="flex items-center justify-between p-4">
+        <div className="flex-1 cursor-pointer" onClick={onToggle}>
           <div className="space-y-1">
             <h3 className="font-medium">{estructura.custom_name || estructura.nombre}</h3>
             <p className="text-sm text-muted-foreground">{estructura.tipo}</p>
@@ -186,30 +181,26 @@ const Organizacion = () => {
     },
   });
 
-  const { data: usuarios } = useQuery({
-    queryKey: ["usuarios"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .order("nombre_completo");
-
-      if (error) throw error;
-      return data as UserProfile[];
-    },
-  });
-
   const { data: usuariosPorEstructura } = useQuery({
     queryKey: ["usuariosPorEstructura"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("users")
-        .select("*, estructura_id");
+        .select(`
+          id,
+          user_position,
+          email,
+          nombre_completo,
+          estructura_id
+        `);
 
-      if (error) throw error;
-      
+      if (error) {
+        console.error("Error fetching users:", error);
+        throw error;
+      }
+
       const usuariosPorEstructura: Record<number, UserProfile[]> = {};
-      data.forEach((usuario: UserProfile & { estructura_id: number }) => {
+      data.forEach((usuario) => {
         if (usuario.estructura_id) {
           if (!usuariosPorEstructura[usuario.estructura_id]) {
             usuariosPorEstructura[usuario.estructura_id] = [];
@@ -217,7 +208,7 @@ const Organizacion = () => {
           usuariosPorEstructura[usuario.estructura_id].push(usuario);
         }
       });
-      
+
       return usuariosPorEstructura;
     },
   });
@@ -568,7 +559,7 @@ const Organizacion = () => {
                   <div className="relative">
                     <EstructuraVinculada
                       estructura={estructuras?.find(e => e.id === selectedEstructura.parent_estructura_id)!}
-                      usuarios={usuarios?.filter(u => u.estructura_id === selectedEstructura.parent_estructura_id) || []}
+                      usuarios={usuariosPorEstructura?.[selectedEstructura.parent_estructura_id] || []}
                       isOpen={expandedEstructuras.includes(selectedEstructura.parent_estructura_id)}
                       onToggle={() => toggleEstructura(selectedEstructura.parent_estructura_id!)}
                       estructuraPadre={null}
@@ -588,15 +579,13 @@ const Organizacion = () => {
                 {estructuras
                   ?.filter(e => e.parent_estructura_id === selectedEstructura?.id)
                   .map(estructura => {
-                    const usuariosDeEstructura = usuarios?.filter(
-                      usuario => usuario.estructura_id === estructura.id
-                    );
+                    const usuariosDeEstructura = usuariosPorEstructura?.[estructura.id] || [];
                     
                     return (
                       <div key={estructura.id} className="relative">
                         <EstructuraVinculada
                           estructura={estructura}
-                          usuarios={usuariosDeEstructura || []}
+                          usuarios={usuariosDeEstructura}
                           isOpen={expandedEstructuras.includes(estructura.id)}
                           onToggle={() => toggleEstructura(estructura.id)}
                           estructuraPadre={selectedEstructura}

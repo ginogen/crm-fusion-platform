@@ -20,6 +20,10 @@ import { format, addDays } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { DateRange } from "react-day-picker";
 import { Calendar as CalendarIconLucide } from "lucide-react";
+import ModifyLeadsDialog from "@/components/leads/ModifyLeadsDialog";
+import { Topbar } from "@/components/layout/topbar";
+import LeadsTable from "@/components/leads/LeadsTable";
+import { LeadHistorialSheet } from "@/components/leads/LeadHistorialSheet";
 
 const CALENDAR_VIEWS = {
   MONTH: "month",
@@ -349,118 +353,6 @@ const formatAction = (action: string) => {
   return actionMap[action] || action;
 };
 
-const LeadHistorialSheet = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
-  const { data: historial } = useQuery({
-    queryKey: ["lead-history", lead?.id],
-    queryFn: async () => {
-      console.log("Fetching history for lead:", lead.id);
-
-      const { data: historialData, error: historialError } = await supabase
-        .from("lead_history")
-        .select('*')
-        .eq("lead_id", Number(lead.id))
-        .order("created_at", { ascending: false });
-
-      if (historialError) {
-        console.error("Error fetching lead history:", historialError);
-        throw historialError;
-      }
-
-      console.log("Raw historial data:", historialData);
-
-      if (!historialData || historialData.length === 0) {
-        console.log("No history data found");
-        return [];
-      }
-
-      const userIds = historialData.map(item => item.user_id).filter(Boolean);
-      console.log("User IDs to fetch:", userIds);
-      
-      let usersData = [];
-      if (userIds.length > 0) {
-        const { data: userData, error: usersError } = await supabase
-          .from("users")
-          .select("id, nombre_completo")
-          .in("id", userIds);
-
-        if (usersError) {
-          console.error("Error fetching users:", usersError);
-          throw usersError;
-        }
-        usersData = userData || [];
-        console.log("Users data:", usersData);
-      }
-
-      const historialConUsuarios = historialData.map(item => ({
-        ...item,
-        users: usersData.find(user => user.id === item.user_id) || { nombre_completo: 'Usuario no encontrado' }
-      }));
-
-      console.log("Final processed history:", historialConUsuarios);
-      return historialConUsuarios;
-    },
-    enabled: !!lead?.id
-  });
-
-  return (
-    <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>Historial del Lead</SheetTitle>
-          <SheetDescription>
-            Información completa y acciones realizadas
-          </SheetDescription>
-        </SheetHeader>
-        <div className="mt-6 space-y-6">
-          <div className="space-y-4">
-            <h3 className="font-semibold">Información del Lead</h3>
-            <div className="space-y-2">
-              <p><span className="font-medium">Nombre:</span> {lead?.nombre_completo}</p>
-              <p><span className="font-medium">Email:</span> {lead?.email}</p>
-              <p><span className="font-medium">Teléfono:</span> {lead?.telefono}</p>
-              <p><span className="font-medium">Estado:</span> {lead?.estado}</p>
-              <p><span className="font-medium">Asignado a:</span> {lead?.users?.nombre_completo}</p>
-              <p><span className="font-medium">Fecha de creación:</span> {format(new Date(lead?.created_at), "dd/MM/yyyy HH:mm")}</p>
-            </div>
-          </div>
-
-          <Separator />
-
-          <div className="space-y-4">
-            <h3 className="font-semibold">Historial de Acciones</h3>
-            <div className="space-y-4">
-              {historial && historial.length > 0 ? (
-                historial.map((item, index) => (
-                  <div key={index} className="border rounded-lg p-4 space-y-2">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-medium">{formatAction(item.action)}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Por: {item.users?.nombre_completo}
-                        </p>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {format(new Date(item.created_at), "dd/MM/yyyy HH:mm")}
-                      </p>
-                    </div>
-                    {item.details && (
-                      <div className="mt-2 text-sm text-muted-foreground bg-muted p-3 rounded-md whitespace-pre-line">
-                        {formatHistoryDetails(item.details)}
-                      </div>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <p className="text-muted-foreground text-sm">No hay registros en el historial</p>
-              )}
-            </div>
-          </div>
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
-};
-
 const TaskList = () => {
   const [filterTipo, setFilterTipo] = useState<string>("all");
   const [filterEstado, setFilterEstado] = useState<string>("all");
@@ -528,18 +420,6 @@ const TaskList = () => {
                   {tipo}
                 </SelectItem>
               ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={filterEstado} onValueChange={setFilterEstado}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Estado" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="PENDIENTE">Pendiente</SelectItem>
-              <SelectItem value="COMPLETADA">Completada</SelectItem>
-              <SelectItem value="CANCELADA">Cancelada</SelectItem>
             </SelectContent>
           </Select>
 
@@ -701,7 +581,6 @@ const TaskList = () => {
             <TableRow>
               <TableHead>Lead</TableHead>
               <TableHead>Tipo</TableHead>
-              <TableHead>Estado</TableHead>
               <TableHead>Responsable</TableHead>
               <TableHead>Fecha</TableHead>
               <TableHead>Observaciones</TableHead>
@@ -720,20 +599,11 @@ const TaskList = () => {
                   <div className={cn(
                     "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
                     task.tipo === "LLAMADA" && "bg-blue-100 text-blue-800",
-                    task.tipo === "CITA" && "bg-purple-100 text-purple-800",
-                    task.tipo === "EMAIL" && "bg-yellow-100 text-yellow-800"
+                    task.tipo === "CITA" && "bg-yellow-100 text-yellow-800",
+                    task.tipo === "EMAIL" && "bg-yellow-100 text-yellow-800",
+                    task.tipo === "RECHAZO" && "bg-red-100 text-red-800"
                   )}>
                     {task.tipo}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className={cn(
-                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                    task.estado === "PENDIENTE" && "bg-yellow-100 text-yellow-800",
-                    task.estado === "COMPLETADA" && "bg-green-100 text-green-800",
-                    task.estado === "CANCELADA" && "bg-red-100 text-red-800"
-                  )}>
-                    {task.estado}
                   </div>
                 </TableCell>
                 <TableCell>{task.users?.nombre_completo}</TableCell>
@@ -757,6 +627,8 @@ const Dashboard = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showGestionModal, setShowGestionModal] = useState(false);
   const [showHistorialSheet, setShowHistorialSheet] = useState(false);
+  const [selectedLeads, setSelectedLeads] = useState<number[]>([]);
+  const [showModifyDialog, setShowModifyDialog] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: metrics } = useQuery({
@@ -858,8 +730,36 @@ const Dashboard = () => {
     }
   });
 
+  const handleSelectLead = (leadId: number, selected: boolean) => {
+    if (selected) {
+      setSelectedLeads(prev => [...prev, leadId]);
+    } else {
+      setSelectedLeads(prev => prev.filter(id => id !== leadId));
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (!leads) return;
+    
+    if (checked) {
+      setSelectedLeads(leads.map(lead => lead.id));
+    } else {
+      setSelectedLeads([]);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
+      <Topbar 
+        onEditLead={(lead) => {
+          setSelectedLead(lead);
+          setShowEditModal(true);
+        }}
+        onGestionLead={(lead) => {
+          setSelectedLead(lead);
+          setShowGestionModal(true);
+        }}
+      />
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {metrics?.map((metric) => (
           <Card key={metric.title} className="p-6">
@@ -888,168 +788,76 @@ const Dashboard = () => {
       <TaskList />
 
       <Card className="p-6">
-        <h2 className="text-lg font-semibold mb-6">Leads Recientes</h2>
-        <div className="space-y-4">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="text-sm text-muted-foreground">Estado</label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar estado..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="SIN_LLAMAR">Sin Llamar</SelectItem>
-                  <SelectItem value="LLAMAR_DESPUES">Llamar Después</SelectItem>
-                  <SelectItem value="CITA_PROGRAMADA">Cita Programada</SelectItem>
-                  <SelectItem value="MATRICULA">Matrícula</SelectItem>
-                </SelectContent>
-              </Select>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-lg font-semibold">Leads Recientes</h2>
+          {selectedLeads.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                {selectedLeads.length} leads seleccionados
+              </span>
+              <Button 
+                variant="default"
+                onClick={() => setShowModifyDialog(true)}
+              >
+                Modificar Leads
+              </Button>
             </div>
-            <div className="flex-1">
-              <label className="text-sm text-muted-foreground">Asignado A</label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Buscar usuario..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="user1">Usuario 1</SelectItem>
-                  <SelectItem value="user2">Usuario 2</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12"></TableHead>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Teléfono</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Asignado A</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {leads?.map((lead) => (
-                  <TableRow key={lead.id}>
-                    <TableCell>
-                      <input type="checkbox" className="rounded border-gray-300" />
-                    </TableCell>
-                    <TableCell>{lead.nombre_completo}</TableCell>
-                    <TableCell>{lead.email}</TableCell>
-                    <TableCell>{lead.telefono}</TableCell>
-                    <TableCell>
-                      <Select
-                        value={lead.estado}
-                        onValueChange={(value: LeadEstado) => {
-                          updateLeadStatus.mutate({ leadId: lead.id, newStatus: value });
-                        }}
-                      >
-                        <SelectTrigger 
-                          className={cn(
-                            "w-[180px]",
-                            lead.estado === "SIN_LLAMAR" && "bg-white",
-                            lead.estado === "LLAMAR_DESPUES" && "bg-blue-100",
-                            lead.estado === "CITA_PROGRAMADA" && "bg-yellow-100",
-                            lead.estado === "MATRICULA" && "bg-green-100",
-                          )}
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {LEAD_STATUSES.map((estado) => (
-                            <SelectItem 
-                              key={estado} 
-                              value={estado}
-                              className={cn(
-                                estado === "SIN_LLAMAR" && "bg-white",
-                                estado === "LLAMAR_DESPUES" && "bg-blue-100",
-                                estado === "CITA_PROGRAMADA" && "bg-yellow-100",
-                                estado === "MATRICULA" && "bg-green-100",
-                              )}
-                            >
-                              {LEAD_STATUS_LABELS[estado]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>{lead.users?.nombre_completo}</TableCell>
-                    <TableCell>{format(new Date(lead.created_at), "dd/MM/yyyy")}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedLead(lead);
-                            setShowEditModal(true);
-                          }}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedLead(lead);
-                            setShowGestionModal(true);
-                          }}
-                        >
-                          <ClipboardList className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedLead(lead);
-                            setShowHistorialSheet(true);
-                          }}
-                        >
-                          <History className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          )}
         </div>
 
-        {selectedLead && (
-          <>
-            <LeadEditModal
-              lead={selectedLead}
-              isOpen={showEditModal}
-              onClose={() => {
-                setShowEditModal(false);
-                setSelectedLead(null);
-              }}
-            />
-            <GestionModal
-              lead={selectedLead}
-              isOpen={showGestionModal}
-              onClose={() => {
-                setShowGestionModal(false);
-                setSelectedLead(null);
-              }}
-            />
-            <LeadHistorialSheet
-              lead={selectedLead}
-              isOpen={showHistorialSheet}
-              onClose={() => {
-                setShowHistorialSheet(false);
-                setSelectedLead(null);
-              }}
-            />
-          </>
-        )}
+        <LeadsTable 
+          showCheckboxes={true}
+          selectedLeads={selectedLeads}
+          onSelectLead={handleSelectLead}
+          onEdit={(lead) => {
+            setSelectedLead(lead);
+            setShowEditModal(true);
+          }}
+          onGestion={(lead) => {
+            setSelectedLead(lead);
+            setShowGestionModal(true);
+          }}
+          onHistorial={(lead) => {
+            setSelectedLead(lead);
+            setShowHistorialSheet(true);
+          }}
+        />
       </Card>
+
+      {selectedLead && (
+        <>
+          <LeadEditModal
+            lead={selectedLead}
+            isOpen={showEditModal}
+            onClose={() => {
+              setShowEditModal(false);
+              setSelectedLead(null);
+            }}
+          />
+          <GestionModal
+            lead={selectedLead}
+            isOpen={showGestionModal}
+            onClose={() => {
+              setShowGestionModal(false);
+              setSelectedLead(null);
+            }}
+          />
+          <LeadHistorialSheet
+            lead={selectedLead}
+            isOpen={showHistorialSheet}
+            onClose={() => {
+              setShowHistorialSheet(false);
+              setSelectedLead(null);
+            }}
+          />
+        </>
+      )}
+
+      <ModifyLeadsDialog
+        isOpen={showModifyDialog}
+        onClose={() => setShowModifyDialog(false)}
+        selectedLeads={selectedLeads}
+      />
     </div>
   );
 };

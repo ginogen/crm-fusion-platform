@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -80,7 +79,7 @@ const Usuarios = () => {
   });
 
   // Fetch usuarios
-  const { data: users, refetch: refetchUsers } = useQuery({
+  const { data: users, refetch: refetchUsers, isLoading } = useQuery({
     queryKey: ["users"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -207,13 +206,15 @@ const Usuarios = () => {
   };
 
   const filteredUsers = users?.filter((user) => {
-    const matchesEmail = user.email.toLowerCase().includes(emailFilter.toLowerCase());
-    const matchesNombre = user.nombre_completo.toLowerCase().includes(nombreFilter.toLowerCase());
-    const matchesCargo = user.user_position.toLowerCase().includes(cargoFilter.toLowerCase());
+    if (!user) return false;
+    
+    const matchesEmail = user.email?.toLowerCase().includes(emailFilter.toLowerCase()) ?? false;
+    const matchesNombre = user.nombre_completo?.toLowerCase().includes(nombreFilter.toLowerCase()) ?? false;
+    const matchesCargo = user.user_position?.toLowerCase().includes(cargoFilter.toLowerCase()) ?? false;
     const matchesEstructura = estructuras
       ?.find((e) => e.id === user.estructura_id)
-      ?.nombre.toLowerCase()
-      .includes(estructuraFilter.toLowerCase());
+      ?.nombre?.toLowerCase()
+      .includes(estructuraFilter.toLowerCase()) ?? false;
 
     return matchesEmail && matchesNombre && matchesCargo && matchesEstructura;
   });
@@ -294,100 +295,114 @@ const Usuarios = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredUsers?.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell>{user.email}</TableCell>
-                <TableCell>{user.nombre_completo}</TableCell>
-                <TableCell>
-                  {editingUserId === user.id && editingField === "user_position" ? (
-                    <Select
-                      value={user.user_position}
-                      onValueChange={(value) => handleUpdateUser(user.id, "user_position", value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar cargo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ROLES.map((role) => (
-                          <SelectItem key={role} value={role}>
-                            {role}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <span
-                      className="cursor-pointer hover:underline"
-                      onClick={() => {
-                        setEditingUserId(user.id);
-                        setEditingField("user_position");
-                      }}
-                    >
-                      {user.user_position}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {editingUserId === user.id && editingField === "estructura_id" ? (
-                    <Select
-                      value={user.estructura_id?.toString()}
-                      onValueChange={(value) => handleUpdateUser(user.id, "estructura_id", value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar estructura" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {estructuras?.map((estructura) => (
-                          <SelectItem key={estructura.id} value={estructura.id.toString()}>
-                            {estructura.custom_name || estructura.nombre}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <span
-                      className="cursor-pointer hover:underline"
-                      onClick={() => {
-                        setEditingUserId(user.id);
-                        setEditingField("estructura_id");
-                      }}
-                    >
-                      {estructuras?.find((e) => e.id === user.estructura_id)?.custom_name ||
-                        estructuras?.find((e) => e.id === user.estructura_id)?.nombre}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {new Date(user.created_at).toLocaleDateString()}
-                </TableCell>
-                <TableCell>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Esta acción desactivará al usuario y no podrá acceder al sistema.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={() => handleDeleteUser(user.id)}
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        >
-                          Eliminar
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-4">
+                  Cargando usuarios...
                 </TableCell>
               </TableRow>
-            ))}
+            ) : filteredUsers?.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-4">
+                  No se encontraron usuarios
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredUsers?.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell>{user.email}</TableCell>
+                  <TableCell>{user.nombre_completo}</TableCell>
+                  <TableCell>
+                    {editingUserId === user.id && editingField === "user_position" ? (
+                      <Select
+                        value={user.user_position}
+                        onValueChange={(value) => handleUpdateUser(user.id, "user_position", value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar cargo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ROLES.map((role) => (
+                            <SelectItem key={role} value={role}>
+                              {role}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span
+                        className="cursor-pointer hover:underline"
+                        onClick={() => {
+                          setEditingUserId(user.id);
+                          setEditingField("user_position");
+                        }}
+                      >
+                        {user.user_position}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {editingUserId === user.id && editingField === "estructura_id" ? (
+                      <Select
+                        value={user.estructura_id?.toString()}
+                        onValueChange={(value) => handleUpdateUser(user.id, "estructura_id", value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar estructura" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {estructuras?.map((estructura) => (
+                            <SelectItem key={estructura.id} value={estructura.id.toString()}>
+                              {estructura.custom_name || estructura.nombre}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span
+                        className="cursor-pointer hover:underline"
+                        onClick={() => {
+                          setEditingUserId(user.id);
+                          setEditingField("estructura_id");
+                        }}
+                      >
+                        {estructuras?.find((e) => e.id === user.estructura_id)?.custom_name ||
+                          estructuras?.find((e) => e.id === user.estructura_id)?.nombre}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {new Date(user.created_at).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Esta acción desactivará al usuario y no podrá acceder al sistema.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDeleteUser(user.id)}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Eliminar
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
