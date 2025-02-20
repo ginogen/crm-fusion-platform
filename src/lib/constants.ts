@@ -1,4 +1,3 @@
-
 export const APP_NAME = "CRM Fusion";
 
 export const NAVIGATION_ITEMS = [
@@ -46,14 +45,16 @@ export const ROLES = [
   "Asesor Training",
 ] as const;
 
-export const STRUCTURE_TYPES = [
-  "Empresas",
-  "País",
-  "Zonas",
-  "Filial",
-  "División",
-  "Organizaciones",
-  "Jefaturas",
-  "Sub Organización",
-] as const;
+export const STRUCTURE_TYPES_MAPPING = {
+  "Empresas": "Empresa",
+  "País": "Paises",
+  "Zonas": "Zonas",
+  "Filial": "Filial",
+  "División": "División",
+  "Organizaciones": "Organizaciones",
+  "Jefaturas": "Jefaturas",
+  "Sub Organización": "Sub Organización"
+} as const;
+
+export const STRUCTURE_TYPES = Object.keys(STRUCTURE_TYPES_MAPPING) as (keyof typeof STRUCTURE_TYPES_MAPPING)[];
 

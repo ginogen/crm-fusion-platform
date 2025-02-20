@@ -27,7 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Plus, Search, Ban, Edit, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { supabaseAdmin } from "@/integrations/supabase/admin-client";
-import { ROLES, STRUCTURE_TYPES } from "@/lib/constants";
+import { ROLES, STRUCTURE_TYPES, STRUCTURE_TYPES_MAPPING } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -845,13 +845,24 @@ const Usuarios = () => {
                     <SelectValue placeholder="Seleccionar estructura" />
                   </SelectTrigger>
                   <SelectContent>
-                    {estructuras
-                      ?.filter((e) => e.tipo === newUser.tipo_estructura)
-                      .map((estructura) => (
+                    {(() => {
+                      // Logs para depuración
+                      console.log('Tipo seleccionado:', newUser.tipo_estructura);
+                      console.log('Estructuras disponibles:', estructuras);
+                      console.log('STRUCTURE_TYPES:', STRUCTURE_TYPES);
+                      
+                      const estructurasFiltradas = estructuras?.filter(e => 
+                        e.tipo.toLowerCase() === STRUCTURE_TYPES_MAPPING[newUser.tipo_estructura].toLowerCase()
+                      );
+                      
+                      console.log('Estructuras filtradas:', estructurasFiltradas);
+                      
+                      return estructurasFiltradas?.map((estructura) => (
                         <SelectItem key={estructura.id} value={estructura.id.toString()}>
                           {estructura.custom_name || estructura.nombre}
                         </SelectItem>
-                      ))}
+                      ));
+                    })()}
                   </SelectContent>
                 </Select>
               </div>
