@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useAuth } from '../../lib/hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 
 type Lead = {
   id: string;
@@ -54,6 +55,7 @@ export const Topbar = ({ onEditLead, onGestionLead }: TopbarProps) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const { logout } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -176,6 +178,15 @@ export const Topbar = ({ onEditLead, onGestionLead }: TopbarProps) => {
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/auth');
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
+    }
+  };
+
   return (
     <div className="h-16 border-b flex items-center justify-between px-6 bg-white/80 backdrop-blur-sm fixed top-0 right-0 left-0 z-50 shadow-sm">
       <div className="flex-shrink-0">
@@ -252,9 +263,10 @@ export const Topbar = ({ onEditLead, onGestionLead }: TopbarProps) => {
           )}
         </div>
         <button 
-          onClick={logout}
-          className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700"
+          onClick={handleLogout}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700"
         >
+          <LogOut className="h-4 w-4" />
           Cerrar sesión
         </button>
       </div>
