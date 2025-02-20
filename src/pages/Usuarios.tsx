@@ -275,19 +275,35 @@ const Usuarios = () => {
           title: "Usuario actualizado exitosamente",
         });
       } else {
+        // Validaciones básicas
+        if (!newUser.email || !newUser.password || !newUser.nombre_completo || 
+            !newUser.role || !newUser.user_position || !newUser.estructura_id) {
+          toast({
+            variant: "destructive",
+            title: "Error al crear usuario",
+            description: "Por favor complete todos los campos requeridos",
+          });
+          return;
+        }
+
+        // Crear usuario en Auth
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
           email: newUser.email,
           password: newUser.password,
           email_confirm: true
         });
 
-        if (authError) throw authError;
+        if (authError || !authData.user) {
+          throw authError || new Error("No se pudo crear el usuario en Auth");
+        }
 
         const supervisorId = newUser.supervisor_id === 'no_supervisor' ? null : newUser.supervisor_id;
 
-        const { error: userError } = await supabase.from("users").insert([
-          {
-            id: authData.user?.id,
+        // Crear usuario en la base de datos usando el ID generado por Auth
+        const { error: userError } = await supabase
+          .from("users")
+          .insert([{
+            id: authData.user.id, // Usar el ID generado por Auth
             email: newUser.email,
             nombre_completo: newUser.nombre_completo,
             role: newUser.role,
@@ -296,8 +312,7 @@ const Usuarios = () => {
             supervisor_id: supervisorId,
             is_active: true,
             created_at: new Date().toISOString(),
-          },
-        ]);
+          }]);
 
         if (userError) throw userError;
 
