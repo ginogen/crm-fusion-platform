@@ -7,22 +7,28 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Dependencias
+# Dependencies
 node_modules
 .pnp
 .pnp.js
 
-# Producción
+# Build
 dist
 build
+.next
+out
 
-# Misc
-.DS_Store
+# Environment
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Misc
+.DS_Store
+*.pem
+.vercel
 
 # Editor directories and files
 .vscode/*
@@ -33,6 +39,3 @@ build
 *.njsproj
 *.sln
 *.sw?
-
-# Vercel
-.vercel
