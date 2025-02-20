@@ -1,0 +1,42 @@
+id,tipo_estructura,user_position,can_create,created_at
+1,Empresa,CEO,true,2025-01-23 13:06:10.05485+00
+2,Paises,CEO,true,2025-01-23 13:06:10.05485+00
+3,Filiales,CEO,true,2025-01-23 13:06:10.05485+00
+4,Filiales,Director Internacional,true,2025-01-23 13:06:10.05485+00
+5,Filiales,Director Nacional,true,2025-01-23 13:06:10.05485+00
+6,Filiales,Director de Zona,true,2025-01-23 13:06:10.05485+00
+7,Filial,CEO,true,2025-01-23 13:06:10.05485+00
+8,Filial,Director Internacional,true,2025-01-23 13:06:10.05485+00
+9,Filial,Director Nacional,true,2025-01-23 13:06:10.05485+00
+10,Filial,Director de Zona,true,2025-01-23 13:06:10.05485+00
+11,Filial,Sales Manager,true,2025-01-23 13:06:10.05485+00
+12,División,CEO,true,2025-01-23 13:06:10.05485+00
+13,División,Director Internacional,true,2025-01-23 13:06:10.05485+00
+14,División,Director Nacional,true,2025-01-23 13:06:10.05485+00
+15,División,Director de Zona,true,2025-01-23 13:06:10.05485+00
+16,División,Sales Manager,true,2025-01-23 13:06:10.05485+00
+17,División,Gerente Divisional,true,2025-01-23 13:06:10.05485+00
+18,Organizaciones,CEO,true,2025-01-23 13:06:10.05485+00
+19,Organizaciones,Director Internacional,true,2025-01-23 13:06:10.05485+00
+20,Organizaciones,Director Nacional,true,2025-01-23 13:06:10.05485+00
+21,Organizaciones,Director de Zona,true,2025-01-23 13:06:10.05485+00
+22,Organizaciones,Sales Manager,true,2025-01-23 13:06:10.05485+00
+23,Organizaciones,Gerente Divisional,true,2025-01-23 13:06:10.05485+00
+24,Organizaciones,Gerente,true,2025-01-23 13:06:10.05485+00
+25,Jefaturas,CEO,true,2025-01-23 13:06:10.05485+00
+26,Jefaturas,Director Internacional,true,2025-01-23 13:06:10.05485+00
+27,Jefaturas,Director Nacional,true,2025-01-23 13:06:10.05485+00
+28,Jefaturas,Director de Zona,true,2025-01-23 13:06:10.05485+00
+29,Jefaturas,Sales Manager,true,2025-01-23 13:06:10.05485+00
+30,Jefaturas,Gerente Divisional,true,2025-01-23 13:06:10.05485+00
+31,Jefaturas,Gerente,true,2025-01-23 13:06:10.05485+00
+32,Jefaturas,Team Manager,true,2025-01-23 13:06:10.05485+00
+33,Sub Organización,CEO,true,2025-01-23 13:06:10.05485+00
+34,Sub Organización,Director Internacional,true,2025-01-23 13:06:10.05485+00
+35,Sub Organización,Director Nacional,true,2025-01-23 13:06:10.05485+00
+36,Sub Organización,Director de Zona,true,2025-01-23 13:06:10.05485+00
+37,Sub Organización,Sales Manager,true,2025-01-23 13:06:10.05485+00
+38,Sub Organización,Gerente Divisional,true,2025-01-23 13:06:10.05485+00
+39,Sub Organización,Gerente,true,2025-01-23 13:06:10.05485+00
+40,Sub Organización,Team Manager,true,2025-01-23 13:06:10.05485+00
+41,Sub Organización,Full Executive,true,2025-01-23 13:06:10.05485+00

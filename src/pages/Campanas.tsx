@@ -68,6 +68,28 @@ interface BatchEstructuraPermiso {
   };
 }
 
+interface WebhookConfig {
+  id: number;
+  webhook_url: string;
+  webhook_token: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+interface FacebookPage {
+  id: string;
+  name: string;
+  access_token: string;
+}
+
+interface FacebookForm {
+  id: string;
+  name: string;
+  status: string;
+  page_id: string;
+  page_name: string;
+}
+
 const CSV_HEADERS = [
   "Nombre Completo",
   "Email",
@@ -87,6 +109,15 @@ const Campanas = () => {
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [selectedEmpresa, setSelectedEmpresa] = useState<number | null>(null);
   const [selectedPais, setSelectedPais] = useState<number | null>(null);
+  const [webhookToken, setWebhookToken] = useState<string>("");
+  const [webhookUrl, setWebhookUrl] = useState<string>("");
+  const [todayLeadsCount, setTodayLeadsCount] = useState(0);
+  const [recentWebhookLeads, setRecentWebhookLeads] = useState<BatchLead[]>([]);
+  const [facebookPages, setFacebookPages] = useState<FacebookPage[]>([]);
+  const [selectedPage, setSelectedPage] = useState<string>("");
+  const [facebookForms, setFacebookForms] = useState<FacebookForm[]>([]);
+  const [selectedForms, setSelectedForms] = useState<string[]>([]);
+  const [isLoadingFB, setIsLoadingFB] = useState(false);
 
   const { data: batches, refetch } = useQuery({
     queryKey: ["batches"],
@@ -138,6 +169,22 @@ const Campanas = () => {
       if (error) throw error;
       return data || [];
     },
+  });
+
+  const { data: webhookConfig, isLoading: isLoadingWebhook } = useQuery({
+    queryKey: ["webhook-config"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("webhook_config")
+        .select("*")
+        .single();
+      
+      if (data) {
+        setWebhookUrl(`${window.location.origin}/api/webhook/${data.webhook_token}`);
+        setWebhookToken(data.webhook_token);
+      }
+      return data;
+    }
   });
 
   // Filtrar estructuras por tipo
@@ -338,6 +385,215 @@ const Campanas = () => {
     window.URL.revokeObjectURL(url);
   };
 
+  const generateWebhookToken = async () => {
+    const token = crypto.randomUUID();
+    
+    const { error } = await supabase
+      .from("webhook_config")
+      .upsert({
+        webhook_token: token,
+        is_active: true
+      });
+
+    if (error) {
+      toast.error("Error al generar el token");
+      return;
+    }
+
+    setWebhookToken(token);
+    setWebhookUrl(`${window.location.origin}/api/webhook/${token}`);
+    toast.success("Webhook configurado correctamente");
+  };
+
+  const copyWebhookUrl = () => {
+    navigator.clipboard.writeText(webhookUrl);
+    toast.success("URL copiada al portapapeles");
+  };
+
+  const deactivateWebhook = async () => {
+    const { error } = await supabase
+      .from("webhook_config")
+      .update({ is_active: false })
+      .eq("webhook_token", webhookToken);
+
+    if (error) {
+      toast.error("Error al desactivar el webhook");
+      return;
+    }
+
+    setWebhookToken("");
+    setWebhookUrl("");
+    toast.success("Webhook desactivado correctamente");
+  };
+
+  const { data: todayLeads } = useQuery({
+    queryKey: ["today-webhook-leads"],
+    queryFn: async () => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const { data: leads } = await supabase
+        .from("campaign_leads")
+        .select("*")
+        .eq("origen", "Web")
+        .gte("created_at", today.toISOString())
+        .order("created_at", { ascending: false });
+
+      if (leads) {
+        setTodayLeadsCount(leads.length);
+        setRecentWebhookLeads(leads.slice(0, 5)); // Últimos 5 leads
+      }
+
+      return leads;
+    },
+    refetchInterval: 30000, // Refresca cada 30 segundos
+  });
+
+  const handleDeleteBatch = async (batchId: number) => {
+    // Confirmar antes de eliminar
+    if (!confirm("¿Estás seguro de que deseas eliminar este batch y todos sus leads?")) {
+      return;
+    }
+
+    try {
+      // Primero eliminar los permisos de estructura asociados
+      const { error: permisosError } = await supabase
+        .from("batch_estructura_permisos")
+        .delete()
+        .eq("lead_batch_id", batchId);
+
+      if (permisosError) throw permisosError;
+
+      // Luego eliminar los leads asociados
+      const { error: leadsError } = await supabase
+        .from("campaign_leads")
+        .delete()
+        .eq("batch_id", batchId);
+
+      if (leadsError) throw leadsError;
+
+      // Finalmente eliminar el batch
+      const { error: batchError } = await supabase
+        .from("lead_batches")
+        .delete()
+        .eq("id", batchId);
+
+      if (batchError) throw batchError;
+
+      toast.success("Batch eliminado correctamente");
+      refetch();
+    } catch (error) {
+      console.error("Error al eliminar batch:", error);
+      toast.error("Error al eliminar el batch");
+    }
+  };
+
+  const loadFacebookPages = async () => {
+    setIsLoadingFB(true);
+    try {
+      const response = await fetch(`https://graph.facebook.com/v18.0/me/accounts`, {
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_FACEBOOK_ACCESS_TOKEN}`
+        }
+      });
+      
+      const data = await response.json();
+      if (data.error) {
+        throw new Error(data.error.message);
+      }
+      
+      setFacebookPages(data.data);
+    } catch (error) {
+      console.error('Error cargando páginas:', error);
+      toast.error('Error al cargar páginas de Facebook');
+    } finally {
+      setIsLoadingFB(false);
+    }
+  };
+
+  const loadFormsByPage = async (pageId: string) => {
+    try {
+      const response = await fetch(
+        `https://graph.facebook.com/v18.0/${pageId}/leadgen_forms`,
+        {
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_FACEBOOK_ACCESS_TOKEN}`
+          }
+        }
+      );
+      
+      const data = await response.json();
+      if (data.error) {
+        throw new Error(data.error.message);
+      }
+      
+      setFacebookForms(data.data);
+    } catch (error) {
+      console.error('Error cargando formularios:', error);
+      toast.error('Error al cargar formularios');
+    }
+  };
+
+  const importLeadsFromForm = async (formId: string) => {
+    try {
+      const response = await fetch(
+        `https://graph.facebook.com/v18.0/${formId}/leads`,
+        {
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_FACEBOOK_ACCESS_TOKEN}`
+          }
+        }
+      );
+      
+      const data = await response.json();
+      if (data.error) {
+        throw new Error(data.error.message);
+      }
+
+      const form = facebookForms.find(f => f.id === formId);
+      const batchName = `FB - ${form?.page_name} - ${form?.name}`;
+      
+      const processedLeads = data.data.map((lead: any) => ({
+        nombre_completo: lead.field_data.find((f: any) => f.name === 'full_name')?.values[0] || '',
+        email: lead.field_data.find((f: any) => f.name === 'email')?.values[0] || '',
+        telefono: lead.field_data.find((f: any) => f.name === 'phone_number')?.values[0] || '',
+        origen: 'Facebook',
+        created_at: lead.created_time
+      }));
+
+      // Crear batch
+      const { data: batchData, error: batchError } = await supabase
+        .from("lead_batches")
+        .insert([{
+          name: batchName,
+          source: "Facebook",
+          campaign_name: form?.name
+        }])
+        .select()
+        .single();
+
+      if (batchError) throw batchError;
+
+      // Insertar leads
+      const leadsWithBatch = processedLeads.map(lead => ({
+        ...lead,
+        batch_id: batchData.id
+      }));
+
+      const { error: leadsError } = await supabase
+        .from("campaign_leads")
+        .insert(leadsWithBatch);
+
+      if (leadsError) throw leadsError;
+
+      toast.success(`Importados ${processedLeads.length} leads de ${form?.name}`);
+      refetch();
+    } catch (error) {
+      console.error('Error importando leads:', error);
+      toast.error('Error al importar leads');
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <h1 className="text-2xl font-bold">Campañas</h1>
@@ -351,17 +607,60 @@ const Campanas = () => {
               Conectar Facebook
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
               <DialogTitle>Conectar con Facebook</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              <p className="text-sm text-muted-foreground">
-                Conecta tu cuenta de Facebook para importar leads de tus formularios.
-              </p>
-              <Button className="w-full" onClick={() => toast.info("Función en desarrollo")}>
-                Conectar con Facebook
-              </Button>
+              {!facebookPages.length ? (
+                <Button 
+                  className="w-full" 
+                  onClick={loadFacebookPages}
+                  disabled={isLoadingFB}
+                >
+                  {isLoadingFB ? "Cargando..." : "Cargar Páginas de Facebook"}
+                </Button>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Página de Facebook</Label>
+                    <select
+                      className="w-full p-2 border rounded-md"
+                      value={selectedPage}
+                      onChange={(e) => {
+                        setSelectedPage(e.target.value);
+                        if (e.target.value) {
+                          loadFormsByPage(e.target.value);
+                        }
+                      }}
+                    >
+                      <option value="">Selecciona una página</option>
+                      {facebookPages.map(page => (
+                        <option key={page.id} value={page.id}>{page.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {facebookForms.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Formularios Disponibles</Label>
+                      <div className="space-y-2">
+                        {facebookForms.map(form => (
+                          <div key={form.id} className="flex items-center justify-between p-2 border rounded">
+                            <span>{form.name}</span>
+                            <Button
+                              size="sm"
+                              onClick={() => importLeadsFromForm(form.id)}
+                            >
+                              Importar Leads
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </DialogContent>
         </Dialog>
@@ -370,24 +669,118 @@ const Campanas = () => {
           <DialogTrigger asChild>
             <Button variant="outline" className="w-[200px]">
               <Globe className="mr-2 h-4 w-4" />
-              Conectar Web
+              {webhookConfig?.is_active ? "Webhook Conectado" : "Conectar Web"}
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
-              <DialogTitle>Configurar Webhook</DialogTitle>
+              <DialogTitle>Configurar Webhook para Elementor</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              <p className="text-sm text-muted-foreground">
-                Configura un webhook para recibir leads desde tu formulario de Elementor.
-              </p>
-              <div className="space-y-2">
-                <Label>URL del Webhook</Label>
-                <Input value="https://api.example.com/webhook" readOnly />
-              </div>
-              <Button className="w-full" onClick={() => toast.info("Función en desarrollo")}>
-                Copiar URL
-              </Button>
+              {webhookConfig?.is_active ? (
+                <>
+                  <div className="bg-green-50 border border-green-200 rounded-md p-4 space-y-2">
+                    <p className="text-sm text-green-800">
+                      ✓ El webhook está activo y recibiendo leads
+                    </p>
+                    <p className="text-sm text-green-600">
+                      Leads recibidos hoy: {todayLeadsCount}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>URL del Webhook</Label>
+                    <div className="flex gap-2">
+                      <Input value={webhookUrl} readOnly />
+                      <Button onClick={copyWebhookUrl}>
+                        Copiar
+                      </Button>
+                    </div>
+                  </div>
+
+                  {recentWebhookLeads.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Últimos leads recibidos:</Label>
+                      <div className="rounded-md border overflow-hidden">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Nombre</TableHead>
+                              <TableHead>Email</TableHead>
+                              <TableHead>Teléfono</TableHead>
+                              <TableHead>Hora</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {recentWebhookLeads.map((lead) => (
+                              <TableRow key={lead.id}>
+                                <TableCell>{lead.nombre_completo}</TableCell>
+                                <TableCell>{lead.email}</TableCell>
+                                <TableCell>{lead.telefono}</TableCell>
+                                <TableCell>
+                                  {new Date(lead.created_at).toLocaleTimeString()}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsWebhookModalOpen(false)}
+                    >
+                      Cerrar
+                    </Button>
+                    <Button 
+                      variant="destructive"
+                      onClick={deactivateWebhook}
+                    >
+                      Desactivar Webhook
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Sigue estos pasos para conectar tu formulario de Elementor:
+                  </p>
+                  
+                  <div className="space-y-4">
+                    <ol className="list-decimal list-inside space-y-2 text-sm">
+                      <li>Genera un token único para tu webhook</li>
+                      <li>Copia la URL del webhook</li>
+                      <li>En Elementor, configura una acción después del envío del formulario</li>
+                      <li>Selecciona "Webhook" y pega la URL</li>
+                      <li>Asegúrate de que los campos del formulario tengan los siguientes nombres:
+                        <ul className="list-disc list-inside ml-4 mt-1 text-muted-foreground">
+                          <li>nombre_completo</li>
+                          <li>email</li>
+                          <li>telefono</li>
+                          <li>origen (opcional)</li>
+                          <li>pais (opcional)</li>
+                          <li>observaciones (opcional)</li>
+                        </ul>
+                      </li>
+                    </ol>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsWebhookModalOpen(false)}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button onClick={generateWebhookToken}>
+                      Generar Token
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           </DialogContent>
         </Dialog>
@@ -494,7 +887,36 @@ const Campanas = () => {
                       {batch.leads.length} leads
                     </span>
                   </div>
-                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200" />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                      onClick={(e) => {
+                        e.stopPropagation(); // Evitar que se abra/cierre el acordeón
+                        handleDeleteBatch(batch.id);
+                      }}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M3 6h18" />
+                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                        <line x1="10" y1="11" x2="10" y2="17" />
+                        <line x1="14" y1="11" x2="14" y2="17" />
+                      </svg>
+                    </Button>
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200" />
+                  </div>
                 </div>
               </AccordionTrigger>
               <AccordionContent>

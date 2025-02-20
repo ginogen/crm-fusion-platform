@@ -1,12 +1,72 @@
-import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../lib/hooks/useAuth'; // Asumiendo que tienes un hook de autenticación
+import { Navigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
-export const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated } = useAuth();
-  const location = useLocation();
+interface UserData {
+  id: string;
+  user_position: string;
+  // ... otros campos necesarios
+}
 
-  if (!isAuthenticated) {
-    return <Navigate to="/auth" state={{ from: location }} replace />;
+const JERARQUIA_POSICIONES = [
+  'CEO',
+  'Director Internacional',
+  'Director Nacional',
+  'Director de Zona',
+  'Sales Manager',
+  'Gerente Divisional',
+  'Gerente',
+  'Team Manager',
+  'Full Executive',
+  'Asesor Training'
+] as const;
+
+const RESTRICTED_POSITIONS = {
+  ASESOR_TRAINING: 'Asesor Training'
+} as const;
+
+const getNivelJerarquico = (position: string) => {
+  return JERARQUIA_POSICIONES.indexOf(position);
+};
+
+interface ProtectedRouteProps {
+  children: React.ReactNode;
+  requiredPosition?: string[];
+}
+
+export const ProtectedRoute = ({ children, requiredPosition }: ProtectedRouteProps) => {
+  const { data: currentUser, isLoading } = useQuery({
+    queryKey: ["currentUser"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No user found");
+
+      const { data } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      return data as UserData;
+    },
+  });
+
+  // Si está cargando, mostramos null o un componente de carga
+  if (isLoading) {
+    return null; // o return <LoadingSpinner />
+  }
+
+  // Si no hay usuario, redirigir a auth
+  if (!currentUser) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  const hasRequiredPosition = !requiredPosition || 
+    (currentUser?.user_position && 
+     getNivelJerarquico(currentUser.user_position) < getNivelJerarquico(RESTRICTED_POSITIONS.ASESOR_TRAINING));
+
+  if (!hasRequiredPosition) {
+    return <Navigate to="/" replace />; // Cambiamos /dashboard por /
   }
 
   return <>{children}</>;

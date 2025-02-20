@@ -59,6 +59,7 @@ interface UserProfile {
   email: string;
   nombre_completo: string;
   estructura_id: number;
+  supervisor_id: string | null;
 }
 
 interface EstructuraVinculadaProps {
@@ -93,13 +94,23 @@ const EstructuraVinculada = ({ estructura, usuarios, isOpen, onToggle, estructur
             <>
               <h4 className="text-sm font-medium mb-2">Usuarios vinculados</h4>
               <div className="space-y-3">
-                {usuarios.map((usuario) => (
-                  <div key={usuario.id} className="p-3 bg-slate-50 rounded-md">
-                    <p className="font-medium">{usuario.nombre_completo}</p>
-                    <p className="text-sm text-muted-foreground">{usuario.user_position}</p>
-                    <p className="text-sm text-muted-foreground">{usuario.email}</p>
-                  </div>
-                ))}
+                {usuarios.map((usuario) => {
+                  const supervisor = usuarios.find(u => u.id === usuario.supervisor_id);
+                  
+                  return (
+                    <div key={usuario.id} className="p-3 bg-slate-50 rounded-md">
+                      <p className="font-medium">{usuario.nombre_completo}</p>
+                      <p className="text-sm text-muted-foreground">{usuario.user_position}</p>
+                      <p className="text-sm text-muted-foreground">{usuario.email}</p>
+                      {supervisor && (
+                        <div className="mt-2 text-sm">
+                          <span className="text-muted-foreground">Supervisor: </span>
+                          <span className="font-medium">{supervisor.nombre_completo}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </>
           ) : (
@@ -162,6 +173,27 @@ const Organizacion = () => {
     },
   });
 
+  const { data: permisosEstructura } = useQuery({
+    queryKey: ["permisosEstructura", userProfile?.user_position],
+    queryFn: async () => {
+      if (!userProfile?.user_position) return [];
+
+      const { data, error } = await supabase
+        .from('estructura_permisos')
+        .select('*')
+        .eq('user_position', userProfile.user_position)
+        .eq('can_create', true);
+
+      if (error) {
+        console.error("Error fetching permisos:", error);
+        throw error;
+      }
+
+      return data;
+    },
+    enabled: !!userProfile?.user_position
+  });
+
   const { data: estructuras, isLoading: isLoadingEstructuras, error, refetch } = useQuery({
     queryKey: ["estructuras"],
     queryFn: async () => {
@@ -191,7 +223,8 @@ const Organizacion = () => {
           user_position,
           email,
           nombre_completo,
-          estructura_id
+          estructura_id,
+          supervisor_id
         `);
 
       if (error) {
@@ -267,6 +300,15 @@ const Organizacion = () => {
   const handleCreateEstructura = async () => {
     if (!newEstructura.tipo || !newEstructura.nombre) {
       toast.error("Por favor complete todos los campos requeridos");
+      return;
+    }
+
+    const tienePermiso = permisosEstructura?.some(
+      permiso => permiso.tipo_estructura === newEstructura.tipo
+    );
+
+    if (!tienePermiso) {
+      toast.error("No tienes permiso para crear este tipo de estructura");
       return;
     }
 
@@ -393,7 +435,11 @@ const Organizacion = () => {
                       <SelectValue placeholder="Seleccione un tipo" />
                     </SelectTrigger>
                     <SelectContent>
-                      {TIPOS_ESTRUCTURA.map((tipo) => (
+                      {TIPOS_ESTRUCTURA.filter(tipo => 
+                        permisosEstructura?.some(permiso => 
+                          permiso.tipo_estructura === tipo
+                        )
+                      ).map((tipo) => (
                         <SelectItem key={tipo} value={tipo}>
                           {tipo}
                         </SelectItem>
@@ -544,13 +590,13 @@ const Organizacion = () => {
       </div>
 
       <Dialog open={isVinculacionModalOpen} onOpenChange={setIsVinculacionModalOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
               Estructura: {selectedEstructura?.custom_name || selectedEstructura?.nombre} ({selectedEstructura?.tipo})
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 flex-1 overflow-y-auto pr-2">
             <div>
               <h3 className="text-lg font-medium mb-4">Estructuras Vinculadas</h3>
               <div className="space-y-2">
@@ -629,15 +675,14 @@ const Organizacion = () => {
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="flex justify-end gap-2 mt-4">
-              <Button variant="outline" onClick={() => setIsVinculacionModalOpen(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={handleVincularEstructuras}>
-                Vincular
-              </Button>
-            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4 pt-4 border-t">
+            <Button variant="outline" onClick={() => setIsVinculacionModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleVincularEstructuras}>
+              Vincular
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

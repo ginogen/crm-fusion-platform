@@ -24,8 +24,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Plus, Search, Ban, Edit, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { supabaseAdmin } from "@/integrations/supabase/admin-client";
 import { ROLES, STRUCTURE_TYPES } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -48,6 +49,8 @@ interface UserData {
   role: string;
   created_at: string;
   estructura_id: number;
+  supervisor_id: string | null;
+  is_active: boolean;
 }
 
 interface Estructura {
@@ -56,6 +59,73 @@ interface Estructura {
   nombre: string;
   custom_name?: string;
 }
+
+const JERARQUIA_POSICIONES = [
+  'CEO',
+  'Director Internacional',
+  'Director Nacional',
+  'Director de Zona',
+  'Sales Manager',
+  'Gerente Divisional',
+  'Gerente',
+  'Team Manager',
+  'Full Executive',
+  'Asesor Training'
+] as const;
+
+const obtenerSupervisoresPotenciales = (usuarios: UserData[], posicionSeleccionada: string) => {
+  const posicionIndex = JERARQUIA_POSICIONES.indexOf(posicionSeleccionada);
+  if (posicionIndex <= 0) return []; // CEO no tiene supervisor
+
+  // Filtrar usuarios con cualquier posición superior
+  return usuarios.filter(usuario => {
+    const supervisorIndex = JERARQUIA_POSICIONES.indexOf(usuario.user_position);
+    // Retorna true si el supervisor tiene una posición superior (índice menor)
+    return supervisorIndex < posicionIndex;
+  }).sort((a, b) => {
+    // Ordenar por nivel jerárquico, priorizando los más cercanos
+    const indexA = JERARQUIA_POSICIONES.indexOf(a.user_position);
+    const indexB = JERARQUIA_POSICIONES.indexOf(b.user_position);
+    return indexA - indexB;
+  });
+};
+
+const RESTRICTED_POSITIONS = {
+  ASESOR_TRAINING: 'Asesor Training',
+  FULL_EXECUTIVE: 'Full Executive',
+  TEAM_MANAGER: 'Team Manager',
+  GERENTE: 'Gerente',
+  GERENTE_DIVISIONAL: 'Gerente Divisional',
+  SALES_MANAGER: 'Sales Manager',
+  DIRECTOR_ZONA: 'Director de Zona',
+  DIRECTOR_NACIONAL: 'Director Nacional',
+  DIRECTOR_INTERNACIONAL: 'Director Internacional',
+  CEO: 'CEO'
+} as const;
+
+// Función para obtener el nivel jerárquico
+const getNivelJerarquico = (position: string) => {
+  return JERARQUIA_POSICIONES.indexOf(position);
+};
+
+// Función para verificar si puede ver usuarios
+const canViewUser = (currentUserPosition: string, targetUserPosition: string) => {
+  const currentLevel = getNivelJerarquico(currentUserPosition);
+  const targetLevel = getNivelJerarquico(targetUserPosition);
+  return currentLevel < targetLevel;
+};
+
+// Función para verificar permisos de edición
+const canEditUsers = (userPosition?: string) => {
+  if (!userPosition) return false;
+  return getNivelJerarquico(userPosition) < getNivelJerarquico(RESTRICTED_POSITIONS.ASESOR_TRAINING);
+};
+
+// Función para verificar si puede crear usuarios
+const canCreateUsers = (userPosition?: string) => {
+  if (!userPosition) return false;
+  return getNivelJerarquico(userPosition) < getNivelJerarquico(RESTRICTED_POSITIONS.ASESOR_TRAINING);
+};
 
 const Usuarios = () => {
   const { toast } = useToast();
@@ -66,9 +136,13 @@ const Usuarios = () => {
   const [estructuraFilter, setEstructuraFilter] = useState("");
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [showInactive, setShowInactive] = useState(false);
 
-  // Nuevo usuario
+  // Restaurar el estado de newUser
   const [newUser, setNewUser] = useState({
+    id: "",
     email: "",
     nombre_completo: "",
     password: "",
@@ -76,20 +150,53 @@ const Usuarios = () => {
     user_position: "",
     tipo_estructura: "",
     estructura_id: "",
+    supervisor_id: "",
   });
 
-  // Fetch usuarios
-  const { data: users, refetch: refetchUsers, isLoading } = useQuery({
-    queryKey: ["users"],
+  // Fetch current user primero
+  const { data: currentUser } = useQuery({
+    queryKey: ["currentUser"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No user found");
+
+      const { data } = await supabase
         .from("users")
         .select("*")
-        .order("created_at", { ascending: false });
+        .eq("id", user.id)
+        .single();
+
+      return data as UserData;
+    },
+  });
+
+  // Fetch usuarios después de tener currentUser
+  const { data: users, refetch: refetchUsers, isLoading } = useQuery({
+    queryKey: ["users", currentUser?.id, showInactive],
+    queryFn: async () => {
+      if (!currentUser?.user_position) return [];
+
+      let query = supabase
+        .from("users")
+        .select("*, estructuras(*)");
+
+      // Si no es CEO, filtrar usuarios según jerarquía y vinculación
+      if (currentUser.user_position !== RESTRICTED_POSITIONS.CEO) {
+        const subordinados = await getSubordinados(currentUser.id);
+        query = query.in('id', [currentUser.id, ...subordinados]);
+      }
+
+      // Aplicar filtro de activos/inactivos
+      if (!showInactive) {
+        query = query.eq('is_active', true);
+      }
+
+      const { data, error } = await query.order("created_at", { ascending: false });
 
       if (error) throw error;
-      return data as UserData[];
+      return data as (UserData & { estructuras: Estructura })[];
     },
+    enabled: !!currentUser?.id
   });
 
   // Fetch estructuras
@@ -106,37 +213,105 @@ const Usuarios = () => {
     },
   });
 
-  const handleCreateUser = async () => {
+  // Agregar función helper para verificar si puede eliminar usuarios
+  const canDeleteUsers = (userPosition?: string) => {
+    const restrictedPositions = [
+      'Sales Manager',
+      'Gerente Divisional',
+      'Gerente',
+      'Team Manager',
+      'Full Executive',
+      'Asesor Training'
+    ];
+
+    return !restrictedPositions.includes(userPosition || '');
+  };
+
+  // Función auxiliar para obtener subordinados recursivamente
+  const getSubordinados = async (userId: string): Promise<string[]> => {
+    const { data: directos } = await supabase
+      .from("users")
+      .select("id")
+      .eq("supervisor_id", userId);
+
+    if (!directos || directos.length === 0) return [];
+
+    const subordinadosDirectos = directos.map(u => u.id);
+    const subordinadosIndirectos = await Promise.all(
+      subordinadosDirectos.map(id => getSubordinados(id))
+    );
+
+    return [...subordinadosDirectos, ...subordinadosIndirectos.flat()];
+  };
+
+  const handleSaveUser = async () => {
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: newUser.email,
-        password: newUser.password,
-      });
+      if (isEditing) {
+        if (isChangingPassword && newUser.password) {
+          const { error: passwordError } = await supabaseAdmin.auth.admin.updateUserById(
+            newUser.id,
+            { password: newUser.password }
+          );
 
-      if (authError) throw authError;
+          if (passwordError) throw passwordError;
+        }
 
-      const { error: userError } = await supabase.from("users").insert([
-        {
-          id: authData.user?.id,
+        const supervisorId = newUser.supervisor_id === 'no_supervisor' ? null : newUser.supervisor_id;
+
+        const { error: userError } = await supabase
+          .from("users")
+          .update({
+            nombre_completo: newUser.nombre_completo,
+            role: newUser.role,
+            user_position: newUser.user_position,
+            estructura_id: parseInt(newUser.estructura_id),
+            supervisor_id: supervisorId,
+          })
+          .eq('id', newUser.id);
+
+        if (userError) throw userError;
+
+        toast({
+          title: "Usuario actualizado exitosamente",
+        });
+      } else {
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
           email: newUser.email,
-          nombre_completo: newUser.nombre_completo,
-          role: newUser.role,
-          user_position: newUser.user_position,
-          estructura_id: parseInt(newUser.estructura_id),
-          is_active: true,
-        },
-      ]);
+          password: newUser.password,
+          email_confirm: true
+        });
 
-      if (userError) throw userError;
+        if (authError) throw authError;
 
-      toast({
-        title: "Usuario creado exitosamente",
-        description: "Se ha enviado un email de confirmación",
-      });
+        const supervisorId = newUser.supervisor_id === 'no_supervisor' ? null : newUser.supervisor_id;
+
+        const { error: userError } = await supabase.from("users").insert([
+          {
+            id: authData.user?.id,
+            email: newUser.email,
+            nombre_completo: newUser.nombre_completo,
+            role: newUser.role,
+            user_position: newUser.user_position,
+            estructura_id: parseInt(newUser.estructura_id),
+            supervisor_id: supervisorId,
+            is_active: true,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+
+        if (userError) throw userError;
+
+        toast({
+          title: "Usuario creado exitosamente",
+        });
+      }
 
       setIsCreateModalOpen(false);
+      setIsEditing(false);
+      setIsChangingPassword(false);
       refetchUsers();
       setNewUser({
+        id: "",
         email: "",
         nombre_completo: "",
         password: "",
@@ -144,12 +319,13 @@ const Usuarios = () => {
         user_position: "",
         tipo_estructura: "",
         estructura_id: "",
+        supervisor_id: "",
       });
     } catch (error) {
-      console.error("Error creating user:", error);
+      console.error("Error saving user:", error);
       toast({
         variant: "destructive",
-        title: "Error al crear usuario",
+        title: `Error al ${isEditing ? 'actualizar' : 'crear'} usuario`,
         description: "Por favor intente nuevamente",
       });
     }
@@ -157,6 +333,15 @@ const Usuarios = () => {
 
   const handleDeleteUser = async (userId: string) => {
     try {
+      if (!canDeleteUsers(currentUser?.user_position)) {
+        toast({
+          variant: "destructive",
+          title: "Acceso denegado",
+          description: "No tienes permisos para desactivar usuarios",
+        });
+        return;
+      }
+
       const { error } = await supabase
         .from("users")
         .update({ is_active: false })
@@ -180,6 +365,14 @@ const Usuarios = () => {
   };
 
   const handleUpdateUser = async (userId: string, field: string, value: string) => {
+    if (!canEditUsers(currentUser?.user_position)) {
+      toast({
+        variant: "destructive",
+        title: "Acceso denegado",
+        description: "No tienes permisos para editar usuarios",
+      });
+      return;
+    }
     try {
       const { error } = await supabase
         .from("users")
@@ -205,6 +398,64 @@ const Usuarios = () => {
     }
   };
 
+  const handleEditUser = (user: UserData) => {
+    if (!canEditUsers(currentUser?.user_position)) {
+      toast({
+        variant: "destructive",
+        title: "Acceso denegado",
+        description: "No tienes permisos para editar usuarios",
+      });
+      return;
+    }
+    const estructura = estructuras?.find(e => e.id === user.estructura_id);
+    setNewUser({
+      id: user.id,
+      email: user.email,
+      nombre_completo: user.nombre_completo,
+      password: "", // No incluimos la contraseña actual
+      role: user.role,
+      user_position: user.user_position,
+      tipo_estructura: estructura?.tipo || "",
+      estructura_id: user.estructura_id.toString(),
+      supervisor_id: user.supervisor_id,
+    });
+    setIsEditing(true);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleReactivateUser = async (userId: string) => {
+    try {
+      if (!canDeleteUsers(currentUser?.user_position)) {
+        toast({
+          variant: "destructive",
+          title: "Acceso denegado",
+          description: "No tienes permisos para reactivar usuarios",
+        });
+        return;
+      }
+
+      const { error } = await supabase
+        .from("users")
+        .update({ is_active: true })
+        .eq("id", userId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Usuario reactivado exitosamente",
+      });
+
+      refetchUsers();
+    } catch (error) {
+      console.error("Error reactivating user:", error);
+      toast({
+        variant: "destructive",
+        title: "Error al reactivar usuario",
+        description: "Por favor intente nuevamente",
+      });
+    }
+  };
+
   const filteredUsers = users?.filter((user) => {
     if (!user) return false;
     
@@ -219,14 +470,25 @@ const Usuarios = () => {
     return matchesEmail && matchesNombre && matchesCargo && matchesEstructura;
   });
 
+  // Modificar el renderizado para manejar el estado de carga
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="animate-fade-in space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Usuarios</h1>
-        <Button onClick={() => setIsCreateModalOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Crear Usuario
-        </Button>
+        {canCreateUsers(currentUser?.user_position) && (
+          <Button onClick={() => setIsCreateModalOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Crear Usuario
+          </Button>
+        )}
       </div>
 
       {/* Filtros */}
@@ -279,6 +541,17 @@ const Usuarios = () => {
             />
           </div>
         </div>
+        <div className="space-y-2 flex items-center">
+          <label className="flex items-center space-x-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+              className="form-checkbox h-4 w-4"
+            />
+            <span>Mostrar usuarios inactivos</span>
+          </label>
+        </div>
       </div>
 
       {/* Tabla */}
@@ -290,18 +563,14 @@ const Usuarios = () => {
               <TableHead>Nombre</TableHead>
               <TableHead>Cargo</TableHead>
               <TableHead>Estructura</TableHead>
+              <TableHead>Supervisor</TableHead>
+              <TableHead>Estado</TableHead>
               <TableHead>Fecha</TableHead>
               <TableHead>Acción</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-4">
-                  Cargando usuarios...
-                </TableCell>
-              </TableRow>
-            ) : filteredUsers?.length === 0 ? (
+            {filteredUsers?.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-4">
                   No se encontraron usuarios
@@ -309,7 +578,10 @@ const Usuarios = () => {
               </TableRow>
             ) : (
               filteredUsers?.map((user) => (
-                <TableRow key={user.id}>
+                <TableRow 
+                  key={user.id}
+                  className={!user.is_active ? "bg-muted/50" : ""}
+                >
                   <TableCell>{user.email}</TableCell>
                   <TableCell>{user.nombre_completo}</TableCell>
                   <TableCell>
@@ -372,33 +644,64 @@ const Usuarios = () => {
                     )}
                   </TableCell>
                   <TableCell>
+                    {users?.find(u => u.id === user.supervisor_id)?.nombre_completo || 'Sin supervisor'}
+                  </TableCell>
+                  <TableCell>
+                    <span className={`px-2 py-1 rounded-full text-xs ${
+                      user.is_active 
+                        ? "bg-green-100 text-green-800" 
+                        : "bg-red-100 text-red-800"
+                    }`}>
+                      {user.is_active ? "Activo" : "Inactivo"}
+                    </span>
+                  </TableCell>
+                  <TableCell>
                     {new Date(user.created_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <Trash2 className="h-4 w-4 text-destructive" />
+                    <div className="flex space-x-2">
+                      {canEditUsers(currentUser?.user_position) && user.is_active && (
+                        <Button variant="ghost" size="icon" onClick={() => handleEditUser(user)}>
+                          <Edit className="h-4 w-4 text-primary" />
                         </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Esta acción desactivará al usuario y no podrá acceder al sistema.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => handleDeleteUser(user.id)}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          >
-                            Eliminar
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                      )}
+                      {canDeleteUsers(currentUser?.user_position) && user.is_active && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <Ban className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Esta acción desactivará al usuario y no podrá acceder al sistema.
+                                El usuario podrá ser reactivado posteriormente.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteUser(user.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Desactivar
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                      {canDeleteUsers(currentUser?.user_position) && !user.is_active && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleReactivateUser(user.id)}
+                        >
+                          <RefreshCw className="h-4 w-4 text-green-600" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -408,10 +711,27 @@ const Usuarios = () => {
       </div>
 
       {/* Modal Crear Usuario */}
-      <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+      <Dialog open={isCreateModalOpen} onOpenChange={(open) => {
+        setIsCreateModalOpen(open);
+        if (!open) {
+          setIsEditing(false);
+          setIsChangingPassword(false);
+          setNewUser({
+            id: "",
+            email: "",
+            nombre_completo: "",
+            password: "",
+            role: "",
+            user_position: "",
+            tipo_estructura: "",
+            estructura_id: "",
+            supervisor_id: "",
+          });
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Crear Usuario</DialogTitle>
+            <DialogTitle>{isEditing ? 'Editar Usuario' : 'Crear Usuario'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -420,21 +740,46 @@ const Usuarios = () => {
                 type="email"
                 value={newUser.email}
                 onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                disabled={isEditing}
               />
             </div>
+            {!isEditing ? (
+              <div className="space-y-2">
+                <Label>Contraseña</Label>
+                <Input
+                  type="password"
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  placeholder="Contraseña"
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Contraseña</Label>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => setIsChangingPassword(!isChangingPassword)}
+                  >
+                    {isChangingPassword ? 'Cancelar cambio' : 'Cambiar contraseña'}
+                  </Button>
+                </div>
+                {isChangingPassword && (
+                  <Input
+                    type="password"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    placeholder="Nueva contraseña"
+                  />
+                )}
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Nombre Completo</Label>
               <Input
                 value={newUser.nombre_completo}
                 onChange={(e) => setNewUser({ ...newUser, nombre_completo: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Contraseña</Label>
-              <Input
-                type="password"
-                value={newUser.password}
-                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
               />
             </div>
             <div className="space-y-2">
@@ -511,12 +856,43 @@ const Usuarios = () => {
                 </Select>
               </div>
             )}
+            <div className="space-y-2">
+              <Label>Supervisor a Cargo</Label>
+              <Select
+                value={newUser.supervisor_id}
+                onValueChange={(value) => setNewUser({ ...newUser, supervisor_id: value })}
+                disabled={!newUser.user_position || newUser.user_position === 'CEO'}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar supervisor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {newUser.user_position && newUser.user_position !== 'CEO' ? (
+                    obtenerSupervisoresPotenciales(users || [], newUser.user_position)
+                      .map((supervisor) => (
+                        <SelectItem key={supervisor.id} value={supervisor.id}>
+                          {supervisor.nombre_completo} ({supervisor.user_position})
+                        </SelectItem>
+                      ))
+                  ) : (
+                    <SelectItem value="no_supervisor" disabled>
+                      {newUser.user_position === 'CEO' 
+                        ? 'CEO no requiere supervisor' 
+                        : 'Seleccione primero un cargo'}
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
+              <Button variant="outline" onClick={() => {
+                setIsCreateModalOpen(false);
+                setIsEditing(false);
+              }}>
                 Cancelar
               </Button>
-              <Button onClick={handleCreateUser}>
-                Crear Usuario
+              <Button onClick={handleSaveUser}>
+                {isEditing ? 'Guardar Cambios' : 'Crear Usuario'}
               </Button>
             </div>
           </div>
