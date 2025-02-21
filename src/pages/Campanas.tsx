@@ -27,14 +27,25 @@ import {
 } from "@/components/ui/accordion";
 import { toast } from "sonner";
 import { Facebook, Globe, Upload, ChevronDown } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface BatchLead {
   id: number;
   nombre_completo: string;
   email: string;
   telefono: string;
+  origen: string;
+  pais: string;
+  filial: string;
+  observaciones: string;
   estado: string;
-  created_at: string;
+  batch_id: number;
+  created_at?: string;
+  user?: {
+    id: number;
+    nombre_completo: string;
+    email: string;
+  };
 }
 
 interface Batch {
@@ -100,7 +111,37 @@ const CSV_HEADERS = [
   "Observaciones",
 ];
 
+interface BatchEstructuraResponse {
+  estructuras_id: number;
+  estructuras: {
+    id: number;
+    tipo: estructura_tipo;
+    nombre: string;
+    custom_name: string;
+    parent_id: number | null;
+  };
+}
+
+interface EstructuraWithOrganization {
+  id: number;
+  organizations: {
+    id: number;
+  } | null;
+}
+
+interface BatchEstructura {
+  estructuras_id: number;
+  estructuras: {
+    id: number;
+    tipo: 'Empresa' | 'Paises' | 'Organizaciones';
+    nombre: string;
+    custom_name: string;
+    parent_id: number | null;
+  };
+}
+
 const Campanas = () => {
+  const queryClient = useQueryClient();
   const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
   const [isFacebookModalOpen, setIsFacebookModalOpen] = useState(false);
   const [isBatchUploadModalOpen, setIsBatchUploadModalOpen] = useState(false);
@@ -118,10 +159,12 @@ const Campanas = () => {
   const [facebookForms, setFacebookForms] = useState<FacebookForm[]>([]);
   const [selectedForms, setSelectedForms] = useState<string[]>([]);
   const [isLoadingFB, setIsLoadingFB] = useState(false);
+  const [editingBatchId, setEditingBatchId] = useState<number | null>(null);
 
   const { data: batches, refetch } = useQuery({
     queryKey: ["batches"],
     queryFn: async () => {
+      // 1. Obtener los batches
       const { data: batchesData } = await supabase
         .from("lead_batches")
         .select(`
@@ -140,23 +183,40 @@ const Campanas = () => {
 
       if (!batchesData) return [];
 
-      // Obtener leads para cada batch
+      // 2. Obtener leads para cada batch desde la tabla leads
       const batchesWithLeads = await Promise.all(
         batchesData.map(async (batch) => {
           const { data: leadsData } = await supabase
-            .from("campaign_leads")
-            .select("*")
-            .eq("batch_id", batch.id);
+            .from("leads")
+            .select(`
+              id,
+              nombre_completo,
+              email,
+              telefono,
+              estado,
+              created_at,
+              asignado_a,
+              user:users!asignado_a (
+                id,
+                nombre_completo,
+                email
+              )
+            `)
+            .eq("batch_id", batch.id)
+            .eq("is_from_batch", true);
 
           return {
             ...batch,
-            leads: leadsData || [],
+            leads: leadsData || []
           };
         })
       );
 
       return batchesWithLeads;
     },
+    refetchOnWindowFocus: false,
+    staleTime: 0,
+    gcTime: 0
   });
 
   const { data: estructuras, isLoading: isLoadingEstructuras } = useQuery({
@@ -239,54 +299,156 @@ const Campanas = () => {
   };
 
   const distribuirLeads = async (batchId: number, leads: BatchLead[]) => {
-    const { data: batchEstructuras } = await supabase
-      .from("batch_estructura_permisos")
-      .select(`
-        estructuras_id,
-        estructuras (
-          id,
-          tipo,
-          nombre,
-          created_at
-        )
-      `)
-      .eq("lead_batch_id", batchId);
+    try {
+      // 1. Obtener las estructuras vinculadas al batch con tipado correcto
+      const { data: batchEstructuras } = await supabase
+        .from("batch_estructura_permisos")
+        .select(`
+          estructuras_id,
+          estructuras!inner (
+            id,
+            tipo,
+            nombre,
+            custom_name,
+            parent_id
+          )
+        `)
+        .eq("lead_batch_id", batchId)
+        .returns<BatchEstructura[]>();
 
-    if (!batchEstructuras) return;
+      if (!batchEstructuras?.length) {
+        toast.error("No hay estructuras vinculadas al batch");
+        return;
+      }
 
-    const estructurasPermisos = batchEstructuras as unknown as BatchEstructuraPermiso[];
+      // 2. Identificar empresa y país
+      const empresaEstructura = batchEstructuras.find(
+        be => be.estructuras.tipo === 'Empresa'
+      );
+      const paisEstructura = batchEstructuras.find(
+        be => be.estructuras.tipo === 'Paises'
+      );
 
-    const empresaId = estructurasPermisos.find(be => be.estructuras.tipo === 'Empresa')?.estructuras_id;
-    const paisId = estructurasPermisos.find(be => be.estructuras.tipo === 'Paises')?.estructuras_id;
+      if (!empresaEstructura || !paisEstructura) {
+        toast.error("No se encontraron todas las estructuras necesarias");
+        return;
+      }
 
-    const { data: usuarios } = await supabase
-      .from("usuarios")
-      .select("*")
-      .eq("estructura_empresa_id", empresaId)
-      .eq("estructura_pais_id", paisId);
+      // 3. Obtener todas las estructuras relacionadas recursivamente
+      const obtenerEstructurasHijas = async (estructuraId: number): Promise<number[]> => {
+        const { data: hijas } = await supabase
+          .from("estructuras")
+          .select("id")
+          .eq("parent_id", estructuraId);
+        
+        if (!hijas?.length) return [estructuraId];
+        
+        const estructurasHijas = await Promise.all(
+          hijas.map(h => obtenerEstructurasHijas(h.id))
+        );
+        
+        return [estructuraId, ...estructurasHijas.flat()];
+      };
 
-    if (!usuarios || usuarios.length === 0) {
-      toast.error("No hay usuarios disponibles para distribuir los leads");
-      return;
-    }
+      // Obtener todas las estructuras relacionadas con la empresa y el país
+      const estructurasEmpresa = await obtenerEstructurasHijas(empresaEstructura.estructuras_id);
+      const estructurasPais = await obtenerEstructurasHijas(paisEstructura.estructuras_id);
+      
+      const todasLasEstructuras = [...new Set([...estructurasEmpresa, ...estructurasPais])];
 
-    // Distribuir leads uniformemente
-    const leadsActualizados = leads.map((lead, index) => ({
-      ...lead,
-      usuario_id: usuarios[index % usuarios.length].id,
-      estado: "PENDIENTE"
-    }));
+      // 4. Obtener usuarios activos vinculados a cualquiera de estas estructuras
+      const { data: usuarios } = await supabase
+        .from("users")
+        .select("id, nombre_completo, email")
+        .in("estructura_id", todasLasEstructuras)
+        .eq("is_active", true);
 
-    const { error } = await supabase
-      .from("campaign_leads")
-      .upsert(leadsActualizados);
+      if (!usuarios?.length) {
+        toast.error("No hay usuarios disponibles para distribuir los leads");
+        return;
+      }
 
-    if (error) {
+      // 5. Actualizar los leads en campaign_leads con el usuario asignado
+      for (let i = 0; i < leads.length; i++) {
+        const usuario = usuarios[i % usuarios.length];
+        const { error: updateError } = await supabase
+          .from("campaign_leads")
+          .update({ 
+            estado: "SIN_LLAMAR",
+            assigned_user_id: usuario.id 
+          })
+          .eq("id", leads[i].id);
+
+        if (updateError) {
+          console.error('Error al actualizar lead:', updateError);
+          throw new Error('Error al actualizar leads');
+        }
+      }
+
+      // 6. Actualizar la vista de los leads
+      const { data: updatedLeads } = await supabase
+        .from("campaign_leads")
+        .select(`
+          *,
+          user:users!assigned_user_id (
+            id,
+            nombre_completo,
+            email
+          )
+        `)
+        .eq("batch_id", batchId);
+
+      if (!updatedLeads) {
+        throw new Error('Error al obtener los leads actualizados');
+      }
+
+      toast.success(`${leads.length} leads distribuidos entre ${usuarios.length} usuarios`);
+      refetch();
+      return true;
+    } catch (error) {
+      console.error('Error en distribuirLeads:', error);
       toast.error("Error al distribuir los leads");
-      return;
+      return false;
     }
+  };
 
-    toast.success("Leads distribuidos correctamente");
+  const handleUpdateEstructuras = async (batchId: number, empresaId: number, paisId: number) => {
+    try {
+      // Primero eliminar las estructuras existentes
+      const { error: deleteError } = await supabase
+        .from("batch_estructura_permisos")
+        .delete()
+        .eq("lead_batch_id", batchId);
+
+      if (deleteError) throw deleteError;
+
+      // Luego insertar las nuevas estructuras
+      const { error: insertError } = await supabase
+        .from("batch_estructura_permisos")
+        .insert([
+          { estructuras_id: empresaId, lead_batch_id: batchId },
+          { estructuras_id: paisId, lead_batch_id: batchId },
+        ]);
+
+      if (insertError) throw insertError;
+
+      // Redistribuir los leads
+      const { data: leads } = await supabase
+        .from("campaign_leads")
+        .select("*")
+        .eq("batch_id", batchId);
+
+      if (leads) {
+        await distribuirLeads(batchId, leads);
+      }
+
+      setEditingBatchId(null);
+      refetch();
+      toast.success("Estructuras actualizadas y leads redistribuidos correctamente");
+    } catch (error) {
+      console.error('Error al actualizar estructuras:', error);
+      toast.error("Error al actualizar las estructuras");
+    }
   };
 
   const handleBatchUpload = async () => {
@@ -300,45 +462,64 @@ const Campanas = () => {
       return;
     }
 
-    // Crear nuevo batch (sin estructuras)
-    const { data: batchData, error: batchError } = await supabase
-      .from("lead_batches")
-      .insert([
-        {
-          name: batchName,
-          source: "CSV",
-        },
-      ])
-      .select()
-      .single();
+    try {
+      // 1. Crear nuevo batch
+      const { data: batchData, error: batchError } = await supabase
+        .from("lead_batches")
+        .insert({
+          name: batchName.trim(),
+          source: "bulk"
+        })
+        .select()
+        .single();
 
-    if (batchError || !batchData) {
-      toast.error("Error al crear el batch");
-      return;
+      if (batchError || !batchData) {
+        throw new Error("Error al crear el batch");
+      }
+
+      // 2. Preparar los leads para la tabla leads
+      const leadsToInsert = csvData
+        .filter(lead => lead.nombre_completo && lead.email)
+        .map(lead => ({
+          nombre_completo: lead.nombre_completo,
+          email: lead.email,
+          telefono: lead.telefono || null,
+          origen: "Batch",
+          pais: lead.pais || null,
+          filial: lead.filial || null,
+          observaciones: lead.observaciones || null,
+          estado: "SIN_LLAMAR",
+          batch_id: batchData.id,
+          is_from_batch: true,
+          is_assigned: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }));
+
+      if (leadsToInsert.length === 0) {
+        throw new Error("No hay leads válidos para cargar");
+      }
+
+      // 3. Insertar leads directamente en la tabla leads
+      const { error: leadsError } = await supabase
+        .from("leads")
+        .insert(leadsToInsert);
+
+      if (leadsError) {
+        throw new Error("Error al cargar los leads");
+      }
+
+      toast.success(`Batch "${batchName}" creado con ${leadsToInsert.length} leads`);
+      setBatchName("");
+      setCsvData([]);
+      setPreviewData([]);
+      setIsBatchUploadModalOpen(false);
+      refetch();
+
+    } catch (error) {
+      console.error('Error en handleBatchUpload:', error);
+      toast.error((error as Error).message || "Error al procesar la carga del batch");
     }
-
-    // Agregar batch_id a cada lead
-    const leadsWithBatch = csvData.map(lead => ({
-      ...lead,
-      batch_id: batchData.id,
-    }));
-
-    // Insertar leads
-    const { error: leadsError } = await supabase
-      .from("campaign_leads")
-      .insert(leadsWithBatch);
-
-    if (leadsError) {
-      toast.error("Error al cargar los leads");
-      return;
-    }
-
-    toast.success(`Batch "${batchName}" creado con ${csvData.length} leads`);
-    setBatchName("");
-    setCsvData([]);
-    setPreviewData([]);
-    setIsBatchUploadModalOpen(false);
-    refetch();
   };
 
   const handleVincularEstructuras = async (batchId: number, empresaId: number, paisId: number) => {
@@ -450,41 +631,80 @@ const Campanas = () => {
   });
 
   const handleDeleteBatch = async (batchId: number) => {
-    // Confirmar antes de eliminar
-    if (!confirm("¿Estás seguro de que deseas eliminar este batch y todos sus leads?")) {
-      return;
-    }
-
     try {
-      // Primero eliminar los permisos de estructura asociados
-      const { error: permisosError } = await supabase
-        .from("batch_estructura_permisos")
-        .delete()
-        .eq("lead_batch_id", batchId);
+      if (!confirm("¿Estás seguro de que deseas eliminar este batch y todos sus leads?")) {
+        return;
+      }
 
-      if (permisosError) throw permisosError;
+      // Deshabilitar la caché temporalmente
+      await queryClient.cancelQueries({ queryKey: ["batches"] });
 
-      // Luego eliminar los leads asociados
+      // 1. Verificar si el batch existe antes de intentar eliminarlo
+      const { data: batchExists } = await supabase
+        .from("lead_batches")
+        .select("id")
+        .eq("id", batchId)
+        .single();
+
+      if (!batchExists) {
+        throw new Error('El batch no existe');
+      }
+
+      // 2. Eliminar los leads
       const { error: leadsError } = await supabase
         .from("campaign_leads")
         .delete()
         .eq("batch_id", batchId);
 
-      if (leadsError) throw leadsError;
+      if (leadsError) {
+        console.error('Error al eliminar leads:', leadsError);
+        throw new Error(`Error al eliminar leads: ${leadsError.message}`);
+      }
 
-      // Finalmente eliminar el batch
+      // 3. Eliminar los permisos de estructura
+      const { error: permisosError } = await supabase
+        .from("batch_estructura_permisos")
+        .delete()
+        .eq("lead_batch_id", batchId);
+
+      if (permisosError) {
+        console.error('Error al eliminar permisos:', permisosError);
+        throw new Error(`Error al eliminar permisos: ${permisosError.message}`);
+      }
+
+      // 4. Eliminar el batch directamente
       const { error: batchError } = await supabase
         .from("lead_batches")
         .delete()
         .eq("id", batchId);
 
-      if (batchError) throw batchError;
+      if (batchError) {
+        console.error('Error al eliminar batch:', batchError);
+        throw new Error(`Error al eliminar batch: ${batchError.message}`);
+      }
 
+      // Actualizar el estado local inmediatamente
+      if (batches) {
+        const updatedBatches = batches.filter(batch => batch.id !== batchId);
+        queryClient.setQueryData(["batches"], updatedBatches);
+      }
+
+      // Forzar una actualización completa
+      await queryClient.invalidateQueries({ 
+        queryKey: ["batches"],
+        exact: true,
+        refetchType: 'all'
+      });
+
+      await refetch();
       toast.success("Batch eliminado correctamente");
-      refetch();
     } catch (error) {
       console.error("Error al eliminar batch:", error);
-      toast.error("Error al eliminar el batch");
+      toast.error((error as Error).message || "Error al eliminar el batch");
+      
+      // Refrescar los datos en caso de error
+      await queryClient.invalidateQueries({ queryKey: ["batches"] });
+      await refetch();
     }
   };
 
@@ -888,12 +1108,10 @@ const Campanas = () => {
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                    <div
+                      className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded cursor-pointer"
                       onClick={(e) => {
-                        e.stopPropagation(); // Evitar que se abra/cierre el acordeón
+                        e.stopPropagation();
                         handleDeleteBatch(batch.id);
                       }}
                     >
@@ -914,7 +1132,7 @@ const Campanas = () => {
                         <line x1="10" y1="11" x2="10" y2="17" />
                         <line x1="14" y1="11" x2="14" y2="17" />
                       </svg>
-                    </Button>
+                    </div>
                     <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200" />
                   </div>
                 </div>
@@ -931,10 +1149,7 @@ const Campanas = () => {
                           <select
                             className="w-full p-2 border rounded-md"
                             value={selectedEmpresa || ""}
-                            onChange={(e) => {
-                              console.log('Empresa seleccionada:', e.target.value);
-                              setSelectedEmpresa(Number(e.target.value));
-                            }}
+                            onChange={(e) => setSelectedEmpresa(Number(e.target.value))}
                           >
                             <option value="">Selecciona una empresa</option>
                             {empresas.map((empresa) => (
@@ -974,18 +1189,109 @@ const Campanas = () => {
                   {/* Mostrar información de estructuras vinculadas */}
                   {batch.batch_estructura_permisos?.length > 0 && (
                     <div className="bg-blue-50 p-4 rounded-md mb-4">
-                      <div className="flex gap-4">
-                        <span>
-                          <strong>Empresa:</strong> {
-                            batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Empresa')?.estructuras.custom_name
-                          }
-                        </span>
-                        <span>
-                          <strong>País:</strong> {
-                            batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Paises')?.estructuras.custom_name
-                          }
-                        </span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex gap-4">
+                          <span>
+                            <strong>Empresa:</strong> {
+                              batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Empresa')?.estructuras.custom_name
+                            }
+                          </span>
+                          <span>
+                            <strong>País:</strong> {
+                              batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Paises')?.estructuras.custom_name
+                            }
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditingBatchId(batch.id)}
+                          >
+                            Editar Vinculación
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              const empresaId = batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Empresa')?.estructuras_id;
+                              const paisId = batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Paises')?.estructuras_id;
+                              if (empresaId && paisId) {
+                                await distribuirLeads(batch.id, batch.leads);
+                                refetch();
+                              }
+                            }}
+                          >
+                            Redistribuir Leads
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              const empresaId = batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Empresa')?.estructuras_id;
+                              const paisId = batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Paises')?.estructuras_id;
+                              if (empresaId && paisId) {
+                                await handleVincularEstructuras(batch.id, empresaId, paisId);
+                              }
+                            }}
+                          >
+                            Refrescar Vinculación
+                          </Button>
+                        </div>
                       </div>
+                      
+                      {/* Panel de edición */}
+                      {editingBatchId === batch.id && (
+                        <div className="mt-4 p-4 border rounded-md bg-white">
+                          <h4 className="font-medium mb-4">Editar Vinculación</h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>Empresa</Label>
+                              <select
+                                className="w-full p-2 border rounded-md"
+                                value={selectedEmpresa || ""}
+                                onChange={(e) => setSelectedEmpresa(Number(e.target.value))}
+                              >
+                                <option value="">Selecciona una empresa</option>
+                                {empresas.map((empresa) => (
+                                  <option key={empresa.id} value={empresa.id}>
+                                    {empresa.custom_name || empresa.nombre}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label>País</Label>
+                              <select
+                                className="w-full p-2 border rounded-md"
+                                value={selectedPais || ""}
+                                onChange={(e) => setSelectedPais(Number(e.target.value))}
+                              >
+                                <option value="">Selecciona un país</option>
+                                {paises.map((pais) => (
+                                  <option key={pais.id} value={pais.id}>
+                                    {pais.custom_name || pais.nombre}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="flex justify-end gap-2 mt-4">
+                            <Button
+                              variant="outline"
+                              onClick={() => setEditingBatchId(null)}
+                            >
+                              Cancelar
+                            </Button>
+                            <Button
+                              disabled={!selectedEmpresa || !selectedPais}
+                              onClick={() => handleUpdateEstructuras(batch.id, selectedEmpresa!, selectedPais!)}
+                            >
+                              Guardar Cambios
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -998,6 +1304,7 @@ const Campanas = () => {
                           <TableHead>Email</TableHead>
                           <TableHead>Teléfono</TableHead>
                           <TableHead>Estado</TableHead>
+                          <TableHead>Asignado A</TableHead>
                           <TableHead>Fecha</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1012,12 +1319,16 @@ const Campanas = () => {
                                 ${lead.estado === 'LLAMAR_DESPUES' ? 'bg-blue-100 text-blue-800' :
                                   lead.estado === 'CITA_PROGRAMADA' ? 'bg-yellow-100 text-yellow-800' :
                                   lead.estado === 'MATRICULA' ? 'bg-green-100 text-green-800' :
+                                  lead.estado === 'SIN_LLAMAR' ? 'bg-gray-100 text-gray-800' :
                                   'bg-gray-100 text-gray-800'
                                 }`}>
                                 {lead.estado}
                               </div>
                             </TableCell>
-                            <TableCell>{new Date(lead.created_at).toLocaleDateString()}</TableCell>
+                            <TableCell>
+                              {lead.user?.nombre_completo || 'No asignado'}
+                            </TableCell>
+                            <TableCell>{new Date(lead.created_at || '').toLocaleDateString()}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

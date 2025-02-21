@@ -51,6 +51,7 @@ interface UserData {
   estructura_id: number;
   supervisor_id: string | null;
   is_active: boolean;
+  estructuras?: Estructura[];
 }
 
 interface Estructura {
@@ -127,6 +128,15 @@ const canCreateUsers = (userPosition?: string) => {
   return getNivelJerarquico(userPosition) < getNivelJerarquico(RESTRICTED_POSITIONS.ASESOR_TRAINING);
 };
 
+// Agregar esta interfaz
+interface UserEstructura {
+  user_id: string;
+  estructura_id: number;
+}
+
+// Agregar esta constante
+const MULTI_ESTRUCTURA_POSITIONS = ['Director de Zona', 'Director Internacional', 'CEO'];
+
 const Usuarios = () => {
   const { toast } = useToast();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -140,7 +150,7 @@ const Usuarios = () => {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
 
-  // Restaurar el estado de newUser
+  // Modificar el estado newUser para incluir estructuras múltiples
   const [newUser, setNewUser] = useState({
     id: "",
     email: "",
@@ -151,6 +161,7 @@ const Usuarios = () => {
     tipo_estructura: "",
     estructura_id: "",
     supervisor_id: "",
+    estructura_ids: [] as string[], // Nuevo campo para múltiples estructuras
   });
 
   // Fetch current user primero
@@ -258,18 +269,44 @@ const Usuarios = () => {
 
         const supervisorId = newUser.supervisor_id === 'no_supervisor' ? null : newUser.supervisor_id;
 
+        // Actualizar usuario base
         const { error: userError } = await supabase
           .from("users")
           .update({
             nombre_completo: newUser.nombre_completo,
             role: newUser.role,
             user_position: newUser.user_position,
-            estructura_id: parseInt(newUser.estructura_id),
+            estructura_id: MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position) 
+              ? null 
+              : parseInt(newUser.estructura_id),
             supervisor_id: supervisorId,
           })
           .eq('id', newUser.id);
 
         if (userError) throw userError;
+
+        // Si es un rol con múltiples estructuras, actualizar las relaciones
+        if (MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position)) {
+          // Primero eliminar relaciones existentes
+          await supabase
+            .from("user_estructuras")
+            .delete()
+            .eq('user_id', newUser.id);
+
+          // Insertar nuevas relaciones
+          if (newUser.estructura_ids.length > 0) {
+            const { error: estructurasError } = await supabase
+              .from("user_estructuras")
+              .insert(
+                newUser.estructura_ids.map(estructuraId => ({
+                  user_id: newUser.id,
+                  estructura_id: parseInt(estructuraId)
+                }))
+              );
+
+            if (estructurasError) throw estructurasError;
+          }
+        }
 
         toast({
           title: "Usuario actualizado exitosamente",
@@ -335,6 +372,7 @@ const Usuarios = () => {
         tipo_estructura: "",
         estructura_id: "",
         supervisor_id: "",
+        estructura_ids: [],
       });
     } catch (error) {
       console.error("Error saving user:", error);
@@ -433,6 +471,7 @@ const Usuarios = () => {
       tipo_estructura: estructura?.tipo || "",
       estructura_id: user.estructura_id.toString(),
       supervisor_id: user.supervisor_id,
+      estructura_ids: [],
     });
     setIsEditing(true);
     setIsCreateModalOpen(true);
@@ -741,6 +780,7 @@ const Usuarios = () => {
             tipo_estructura: "",
             estructura_id: "",
             supervisor_id: "",
+            estructura_ids: [],
           });
         }
       }}>
@@ -851,35 +891,50 @@ const Usuarios = () => {
             </div>
             {newUser.tipo_estructura && (
               <div className="space-y-2">
-                <Label>Estructura</Label>
-                <Select
-                  value={newUser.estructura_id}
-                  onValueChange={(value) => setNewUser({ ...newUser, estructura_id: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar estructura" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(() => {
-                      // Logs para depuración
-                      console.log('Tipo seleccionado:', newUser.tipo_estructura);
-                      console.log('Estructuras disponibles:', estructuras);
-                      console.log('STRUCTURE_TYPES:', STRUCTURE_TYPES);
-                      
-                      const estructurasFiltradas = estructuras?.filter(e => 
-                        e.tipo.toLowerCase() === STRUCTURE_TYPES_MAPPING[newUser.tipo_estructura].toLowerCase()
-                      );
-                      
-                      console.log('Estructuras filtradas:', estructurasFiltradas);
-                      
-                      return estructurasFiltradas?.map((estructura) => (
+                <Label>Estructura{MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position) ? 's' : ''}</Label>
+                {MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position) ? (
+                  // Múltiple selección para roles específicos
+                  <div className="space-y-2">
+                    {estructuras
+                      ?.filter(e => e.tipo.toLowerCase() === STRUCTURE_TYPES_MAPPING[newUser.tipo_estructura].toLowerCase())
+                      .map(estructura => (
+                        <label key={estructura.id} className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={newUser.estructura_ids.includes(estructura.id.toString())}
+                            onChange={(e) => {
+                              const estructuraId = estructura.id.toString();
+                              setNewUser(prev => ({
+                                ...prev,
+                                estructura_ids: e.target.checked
+                                  ? [...prev.estructura_ids, estructuraId]
+                                  : prev.estructura_ids.filter(id => id !== estructuraId)
+                              }));
+                            }}
+                            className="form-checkbox h-4 w-4"
+                          />
+                          <span>{estructura.custom_name || estructura.nombre}</span>
+                        </label>
+                      ))}
+                  </div>
+                ) : (
+                  // Selección única para roles normales
+                  <Select
+                    value={newUser.estructura_id}
+                    onValueChange={(value) => setNewUser({ ...newUser, estructura_id: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar estructura" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {estructuras?.map((estructura) => (
                         <SelectItem key={estructura.id} value={estructura.id.toString()}>
                           {estructura.custom_name || estructura.nombre}
                         </SelectItem>
-                      ));
-                    })()}
-                  </SelectContent>
-                </Select>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             )}
             <div className="space-y-2">

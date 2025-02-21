@@ -60,6 +60,7 @@ interface UserProfile {
   nombre_completo: string;
   estructura_id: number;
   supervisor_id: string | null;
+  estructuras?: { id: number }[];
 }
 
 interface EstructuraVinculadaProps {
@@ -96,12 +97,33 @@ const EstructuraVinculada = ({ estructura, usuarios, isOpen, onToggle, estructur
               <div className="space-y-3">
                 {usuarios.map((usuario) => {
                   const supervisor = usuarios.find(u => u.id === usuario.supervisor_id);
+                  const esMultiEstructura = MULTI_ESTRUCTURA_POSITIONS.includes(usuario.user_position);
                   
                   return (
                     <div key={usuario.id} className="p-3 bg-slate-50 rounded-md">
                       <p className="font-medium">{usuario.nombre_completo}</p>
                       <p className="text-sm text-muted-foreground">{usuario.user_position}</p>
                       <p className="text-sm text-muted-foreground">{usuario.email}</p>
+                      
+                      {esMultiEstructura && usuario.estructuras && usuario.estructuras.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-sm text-muted-foreground">Estructuras vinculadas:</p>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {usuario.estructuras.map(e => {
+                              const estructuraInfo = estructuras?.find(es => es.id === e.id);
+                              return estructuraInfo ? (
+                                <span 
+                                  key={e.id}
+                                  className="text-xs bg-slate-200 text-slate-700 px-2 py-1 rounded-full"
+                                >
+                                  {estructuraInfo.custom_name || estructuraInfo.nombre}
+                                </span>
+                              ) : null;
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
                       {supervisor && (
                         <div className="mt-2 text-sm">
                           <span className="text-muted-foreground">Supervisor: </span>
@@ -121,6 +143,13 @@ const EstructuraVinculada = ({ estructura, usuarios, isOpen, onToggle, estructur
     </div>
   );
 };
+
+const MULTI_ESTRUCTURA_POSITIONS = [
+  'CEO', 
+  'Director Internacional', 
+  'Director de Zona',
+  // 'Director Nacional' // Descomentar si quieres incluirlo
+];
 
 const Organizacion = () => {
   const navigate = useNavigate();
@@ -216,7 +245,7 @@ const Organizacion = () => {
   const { data: usuariosPorEstructura } = useQuery({
     queryKey: ["usuariosPorEstructura"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: users, error: usersError } = await supabase
         .from("users")
         .select(`
           id,
@@ -227,19 +256,41 @@ const Organizacion = () => {
           supervisor_id
         `);
 
-      if (error) {
-        console.error("Error fetching users:", error);
-        throw error;
-      }
+      if (usersError) throw usersError;
+
+      const { data: userEstructuras, error: estructurasError } = await supabase
+        .from("user_estructuras")
+        .select('*');
+
+      if (estructurasError) throw estructurasError;
 
       const usuariosPorEstructura: Record<number, UserProfile[]> = {};
-      data.forEach((usuario) => {
+      
+      users.forEach((usuario) => {
+        const estructurasUsuario = userEstructuras
+          .filter(ue => ue.user_id === usuario.id)
+          .map(ue => ({ id: ue.estructura_id }));
+
+        const usuarioConEstructuras = {
+          ...usuario,
+          estructuras: estructurasUsuario
+        };
+
         if (usuario.estructura_id) {
           if (!usuariosPorEstructura[usuario.estructura_id]) {
             usuariosPorEstructura[usuario.estructura_id] = [];
           }
-          usuariosPorEstructura[usuario.estructura_id].push(usuario);
+          usuariosPorEstructura[usuario.estructura_id].push(usuarioConEstructuras);
         }
+
+        estructurasUsuario.forEach(estructura => {
+          if (!usuariosPorEstructura[estructura.id]) {
+            usuariosPorEstructura[estructura.id] = [];
+          }
+          if (!usuariosPorEstructura[estructura.id].find(u => u.id === usuario.id)) {
+            usuariosPorEstructura[estructura.id].push(usuarioConEstructuras);
+          }
+        });
       });
 
       return usuariosPorEstructura;
@@ -600,7 +651,6 @@ const Organizacion = () => {
             <div>
               <h3 className="text-lg font-medium mb-4">Estructuras Vinculadas</h3>
               <div className="space-y-2">
-                {/* Estructuras superiores */}
                 {selectedEstructura?.parent_estructura_id && (
                   <div className="relative">
                     <EstructuraVinculada
@@ -621,7 +671,6 @@ const Organizacion = () => {
                   </div>
                 )}
 
-                {/* Estructuras inferiores */}
                 {estructuras
                   ?.filter(e => e.parent_estructura_id === selectedEstructura?.id)
                   .map(estructura => {
@@ -651,37 +700,68 @@ const Organizacion = () => {
             </div>
 
             <div>
-              <Label>Vincular Nueva Estructura</Label>
-              <Select
-                value={estructurasSeleccionadas[0]?.toString()}
-                onValueChange={(value) => {
-                  const id = parseInt(value);
-                  setEstructurasSeleccionadas(prev => 
-                    prev.includes(id) 
-                      ? prev.filter(x => x !== id)
-                      : [...prev, id]
-                  );
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar estructuras..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {estructuras?.filter(e => e.id !== selectedEstructura?.id).map((estructura) => (
-                    <SelectItem key={estructura.id} value={estructura.id.toString()}>
-                      {estructura.custom_name || estructura.nombre} ({estructura.tipo})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Vincular Nuevas Estructuras</Label>
+              {MULTI_ESTRUCTURA_POSITIONS.includes(userProfile?.user_position || '') ? (
+                <div className="mt-2 space-y-2 max-h-[200px] overflow-y-auto border rounded-md p-2">
+                  {estructuras
+                    ?.filter(e => e.id !== selectedEstructura?.id)
+                    .map((estructura) => (
+                      <label key={estructura.id} className="flex items-center space-x-2 hover:bg-slate-50 p-2 rounded cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={estructurasSeleccionadas.includes(estructura.id)}
+                          onChange={(e) => {
+                            const id = estructura.id;
+                            setEstructurasSeleccionadas(prev => 
+                              e.target.checked
+                                ? [...prev, id]
+                                : prev.filter(x => x !== id)
+                            );
+                          }}
+                          className="form-checkbox h-4 w-4"
+                        />
+                        <span>
+                          {estructura.custom_name || estructura.nombre} ({estructura.tipo})
+                        </span>
+                      </label>
+                    ))}
+                </div>
+              ) : (
+                <Select
+                  value={estructurasSeleccionadas[0]?.toString()}
+                  onValueChange={(value) => {
+                    const id = parseInt(value);
+                    setEstructurasSeleccionadas([id]);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar estructura..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {estructuras
+                      ?.filter(e => e.id !== selectedEstructura?.id)
+                      .map((estructura) => (
+                        <SelectItem key={estructura.id} value={estructura.id.toString()}>
+                          {estructura.custom_name || estructura.nombre} ({estructura.tipo})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4 pt-4 border-t">
-            <Button variant="outline" onClick={() => setIsVinculacionModalOpen(false)}>
+            <Button variant="outline" onClick={() => {
+              setIsVinculacionModalOpen(false);
+              setEstructurasSeleccionadas([]);
+            }}>
               Cancelar
             </Button>
-            <Button onClick={handleVincularEstructuras}>
-              Vincular
+            <Button 
+              onClick={handleVincularEstructuras}
+              disabled={estructurasSeleccionadas.length === 0}
+            >
+              Vincular {estructurasSeleccionadas.length > 0 ? `(${estructurasSeleccionadas.length})` : ''}
             </Button>
           </div>
         </DialogContent>

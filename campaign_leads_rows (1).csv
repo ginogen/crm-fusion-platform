@@ -1,0 +1,5 @@
+id,nombre_completo,email,telefono,origen,pais,filial,observaciones,estado,batch_id,created_at,updated_at,assigned_user_id
+29,Lead Test 1,test1@test1.com,111111111,Carga Masiva,,,,SIN_LLAMAR,16,2025-02-21 14:29:12.802541+00,2025-02-21 14:57:55.152996+00,
+30,Lead Test 2,test2@test2.com,22222222,Carga Masiva,,,,SIN_LLAMAR,16,2025-02-21 14:29:12.802541+00,2025-02-21 14:57:55.458875+00,
+31,Lead Test 3,test3@test3.com,33333333,Carga Masiva,,,,SIN_LLAMAR,16,2025-02-21 14:29:12.802541+00,2025-02-21 14:57:55.745953+00,
+32,Lead Test 4,test4@test4.com,44444444,Carga Masiva,,,,SIN_LLAMAR,16,2025-02-21 14:29:12.802541+00,2025-02-21 14:57:56.023837+00,
