@@ -45,7 +45,8 @@ const LeadsTable = ({
   const [allSelected, setAllSelected] = useState(false);
   const [filters, setFilters] = useState({
     nombre: "",
-    email: "",
+    telefono: "",
+    origen: "all",
     estado: "all",
     asignado: "all",
   });
@@ -64,6 +65,21 @@ const LeadsTable = ({
     },
   });
 
+  const { data: origenes } = useQuery({
+    queryKey: ["lead-origenes"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("leads")
+        .select("origen")
+        .not("origen", "is", null)
+        .order("origen");
+      
+      // Eliminar duplicados y valores nulos
+      const uniqueOrigenes = [...new Set(data?.map(d => d.origen).filter(Boolean))];
+      return uniqueOrigenes || [];
+    },
+  });
+
   const { data: leads, isLoading } = useQuery({
     queryKey: ["leads", filters, dateRange, currentPage],
     queryFn: async () => {
@@ -78,8 +94,11 @@ const LeadsTable = ({
       if (filters.nombre) {
         baseQuery = baseQuery.ilike('nombre_completo', `%${filters.nombre}%`);
       }
-      if (filters.email) {
-        baseQuery = baseQuery.ilike('email', `%${filters.email}%`);
+      if (filters.telefono) {
+        baseQuery = baseQuery.ilike('telefono', `%${filters.telefono}%`);
+      }
+      if (filters.origen !== "all") {
+        baseQuery = baseQuery.eq('origen', filters.origen);
       }
       if (filters.estado !== "all") {
         baseQuery = baseQuery.eq('estado', filters.estado);
@@ -210,7 +229,7 @@ const LeadsTable = ({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         <div>
           <label className="text-sm text-muted-foreground">Nombre</label>
           <Input
@@ -221,12 +240,32 @@ const LeadsTable = ({
         </div>
         
         <div>
-          <label className="text-sm text-muted-foreground">Email</label>
+          <label className="text-sm text-muted-foreground">Teléfono</label>
           <Input
-            placeholder="Buscar por email..."
-            value={filters.email}
-            onChange={(e) => setFilters(prev => ({ ...prev, email: e.target.value }))}
+            placeholder="Buscar por teléfono..."
+            value={filters.telefono}
+            onChange={(e) => setFilters(prev => ({ ...prev, telefono: e.target.value }))}
           />
+        </div>
+
+        <div>
+          <label className="text-sm text-muted-foreground">Origen</label>
+          <Select
+            value={filters.origen}
+            onValueChange={(value) => setFilters(prev => ({ ...prev, origen: value }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Todos los orígenes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los orígenes</SelectItem>
+              {origenes?.map((origen) => (
+                <SelectItem key={origen} value={origen}>
+                  {origen}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div>
@@ -367,45 +406,45 @@ const LeadsTable = ({
       </div>
 
       <div className="rounded-md border">
-        <Table>
+        <Table className="text-sm">
           <TableHeader>
-            <TableRow>
+            <TableRow className="h-8">
               {showCheckboxes && (
-                <TableHead className="w-12">
+                <TableHead className="w-12 py-1">
                   <input 
                     type="checkbox" 
-                    className="rounded border-gray-300"
+                    className="rounded border-gray-300 h-3 w-3"
                     checked={allSelected}
                     onChange={(e) => handleSelectAll(e.target.checked)}
                   />
                 </TableHead>
               )}
-              <TableHead>Nombre</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Teléfono</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead>Asignado A</TableHead>
-              <TableHead>Fecha</TableHead>
-              <TableHead>Acciones</TableHead>
+              <TableHead className="py-1">Nombre</TableHead>
+              <TableHead className="py-1">Origen</TableHead>
+              <TableHead className="py-1">Teléfono</TableHead>
+              <TableHead className="py-1">Estado</TableHead>
+              <TableHead className="py-1">Asignado A</TableHead>
+              <TableHead className="py-1">Fecha</TableHead>
+              <TableHead className="py-1">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {leads?.leads.map((lead) => (
-              <TableRow key={lead.id}>
+              <TableRow key={lead.id} className="h-8">
                 {showCheckboxes && (
-                  <TableCell>
+                  <TableCell className="py-1">
                     <input 
                       type="checkbox" 
-                      className="rounded border-gray-300"
+                      className="rounded border-gray-300 h-3 w-3"
                       checked={selectedLeads.includes(lead.id)}
                       onChange={(e) => onSelectLead?.(lead.id, e.target.checked)}
                     />
                   </TableCell>
                 )}
-                <TableCell>{lead.nombre_completo}</TableCell>
-                <TableCell>{lead.email}</TableCell>
-                <TableCell>{lead.telefono}</TableCell>
-                <TableCell>
+                <TableCell className="py-1">{lead.nombre_completo}</TableCell>
+                <TableCell className="py-1">{lead.origen}</TableCell>
+                <TableCell className="py-1">{lead.telefono}</TableCell>
+                <TableCell className="py-1">
                   <Select
                     value={lead.estado}
                     onValueChange={(value: LeadEstado) => {
@@ -414,7 +453,7 @@ const LeadsTable = ({
                   >
                     <SelectTrigger 
                       className={cn(
-                        "w-[180px]",
+                        "h-7 text-xs w-[160px]",
                         lead.estado === "SIN_LLAMAR" && "bg-white",
                         lead.estado === "LLAMAR_DESPUES" && "bg-blue-100",
                         lead.estado === "CITA_PROGRAMADA" && "bg-yellow-100",
@@ -441,30 +480,33 @@ const LeadsTable = ({
                     </SelectContent>
                   </Select>
                 </TableCell>
-                <TableCell>{lead.users?.nombre_completo}</TableCell>
-                <TableCell>{format(new Date(lead.created_at), "dd/MM/yyyy")}</TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
+                <TableCell className="py-1">{lead.users?.nombre_completo}</TableCell>
+                <TableCell className="py-1">{format(new Date(lead.created_at), "dd/MM/yyyy")}</TableCell>
+                <TableCell className="py-1">
+                  <div className="flex gap-1">
                     <Button
                       variant="ghost"
                       size="icon"
+                      className="h-6 w-6"
                       onClick={() => onEdit?.(lead)}
                     >
-                      <Pencil className="h-4 w-4" />
+                      <Pencil className="h-3 w-3" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
+                      className="h-6 w-6"
                       onClick={() => onGestion?.(lead)}
                     >
-                      <ClipboardList className="h-4 w-4" />
+                      <ClipboardList className="h-3 w-3" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
+                      className="h-6 w-6"
                       onClick={() => onHistorial?.(lead)}
                     >
-                      <History className="h-4 w-4" />
+                      <History className="h-3 w-3" />
                     </Button>
                   </div>
                 </TableCell>
