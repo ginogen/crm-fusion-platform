@@ -1,4 +1,3 @@
-
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -17,12 +16,18 @@ interface ModifyLeadsDialogProps {
 const ModifyLeadsDialog = ({ isOpen, onClose, selectedLeads }: ModifyLeadsDialogProps) => {
   const queryClient = useQueryClient();
   
-  const { data: users } = useQuery({
+  const { data: users, isLoading, error } = useQuery({
     queryKey: ["users"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("users")
-        .select("id, email");
+        .select("id, email, nombre_completo")
+        .order('nombre_completo');
+      
+      if (error) {
+        console.error("Error fetching users:", error);
+        throw error;
+      }
       return data || [];
     },
   });
@@ -90,15 +95,27 @@ const ModifyLeadsDialog = ({ isOpen, onClose, selectedLeads }: ModifyLeadsDialog
           <div className="space-y-2">
             <label className="text-sm font-medium">Asignar a</label>
             <Select name="userId">
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar usuario..." />
+              <SelectTrigger disabled={isLoading}>
+                <SelectValue placeholder={
+                  isLoading ? "Cargando usuarios..." : 
+                  error ? "Error al cargar usuarios" :
+                  "Seleccionar usuario..."
+                } />
               </SelectTrigger>
               <SelectContent>
-                {users?.map((user) => (
-                  <SelectItem key={user.id} value={user.id}>
-                    {user.email}
-                  </SelectItem>
-                ))}
+                {isLoading ? (
+                  <SelectItem value="loading" disabled>Cargando...</SelectItem>
+                ) : error ? (
+                  <SelectItem value="error" disabled>Error al cargar usuarios</SelectItem>
+                ) : users && users.length > 0 ? (
+                  users.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.nombre_completo || user.email}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="empty" disabled>No hay usuarios disponibles</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>
