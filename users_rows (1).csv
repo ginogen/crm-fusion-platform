@@ -1,10 +1,13 @@
 id,email,nombre_completo,hashed_password,role,estructura_id,is_active,created_at,deactivated_at,user_position,supervisor_id
+0e1825b2-f8cf-421c-b774-343d34700364,j.avila@letsgospeak.cl,Jennifer Avila,,superuser,,true,2025-02-21 19:11:14.642,,CEO,
+16c2e743-d5d2-4856-ba34-5033b9ce0d2d,test3@test.com,testassg,,usuario,2,true,2025-02-21 18:57:58.056,,Sales Manager,4ce04130-d2b9-4003-9ee7-0f2d3e6c204c
 2ae4b70e-ced0-4413-8799-496c480dac3c,maddyta88@gmail.com,Maddeleyn Cuadra,,usuario,13,true,,,Asesor Training,744cc05c-fc59-4cbf-b6c5-ddb8f5d45595
 4610200e-91d5-453a-9587-25726abe2b18,gino@admin.com,Gino,,user,2,true,2025-01-08 15:00:10.461,,Director Internacional,
 4ce04130-d2b9-4003-9ee7-0f2d3e6c204c,gadmin@admin.com,GinoAdmin,,superuser,2,true,2025-01-08 15:12:16.76,,CEO,
 6a6d3d2d-87e4-4307-8717-2e381da50787,admin@admin.com,Gino,,admin,2,true,2025-01-08 15:03:53.119,,Director Nacional,
 744cc05c-fc59-4cbf-b6c5-ddb8f5d45595,ameleidaniela.contrerascortes@letsgospeak.cl,Amelei Contreras,,usuario,13,true,,,Full Executive,fc4d04fe-3f0f-46d1-8ecf-d70d865859bd
 88ca30a6-5a93-44c2-94d6-579dc393405e,patricio.donoso@letsgospeak.cl,Patricio Donoso,,superuser,2,true,2025-02-13 22:22:47.211,,Director Internacional,
+8dbc8a3a-52bc-43b3-ae9f-024af66d5cad,test2@test2.com,test,,usuario,,true,2025-02-21 18:53:42.795,,Gerente Divisional,4ce04130-d2b9-4003-9ee7-0f2d3e6c204c
 8e315c0b-3ba6-4169-84a7-fc4faedaac89,lgs@admin.com,lgs_admin,lgs_admin!,superuser,2,false,2025-02-13 13:51:32.79,,CEO,
 a5061dce-7663-482e-9ab1-d6ef078de9b7,m.nunez@letsgospeak.cl,Mabel Nuñez,,superuser,2,true,2025-02-14 13:09:03.154,,CEO,
 a8ed14f1-9b47-4d11-a896-d55ae1d873c4,test@test,test,,superuser,3,true,2025-02-20 20:15:23.242,,Sales Manager,4ce04130-d2b9-4003-9ee7-0f2d3e6c204c

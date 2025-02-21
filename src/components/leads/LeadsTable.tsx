@@ -51,6 +51,8 @@ const LeadsTable = ({
   });
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const { data: users } = useQuery({
     queryKey: ["users"],
@@ -62,52 +64,83 @@ const LeadsTable = ({
     },
   });
 
-  const { data: leads } = useQuery({
-    queryKey: ["leads", filters, dateRange],
+  const { data: leads, isLoading } = useQuery({
+    queryKey: ["leads", filters, dateRange, currentPage],
     queryFn: async () => {
-      let query = supabase
+      let baseQuery = supabase
         .from("leads")
         .select(`
           *,
           users (nombre_completo)
-        `);
+        `, { count: 'exact' });
 
       // Aplicar filtros
       if (filters.nombre) {
-        query = query.ilike('nombre_completo', `%${filters.nombre}%`);
+        baseQuery = baseQuery.ilike('nombre_completo', `%${filters.nombre}%`);
       }
       if (filters.email) {
-        query = query.ilike('email', `%${filters.email}%`);
+        baseQuery = baseQuery.ilike('email', `%${filters.email}%`);
       }
       if (filters.estado !== "all") {
-        query = query.eq('estado', filters.estado);
+        baseQuery = baseQuery.eq('estado', filters.estado);
       }
       if (filters.asignado !== "all") {
-        query = query.eq('user_id', filters.asignado);
+        baseQuery = baseQuery.eq('user_id', filters.asignado);
       }
       if (dateRange?.from) {
-        query = query.gte('created_at', dateRange.from.toISOString());
+        baseQuery = baseQuery.gte('created_at', dateRange.from.toISOString());
       }
       if (dateRange?.to) {
-        query = query.lte('created_at', dateRange.to.toISOString());
+        baseQuery = baseQuery.lte('created_at', dateRange.to.toISOString());
       }
 
-      const { data } = await query;
-      return data;
+      // Obtenemos los datos paginados y el conteo total en una sola consulta
+      const { data, count } = await baseQuery
+        .range((currentPage - 1) * itemsPerPage, (currentPage * itemsPerPage) - 1)
+        .order('created_at', { ascending: false });
+
+      return { 
+        leads: data || [], 
+        totalCount: count || 0 
+      };
     },
   });
 
+  // Calcular el número total de páginas
+  const totalPages = leads?.totalCount ? Math.ceil(leads.totalCount / itemsPerPage) : 0;
+
+  // Función para generar el rango de páginas a mostrar
+  const getPageRange = () => {
+    const range = [];
+    const maxVisiblePages = 5;
+    let start = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+    let end = Math.min(totalPages, start + maxVisiblePages - 1);
+
+    if (end - start + 1 < maxVisiblePages) {
+      start = Math.max(1, end - maxVisiblePages + 1);
+    }
+
+    for (let i = start; i <= end; i++) {
+      range.push(i);
+    }
+    return range;
+  };
+
   useEffect(() => {
-    if (leads?.length && leads.length > 0) {
-      const allLeadsSelected = leads.every(lead => selectedLeads.includes(lead.id));
+    if (leads?.leads.length && leads.leads.length > 0) {
+      const allLeadsSelected = leads.leads.every(lead => selectedLeads.includes(lead.id));
       setAllSelected(allLeadsSelected);
     }
   }, [selectedLeads, leads]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters, dateRange]);
+
   const handleSelectAll = (checked: boolean) => {
     if (!leads) return;
     
-    const leadIds = leads.map(lead => lead.id);
+    const leadIds = leads.leads.map(lead => lead.id);
     if (checked) {
       // Seleccionar todos los leads que no estén ya seleccionados
       leadIds.forEach(id => {
@@ -357,7 +390,7 @@ const LeadsTable = ({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {leads?.map((lead) => (
+            {leads?.leads.map((lead) => (
               <TableRow key={lead.id}>
                 {showCheckboxes && (
                   <TableCell>
@@ -439,6 +472,61 @@ const LeadsTable = ({
             ))}
           </TableBody>
         </Table>
+
+        {/* Agregar componente de paginación */}
+        <div className="flex items-center justify-between px-4 py-3 border-t">
+          <div className="text-sm text-gray-700">
+            Mostrando {((currentPage - 1) * itemsPerPage) + 1} a{' '}
+            {Math.min(currentPage * itemsPerPage, leads?.totalCount || 0)} de{' '}
+            {leads?.totalCount || 0} resultados
+          </div>
+          <div className="flex gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+            >
+              Primera
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+            >
+              Anterior
+            </Button>
+            
+            {getPageRange().map(pageNum => (
+              <Button
+                key={pageNum}
+                variant={currentPage === pageNum ? "default" : "outline"}
+                size="sm"
+                onClick={() => setCurrentPage(pageNum)}
+              >
+                {pageNum}
+              </Button>
+            ))}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+            >
+              Siguiente
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+            >
+              Última
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

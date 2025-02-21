@@ -41,11 +41,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
+// Definir el tipo para las posiciones
+type JerarquiaPosicion = typeof JERARQUIA_POSICIONES[number];
+
 interface UserData {
   id: string;
   email: string;
   nombre_completo: string;
-  user_position: string;
+  user_position: JerarquiaPosicion;
   role: string;
   created_at: string;
   estructura_id: number;
@@ -74,17 +77,14 @@ const JERARQUIA_POSICIONES = [
   'Asesor Training'
 ] as const;
 
-const obtenerSupervisoresPotenciales = (usuarios: UserData[], posicionSeleccionada: string) => {
+const obtenerSupervisoresPotenciales = (usuarios: UserData[], posicionSeleccionada: JerarquiaPosicion) => {
   const posicionIndex = JERARQUIA_POSICIONES.indexOf(posicionSeleccionada);
   if (posicionIndex <= 0) return []; // CEO no tiene supervisor
 
-  // Filtrar usuarios con cualquier posición superior
   return usuarios.filter(usuario => {
     const supervisorIndex = JERARQUIA_POSICIONES.indexOf(usuario.user_position);
-    // Retorna true si el supervisor tiene una posición superior (índice menor)
     return supervisorIndex < posicionIndex;
   }).sort((a, b) => {
-    // Ordenar por nivel jerárquico, priorizando los más cercanos
     const indexA = JERARQUIA_POSICIONES.indexOf(a.user_position);
     const indexB = JERARQUIA_POSICIONES.indexOf(b.user_position);
     return indexA - indexB;
@@ -105,27 +105,27 @@ const RESTRICTED_POSITIONS = {
 } as const;
 
 // Función para obtener el nivel jerárquico
-const getNivelJerarquico = (position: string) => {
+const getNivelJerarquico = (position: JerarquiaPosicion) => {
   return JERARQUIA_POSICIONES.indexOf(position);
 };
 
 // Función para verificar si puede ver usuarios
-const canViewUser = (currentUserPosition: string, targetUserPosition: string) => {
+const canViewUser = (currentUserPosition: JerarquiaPosicion, targetUserPosition: JerarquiaPosicion) => {
   const currentLevel = getNivelJerarquico(currentUserPosition);
   const targetLevel = getNivelJerarquico(targetUserPosition);
   return currentLevel < targetLevel;
 };
 
 // Función para verificar permisos de edición
-const canEditUsers = (userPosition?: string) => {
+const canEditUsers = (userPosition?: JerarquiaPosicion) => {
   if (!userPosition) return false;
-  return getNivelJerarquico(userPosition) < getNivelJerarquico(RESTRICTED_POSITIONS.ASESOR_TRAINING);
+  return getNivelJerarquico(userPosition) < getNivelJerarquico(RESTRICTED_POSITIONS.ASESOR_TRAINING as JerarquiaPosicion);
 };
 
 // Función para verificar si puede crear usuarios
-const canCreateUsers = (userPosition?: string) => {
+const canCreateUsers = (userPosition?: JerarquiaPosicion) => {
   if (!userPosition) return false;
-  return getNivelJerarquico(userPosition) < getNivelJerarquico(RESTRICTED_POSITIONS.ASESOR_TRAINING);
+  return getNivelJerarquico(userPosition) < getNivelJerarquico(RESTRICTED_POSITIONS.ASESOR_TRAINING as JerarquiaPosicion);
 };
 
 // Agregar esta interfaz
@@ -136,6 +136,20 @@ interface UserEstructura {
 
 // Agregar esta constante
 const MULTI_ESTRUCTURA_POSITIONS = ['Director de Zona', 'Director Internacional', 'CEO'];
+
+// Actualizar la interfaz del estado newUser
+interface NewUserState {
+  id?: string;
+  email: string;
+  nombre_completo: string;
+  password: string;
+  role: string;
+  user_position: JerarquiaPosicion | "";
+  tipo_estructura: string;
+  estructura_id: string;
+  supervisor_id: string;
+  estructura_ids: string[];
+}
 
 const Usuarios = () => {
   const { toast } = useToast();
@@ -150,9 +164,8 @@ const Usuarios = () => {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
 
-  // Modificar el estado newUser para incluir estructuras múltiples
-  const [newUser, setNewUser] = useState({
-    id: "",
+  // Actualizar el estado inicial
+  const [newUser, setNewUser] = useState<NewUserState>({
     email: "",
     nombre_completo: "",
     password: "",
@@ -161,10 +174,10 @@ const Usuarios = () => {
     tipo_estructura: "",
     estructura_id: "",
     supervisor_id: "",
-    estructura_ids: [] as string[], // Nuevo campo para múltiples estructuras
+    estructura_ids: [],
   });
 
-  // Fetch current user primero
+  // Usar supabase normal para operaciones regulares
   const { data: currentUser } = useQuery({
     queryKey: ["currentUser"],
     queryFn: async () => {
@@ -187,9 +200,10 @@ const Usuarios = () => {
     queryFn: async () => {
       if (!currentUser?.user_position) return [];
 
+      // Primero obtener los usuarios
       let query = supabase
         .from("users")
-        .select("*, estructuras(*)");
+        .select("*");
 
       // Si no es CEO, filtrar usuarios según jerarquía y vinculación
       if (currentUser.user_position !== RESTRICTED_POSITIONS.CEO) {
@@ -202,10 +216,47 @@ const Usuarios = () => {
         query = query.eq('is_active', true);
       }
 
-      const { data, error } = await query.order("created_at", { ascending: false });
+      const { data: usersData, error: usersError } = await query.order("created_at", { ascending: false });
 
-      if (error) throw error;
-      return data as (UserData & { estructuras: Estructura })[];
+      if (usersError) {
+        console.error('Error fetching users:', usersError);
+        throw usersError;
+      }
+
+      console.log('Datos crudos de usuarios:', usersData);
+
+      // Obtener las estructuras para usuarios con múltiples estructuras
+      const usersWithStructures = await Promise.all(usersData.map(async (user) => {
+        if (MULTI_ESTRUCTURA_POSITIONS.includes(user.user_position)) {
+          // Obtener las estructuras relacionadas
+          const { data: userEstructuras, error: estructurasError } = await supabase
+            .from("user_estructuras")
+            .select(`
+              estructura:estructuras(*)
+            `)
+            .eq('user_id', user.id);
+
+          console.log(`Estructuras para usuario ${user.email}:`, userEstructuras);
+
+          if (estructurasError) {
+            console.error('Error fetching estructuras for user:', estructurasError);
+            return user;
+          }
+
+          const userWithStructures = {
+            ...user,
+            estructuras: userEstructuras?.map(ue => ue.estructura) || []
+          };
+
+          console.log('Usuario procesado con estructuras:', userWithStructures);
+          return userWithStructures;
+        }
+        return user;
+      }));
+
+      console.log('Todos los usuarios procesados:', usersWithStructures);
+
+      return usersWithStructures as (UserData & { estructuras: Estructura })[];
     },
     enabled: !!currentUser?.id
   });
@@ -255,6 +306,7 @@ const Usuarios = () => {
     return [...subordinadosDirectos, ...subordinadosIndirectos.flat()];
   };
 
+  // Usar supabaseAdmin solo para operaciones administrativas de auth
   const handleSaveUser = async () => {
     try {
       if (isEditing) {
@@ -312,9 +364,11 @@ const Usuarios = () => {
           title: "Usuario actualizado exitosamente",
         });
       } else {
+        console.log('Iniciando creación de usuario:', { ...newUser, password: '***' });
+
         // Validaciones básicas
         if (!newUser.email || !newUser.password || !newUser.nombre_completo || 
-            !newUser.role || !newUser.user_position || !newUser.estructura_id) {
+            !newUser.role || !newUser.user_position) {
           toast({
             variant: "destructive",
             title: "Error al crear usuario",
@@ -323,63 +377,98 @@ const Usuarios = () => {
           return;
         }
 
-        // Crear usuario en Auth
+        // Validación específica para CEO y roles multi-estructura
+        if (MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position) && newUser.estructura_ids.length === 0) {
+          toast({
+            variant: "destructive",
+            title: "Error al crear usuario",
+            description: "Por favor seleccione al menos una estructura",
+          });
+          return;
+        }
+
+        // Crear usuario en Auth usando supabaseAdmin
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
           email: newUser.email,
           password: newUser.password,
           email_confirm: true
         });
 
+        console.log('Resultado de creación en Auth:', { authData, authError });
+
         if (authError || !authData.user) {
+          if (authError?.message?.includes('User already registered')) {
+            toast({
+              variant: "destructive",
+              title: "Error al crear usuario",
+              description: "El email ya está registrado en el sistema de autenticación",
+            });
+            return;
+          }
           throw authError || new Error("No se pudo crear el usuario en Auth");
         }
 
-        const supervisorId = newUser.supervisor_id === 'no_supervisor' ? null : newUser.supervisor_id;
+        // Asegurarnos de tener un ID válido
+        const userId = authData.user.id;
+        console.log('ID de usuario creado:', userId);
 
-        // Crear usuario en la base de datos usando el ID generado por Auth
-        const { error: userError } = await supabase
-          .from("users")
-          .insert([{
-            id: authData.user.id, // Usar el ID generado por Auth
-            email: newUser.email,
-            nombre_completo: newUser.nombre_completo,
-            role: newUser.role,
-            user_position: newUser.user_position,
-            estructura_id: parseInt(newUser.estructura_id),
-            supervisor_id: supervisorId,
-            is_active: true,
-            created_at: new Date().toISOString(),
-          }]);
+        try {
+          // Crear el usuario base primero
+          const { error: userError } = await supabase
+            .from("users")
+            .insert({
+              id: userId,
+              email: newUser.email,
+              nombre_completo: newUser.nombre_completo,
+              role: newUser.role,
+              user_position: newUser.user_position,
+              estructura_id: null,
+              supervisor_id: newUser.user_position === 'CEO' ? null : newUser.supervisor_id,
+              is_active: true,
+              created_at: new Date().toISOString(),
+            });
 
-        if (userError) throw userError;
+          if (userError) {
+            throw userError;
+          }
 
-        toast({
-          title: "Usuario creado exitosamente",
-        });
+          // Si es un rol multi-estructura, crear las relaciones
+          if (MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position) && newUser.estructura_ids.length > 0) {
+            const estructurasToInsert = newUser.estructura_ids.map(estructuraId => ({
+              user_id: userId,
+              estructura_id: parseInt(estructuraId)
+            }));
+
+            console.log('Insertando relaciones de estructuras:', estructurasToInsert);
+
+            const { error: estructurasError } = await supabase
+              .from("user_estructuras")
+              .insert(estructurasToInsert);
+
+            if (estructurasError) {
+              throw estructurasError;
+            }
+          }
+
+          toast({
+            title: "Usuario creado exitosamente",
+          });
+
+          setIsCreateModalOpen(false);
+          refetchUsers();
+
+        } catch (error) {
+          // Si algo falla, limpiar el usuario de auth
+          await supabase.auth.admin.deleteUser(userId);
+          throw error;
+        }
       }
-
-      setIsCreateModalOpen(false);
-      setIsEditing(false);
-      setIsChangingPassword(false);
-      refetchUsers();
-      setNewUser({
-        id: "",
-        email: "",
-        nombre_completo: "",
-        password: "",
-        role: "",
-        user_position: "",
-        tipo_estructura: "",
-        estructura_id: "",
-        supervisor_id: "",
-        estructura_ids: [],
-      });
-    } catch (error) {
-      console.error("Error saving user:", error);
+    } catch (error: any) {
+      console.error("Error completo al guardar usuario:", error);
       toast({
         variant: "destructive",
-        title: `Error al ${isEditing ? 'actualizar' : 'crear'} usuario`,
-        description: "Por favor intente nuevamente",
+        title: "Error al crear usuario",
+        description: error.message || "Por favor intente nuevamente",
       });
     }
   };
@@ -417,7 +506,7 @@ const Usuarios = () => {
     }
   };
 
-  const handleUpdateUser = async (userId: string, field: string, value: string) => {
+  const handleUpdateUser = async (userId: string, field: string, value: JerarquiaPosicion | string) => {
     if (!canEditUsers(currentUser?.user_position)) {
       toast({
         variant: "destructive",
@@ -460,7 +549,15 @@ const Usuarios = () => {
       });
       return;
     }
+
+    // Obtener la estructura actual del usuario
     const estructura = estructuras?.find(e => e.id === user.estructura_id);
+    
+    // Obtener todas las estructuras del usuario si es multi-estructura
+    const estructuraIds = MULTI_ESTRUCTURA_POSITIONS.includes(user.user_position)
+      ? user.estructuras?.map(e => e.id.toString()) || []
+      : [];
+
     setNewUser({
       id: user.id,
       email: user.email,
@@ -468,11 +565,12 @@ const Usuarios = () => {
       password: "", // No incluimos la contraseña actual
       role: user.role,
       user_position: user.user_position,
-      tipo_estructura: estructura?.tipo || "",
-      estructura_id: user.estructura_id.toString(),
-      supervisor_id: user.supervisor_id,
-      estructura_ids: [],
+      tipo_estructura: estructura?.tipo || "", // Asegurarnos de establecer el tipo
+      estructura_id: user.estructura_id?.toString() || "",
+      supervisor_id: user.supervisor_id || "",
+      estructura_ids: estructuraIds,
     });
+
     setIsEditing(true);
     setIsCreateModalOpen(true);
   };
@@ -516,10 +614,23 @@ const Usuarios = () => {
     const matchesEmail = user.email?.toLowerCase().includes(emailFilter.toLowerCase()) ?? false;
     const matchesNombre = user.nombre_completo?.toLowerCase().includes(nombreFilter.toLowerCase()) ?? false;
     const matchesCargo = user.user_position?.toLowerCase().includes(cargoFilter.toLowerCase()) ?? false;
-    const matchesEstructura = estructuras
-      ?.find((e) => e.id === user.estructura_id)
-      ?.nombre?.toLowerCase()
-      .includes(estructuraFilter.toLowerCase()) ?? false;
+    
+    // Modificar la lógica para estructuras
+    let matchesEstructura = true;
+    if (estructuraFilter) {
+      if (MULTI_ESTRUCTURA_POSITIONS.includes(user.user_position)) {
+        // Para usuarios con múltiples estructuras
+        matchesEstructura = user.estructuras?.some(e => 
+          (e.custom_name || e.nombre)?.toLowerCase().includes(estructuraFilter.toLowerCase())
+        ) ?? false;
+      } else {
+        // Para usuarios con una sola estructura
+        matchesEstructura = estructuras
+          ?.find((e) => e.id === user.estructura_id)
+          ?.nombre?.toLowerCase()
+          .includes(estructuraFilter.toLowerCase()) ?? false;
+      }
+    }
 
     return matchesEmail && matchesNombre && matchesCargo && matchesEstructura;
   });
@@ -642,13 +753,13 @@ const Usuarios = () => {
                     {editingUserId === user.id && editingField === "user_position" ? (
                       <Select
                         value={user.user_position}
-                        onValueChange={(value) => handleUpdateUser(user.id, "user_position", value)}
+                        onValueChange={(value: JerarquiaPosicion) => handleUpdateUser(user.id, "user_position", value)}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Seleccionar cargo" />
                         </SelectTrigger>
                         <SelectContent>
-                          {ROLES.map((role) => (
+                          {JERARQUIA_POSICIONES.map((role) => (
                             <SelectItem key={role} value={role}>
                               {role}
                             </SelectItem>
@@ -668,32 +779,16 @@ const Usuarios = () => {
                     )}
                   </TableCell>
                   <TableCell>
-                    {editingUserId === user.id && editingField === "estructura_id" ? (
-                      <Select
-                        value={user.estructura_id?.toString()}
-                        onValueChange={(value) => handleUpdateUser(user.id, "estructura_id", value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccionar estructura" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {estructuras?.map((estructura) => (
-                            <SelectItem key={estructura.id} value={estructura.id.toString()}>
-                              {estructura.custom_name || estructura.nombre}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    {MULTI_ESTRUCTURA_POSITIONS.includes(user.user_position) ? (
+                      // Para usuarios con múltiples estructuras
+                      <span>
+                        {user.estructuras?.map(e => e.custom_name || e.nombre).join(', ')}
+                      </span>
                     ) : (
-                      <span
-                        className="cursor-pointer hover:underline"
-                        onClick={() => {
-                          setEditingUserId(user.id);
-                          setEditingField("estructura_id");
-                        }}
-                      >
+                      // Para usuarios con una sola estructura
+                      <span>
                         {estructuras?.find((e) => e.id === user.estructura_id)?.custom_name ||
-                          estructuras?.find((e) => e.id === user.estructura_id)?.nombre}
+                           estructuras?.find((e) => e.id === user.estructura_id)?.nombre}
                       </span>
                     )}
                   </TableCell>
@@ -771,7 +866,6 @@ const Usuarios = () => {
           setIsEditing(false);
           setIsChangingPassword(false);
           setNewUser({
-            id: "",
             email: "",
             nombre_completo: "",
             password: "",
@@ -857,13 +951,13 @@ const Usuarios = () => {
               <Label>Cargo</Label>
               <Select
                 value={newUser.user_position}
-                onValueChange={(value) => setNewUser({ ...newUser, user_position: value })}
+                onValueChange={(value: JerarquiaPosicion) => setNewUser({ ...newUser, user_position: value })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar cargo" />
                 </SelectTrigger>
                 <SelectContent>
-                  {ROLES.map((role) => (
+                  {JERARQUIA_POSICIONES.map((role) => (
                     <SelectItem key={role} value={role}>
                       {role}
                     </SelectItem>
@@ -893,12 +987,20 @@ const Usuarios = () => {
               <div className="space-y-2">
                 <Label>Estructura{MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position) ? 's' : ''}</Label>
                 {MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position) ? (
-                  // Múltiple selección para roles específicos
-                  <div className="space-y-2">
+                  // Selección múltiple para roles multi-estructura
+                  <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
                     {estructuras
-                      ?.filter(e => e.tipo.toLowerCase() === STRUCTURE_TYPES_MAPPING[newUser.tipo_estructura].toLowerCase())
+                      ?.filter(e => {
+                        try {
+                          const mappedType = STRUCTURE_TYPES_MAPPING[newUser.tipo_estructura];
+                          return mappedType && e.tipo.toLowerCase() === mappedType.toLowerCase();
+                        } catch (error) {
+                          console.error('Error al filtrar estructuras:', error);
+                          return false;
+                        }
+                      })
                       .map(estructura => (
-                        <label key={estructura.id} className="flex items-center space-x-2">
+                        <label key={estructura.id} className="flex items-center space-x-2 p-1 hover:bg-muted/50">
                           <input
                             type="checkbox"
                             checked={newUser.estructura_ids.includes(estructura.id.toString())}
@@ -927,11 +1029,16 @@ const Usuarios = () => {
                       <SelectValue placeholder="Seleccionar estructura" />
                     </SelectTrigger>
                     <SelectContent>
-                      {estructuras?.map((estructura) => (
-                        <SelectItem key={estructura.id} value={estructura.id.toString()}>
-                          {estructura.custom_name || estructura.nombre}
-                        </SelectItem>
-                      ))}
+                      {estructuras
+                        ?.filter(e => {
+                          // Usar el mismo filtro que en la selección múltiple
+                          return e.tipo.toLowerCase() === STRUCTURE_TYPES_MAPPING[newUser.tipo_estructura].toLowerCase();
+                        })
+                        .map((estructura) => (
+                          <SelectItem key={estructura.id} value={estructura.id.toString()}>
+                            {estructura.custom_name || estructura.nombre}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 )}
