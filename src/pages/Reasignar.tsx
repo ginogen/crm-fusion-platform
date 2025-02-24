@@ -20,6 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { LeadHistorialSheet } from "@/components/leads/LeadHistorialSheet";
+import ModifyLeadsDialog from "@/components/leads/ModifyLeadsDialog";
 
 const formatHistoryDetails = (details: string) => {
   try {
@@ -312,6 +313,7 @@ const Reasignar = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showGestionModal, setShowGestionModal] = useState(false);
   const [showHistorialSheet, setShowHistorialSheet] = useState(false);
+  const [showModifyLeadsDialog, setShowModifyLeadsDialog] = useState(false);
 
   const handleSelectLead = (leadId: number, selected: boolean) => {
     if (selected) {
@@ -327,9 +329,17 @@ const Reasignar = () => {
         <h1 className="text-2xl font-bold">Reasignar</h1>
         <div className="flex gap-2">
           {selectedLeads.length > 0 && (
-            <p className="text-sm text-muted-foreground">
-              {selectedLeads.length} leads seleccionados
-            </p>
+            <>
+              <p className="text-sm text-muted-foreground">
+                {selectedLeads.length} leads seleccionados
+              </p>
+              <Button 
+                variant="default"
+                onClick={() => setShowModifyLeadsDialog(true)}
+              >
+                Modificar Leads
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -379,6 +389,14 @@ const Reasignar = () => {
             }}
           />
         </>
+      )}
+
+      {selectedLeads.length > 0 && (
+        <ModifyLeadsDialog
+          isOpen={showModifyLeadsDialog}
+          onClose={() => setShowModifyLeadsDialog(false)}
+          selectedLeads={selectedLeads}
+        />
       )}
     </div>
   );
