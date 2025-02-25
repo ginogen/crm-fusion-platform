@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -91,6 +91,7 @@ interface FacebookPage {
   id: string;
   name: string;
   access_token: string;
+  ads_account: string;
 }
 
 interface FacebookForm {
@@ -99,6 +100,33 @@ interface FacebookForm {
   status: string;
   page_id: string;
   page_name: string;
+  created_time: string;
+  leads_count: number;
+}
+
+interface FacebookAdAccount {
+  id: string;
+  name: string;
+  account_id: string;
+}
+
+interface FacebookFormLead {
+  id: string;
+  created_time: string;
+  field_data: {
+    name: string;
+    values: string[];
+  }[];
+}
+
+interface FacebookConfig {
+  id: number;
+  access_token: string;
+  created_at: string;
+  expires_at: string;
+  created_by: number;
+  is_active: boolean;
+  last_used: string;
 }
 
 const CSV_HEADERS = [
@@ -160,6 +188,9 @@ const Campanas = () => {
   const [selectedForms, setSelectedForms] = useState<string[]>([]);
   const [isLoadingFB, setIsLoadingFB] = useState(false);
   const [editingBatchId, setEditingBatchId] = useState<number | null>(null);
+  const [isEditingToken, setIsEditingToken] = useState(false);
+  const [availablePages, setAvailablePages] = useState<{id: string, name: string}[]>([]);
+  const [selectedPageId, setSelectedPageId] = useState<string>("");
 
   const { data: batches, refetch } = useQuery({
     queryKey: ["batches"],
@@ -409,14 +440,41 @@ const Campanas = () => {
         return;
       }
 
-      // 6. Distribuir los leads entre los usuarios
-      const leadsUpdates = batchLeads.map((lead, index) => ({
-        id: lead.id,
-        estado: "SIN_LLAMAR",
-        asignado_a: usuarios[index % usuarios.length].id,
-        origen: "Batch",
-        updated_at: new Date().toISOString()
-      }));
+      // 6. Distribuir los leads entre los usuarios (10 leads por usuario)
+      const leadsUpdates = [];
+      const LEADS_POR_USUARIO = 10;
+      let leadIndex = 0;
+
+      // Distribuir leads mientras haya disponibles
+      while (leadIndex < batchLeads.length) {
+        // Iterar sobre cada usuario
+        for (const usuario of usuarios) {
+          // Asignar hasta 10 leads a este usuario
+          const leadsParaUsuario = Math.min(
+            LEADS_POR_USUARIO,
+            batchLeads.length - leadIndex // No exceder el total de leads disponibles
+          );
+
+          // Si no quedan leads por asignar, salir del loop
+          if (leadsParaUsuario <= 0) break;
+
+          // Asignar los leads a este usuario
+          for (let i = 0; i < leadsParaUsuario; i++) {
+            if (leadIndex < batchLeads.length) {
+              leadsUpdates.push({
+                id: batchLeads[leadIndex].id,
+                estado: "SIN_LLAMAR",
+                asignado_a: usuario.id,
+                origen: "Batch",
+                updated_at: new Date().toISOString()
+              });
+              leadIndex++;
+            }
+          }
+        }
+        // Si ya procesamos todos los leads, salir del loop principal
+        if (leadIndex >= batchLeads.length) break;
+      }
 
       console.log('Actualizaciones de leads a realizar:', leadsUpdates);
 
@@ -737,109 +795,593 @@ const Campanas = () => {
     }
   };
 
+  const { data: facebookConfig, refetch: refetchFacebookConfig } = useQuery({
+    queryKey: ["facebook-config"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("facebook_config")
+        .select("*")
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (data?.access_token) {
+        localStorage.setItem('fb_access_token', data.access_token);
+      }
+      
+      return data;
+    }
+  });
+
+  const saveFacebookToken = async (token: string) => {
+    try {
+      // Verificar el token antes de guardarlo
+      const verifyResponse = await fetch(
+        'https://graph.facebook.com/v18.0/me',
+        { 
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (!verifyResponse.ok) {
+        throw new Error('Token inválido');
+      }
+
+      // 1. Verificar si el usuario es superuser
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log('Usuario actual:', user); // Depuración
+
+      const { data: userProfile, error: userError } = await supabase
+        .from("users")
+        .select("role") // Seleccionar solo el campo role
+        .eq("id", user?.id)
+        .single();
+
+      console.log('Perfil de usuario:', userProfile); // Depuración
+      console.log('Error al obtener perfil:', userError); // Depuración
+
+      if (userError) {
+        throw new Error(`Error al verificar permisos: ${userError.message}`);
+      }
+
+      // Verificar si el rol es superuser
+      if (userProfile?.role !== 'superuser') {
+        console.log('role no es superuser:', userProfile); // Depuración
+        toast.error("Solo los superusuarios pueden configurar la conexión con Facebook");
+        return;
+      }
+
+      // 2. Desactivar tokens anteriores
+      const { error: updateError } = await supabase
+        .from("facebook_config")
+        .update({ is_active: false })
+        .eq("is_active", true);
+
+      if (updateError) {
+        console.error('Error al desactivar tokens:', updateError);
+      }
+
+      // 3. Guardar el nuevo token (asegurarse de que el token está limpio)
+      const cleanToken = token.trim();
+      const { data: newConfig, error: insertError } = await supabase
+        .from("facebook_config")
+        .insert({
+          access_token: cleanToken,
+          created_by: user?.id,
+          is_active: true,
+          expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+          last_used: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      // 4. Actualizar localStorage con el token limpio
+      localStorage.setItem('fb_access_token', cleanToken);
+      
+      // Recargar la configuración
+      await refetchFacebookConfig();
+      
+      // Intentar cargar las cuentas inmediatamente
+      await loadFacebookPages();
+      
+      toast.success("Token de Facebook guardado correctamente");
+
+    } catch (error) {
+      console.error('Error completo:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      if (errorMessage === 'Token inválido') {
+        toast.error('El token proporcionado no es válido');
+      } else {
+        toast.error('Error al guardar el token de Facebook');
+      }
+    }
+  };
+
   const loadFacebookPages = async () => {
     setIsLoadingFB(true);
     try {
-      const response = await fetch(`https://graph.facebook.com/v18.0/me/accounts`, {
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_FACEBOOK_ACCESS_TOKEN}`
+      const fbToken = localStorage.getItem('fb_access_token');
+      if (!fbToken) {
+        toast.error('No hay token de acceso configurado');
+        return;
+      }
+
+      // Verificar el token antes de usarlo
+      const verifyResponse = await fetch(
+        'https://graph.facebook.com/v18.0/me',
+        { 
+          headers: { 
+            'Authorization': `Bearer ${fbToken}`,
+            'Content-Type': 'application/json'
+          }
         }
-      });
-      
+      );
+
+      if (!verifyResponse.ok) {
+        throw new Error('Token inválido o expirado');
+      }
+
+      // Actualizar last_used en la base de datos
+      await supabase
+        .from("facebook_config")
+        .update({ last_used: new Date().toISOString() })
+        .eq("access_token", fbToken);
+
+      // Obtener cuentas publicitarias
+      const response = await fetch(
+        'https://graph.facebook.com/v18.0/me/adaccounts?fields=name,account_id,id',
+        { 
+          headers: { 
+            'Authorization': `Bearer ${fbToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'Error en la respuesta de Facebook');
+      }
+
       const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error.message);
+
+      if (!data || !Array.isArray(data.data)) {
+        throw new Error('No se encontraron cuentas publicitarias');
+      }
+
+      const adAccounts = data.data.map((account: any) => ({
+        id: account.id || '',
+        name: account.name || 'Cuenta sin nombre',
+        access_token: fbToken,
+        ads_account: account.account_id || account.id?.replace('act_', '') || ''
+      })).filter(account => account.id && account.ads_account);
+
+      if (adAccounts.length === 0) {
+        throw new Error('No se encontraron cuentas publicitarias disponibles');
+      }
+
+      setFacebookPages(adAccounts);
+      toast.success(`${adAccounts.length} cuentas publicitarias cargadas`);
+      
+    } catch (error) {
+      console.error('Error detallado:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      
+      if (errorMessage.includes('Token inválido') || 
+          errorMessage.includes('Invalid OAuth') || 
+          errorMessage.includes('expired')) {
+        toast.error('Token de Facebook inválido o expirado. Por favor reconfigura el token.');
+        localStorage.removeItem('fb_access_token');
+        await supabase
+          .from("facebook_config")
+          .update({ is_active: false })
+          .eq("is_active", true);
+        await refetchFacebookConfig();
+        setIsEditingToken(true);
+      } else {
+        toast.error(errorMessage);
       }
       
-      setFacebookPages(data.data);
-    } catch (error) {
-      console.error('Error cargando páginas:', error);
-      toast.error('Error al cargar páginas de Facebook');
+      setFacebookPages([]);
     } finally {
       setIsLoadingFB(false);
     }
   };
 
+  const loadPagesForAccount = async (adAccountId: string) => {
+    try {
+      const fbToken = localStorage.getItem('fb_access_token');
+      if (!fbToken) {
+        toast.error('No hay token de acceso configurado');
+        return;
+      }
+
+      // Primero obtener las páginas a las que tenemos acceso
+      const response = await fetch(
+        'https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token',
+        { headers: { 'Authorization': `Bearer ${fbToken}` } }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'Error en la respuesta de Facebook');
+      }
+
+      const data = await response.json();
+      if (!data.data || !Array.isArray(data.data)) {
+        throw new Error('No se encontraron páginas');
+      }
+
+      // Filtrar solo las páginas que tienen formularios de leads
+      const pagesWithForms = [];
+      for (const page of data.data) {
+        try {
+          // Verificar si la página tiene formularios
+          const formCheckResponse = await fetch(
+            `https://graph.facebook.com/v18.0/${page.id}/leadgen_forms?limit=1`,
+            { headers: { 'Authorization': `Bearer ${page.access_token}` } }
+          );
+          
+          const formData = await formCheckResponse.json();
+          if (formData.data && formData.data.length > 0) {
+            pagesWithForms.push({
+              id: page.id,
+              name: page.name,
+              access_token: page.access_token
+            });
+          }
+        } catch (error) {
+          console.log(`Saltando página ${page.name} - sin acceso a formularios`);
+          continue;
+        }
+      }
+
+      if (pagesWithForms.length === 0) {
+        throw new Error('No se encontraron páginas con formularios de leads');
+      }
+
+      setAvailablePages(pagesWithForms);
+      setSelectedPageId(""); // Resetear página seleccionada
+      setFacebookForms([]); // Limpiar formularios anteriores
+      
+      toast.success(`${pagesWithForms.length} páginas con formularios encontradas`);
+    } catch (error) {
+      console.error('Error cargando páginas:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      toast.error(`Error al cargar páginas: ${errorMessage}`);
+      setAvailablePages([]);
+    }
+  };
+
   const loadFormsByPage = async (pageId: string) => {
     try {
-      const response = await fetch(
-        `https://graph.facebook.com/v18.0/${pageId}/leadgen_forms`,
-        {
-          headers: {
-            'Authorization': `Bearer ${import.meta.env.VITE_FACEBOOK_ACCESS_TOKEN}`
-          }
-        }
-      );
-      
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error.message);
+      // Obtener la página seleccionada con su token
+      const selectedPage = availablePages.find(p => p.id === pageId);
+      if (!selectedPage) {
+        throw new Error('Página no encontrada');
       }
-      
-      setFacebookForms(data.data);
+
+      // Usar el token de la página para obtener los formularios
+      const formsResponse = await fetch(
+        `https://graph.facebook.com/v18.0/${pageId}/leadgen_forms?fields=id,name,status,created_time,leads_count`,
+        { headers: { 'Authorization': `Bearer ${selectedPage.access_token}` } }
+      );
+
+      if (!formsResponse.ok) {
+        const errorData = await formsResponse.json();
+        throw new Error(errorData.error?.message || 'Error al obtener formularios');
+      }
+
+      const formsData = await formsResponse.json();
+      if (!formsData.data) {
+        throw new Error('No se encontraron formularios');
+      }
+
+      const formsWithPageInfo = formsData.data.map((form: any) => ({
+        ...form,
+        page_id: pageId,
+        page_name: selectedPage.name
+      }));
+
+      setFacebookForms(formsWithPageInfo);
+      toast.success(`${formsWithPageInfo.length} formularios encontrados`);
+
     } catch (error) {
       console.error('Error cargando formularios:', error);
-      toast.error('Error al cargar formularios');
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      toast.error(`Error al cargar formularios: ${errorMessage}`);
+      setFacebookForms([]);
     }
   };
 
   const importLeadsFromForm = async (formId: string) => {
     try {
-      const response = await fetch(
-        `https://graph.facebook.com/v18.0/${formId}/leads`,
-        {
-          headers: {
-            'Authorization': `Bearer ${import.meta.env.VITE_FACEBOOK_ACCESS_TOKEN}`
-          }
-        }
-      );
-      
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error.message);
+      const fbToken = localStorage.getItem('fb_access_token');
+      if (!fbToken) {
+        toast.error('No hay token de acceso de Facebook');
+        return;
       }
 
       const form = facebookForms.find(f => f.id === formId);
-      const batchName = `FB - ${form?.page_name} - ${form?.name}`;
-      
-      const processedLeads = data.data.map((lead: any) => ({
-        nombre_completo: lead.field_data.find((f: any) => f.name === 'full_name')?.values[0] || '',
-        email: lead.field_data.find((f: any) => f.name === 'email')?.values[0] || '',
-        telefono: lead.field_data.find((f: any) => f.name === 'phone_number')?.values[0] || '',
-        origen: 'Facebook',
-        created_at: lead.created_time
-      }));
+      if (!form) {
+        toast.error('Formulario no encontrado');
+        return;
+      }
 
-      // Crear batch
+      // Crear el batch primero
       const { data: batchData, error: batchError } = await supabase
         .from("lead_batches")
         .insert([{
-          name: batchName,
+          name: `FB - ${form.page_name} - ${form.name}`,
           source: "Facebook",
-          campaign_name: form?.name
+          campaign_name: form.name
         }])
         .select()
         .single();
 
       if (batchError) throw batchError;
 
-      // Insertar leads
-      const leadsWithBatch = processedLeads.map(lead => ({
-        ...lead,
-        batch_id: batchData.id
+      // Obtener los leads del formulario
+      const response = await fetch(
+        `https://graph.facebook.com/v18.0/${formId}/leads?fields=created_time,field_data`,
+        {
+          headers: {
+            'Authorization': `Bearer ${fbToken}`
+          }
+        }
+      );
+      
+      const data = await response.json();
+      if (data.error) throw new Error(data.error.message);
+
+      // Procesar y transformar los leads
+      const processedLeads = data.data.map((lead: any) => ({
+        nombre_completo: lead.field_data.find((f: any) => f.name === 'full_name')?.values[0] || '',
+        email: lead.field_data.find((f: any) => f.name === 'email')?.values[0] || '',
+        telefono: lead.field_data.find((f: any) => f.name === 'phone_number')?.values[0] || '',
+        origen: 'Facebook',
+        estado: 'SIN_LLAMAR',
+        batch_id: batchData.id,
+        is_from_batch: true,
+        created_at: lead.created_time
       }));
 
+      // Insertar los leads en la base de datos
       const { error: leadsError } = await supabase
-        .from("campaign_leads")
-        .insert(leadsWithBatch);
+        .from("leads")
+        .insert(processedLeads);
 
       if (leadsError) throw leadsError;
 
-      toast.success(`Importados ${processedLeads.length} leads de ${form?.name}`);
+      // Actualizar timestamp de última importación
+      await supabase
+        .from("facebook_forms")
+        .update({ 
+          last_import: new Date().toISOString(),
+          leads_count: data.data.length
+        })
+        .eq("form_id", formId);
+
+      await refetchForms();
+      toast.success(`Batch creado con ${processedLeads.length} leads de ${form.name}`);
       refetch();
+
     } catch (error) {
       console.error('Error importando leads:', error);
       toast.error('Error al importar leads');
+    }
+  };
+
+  // Función para evacuar leads sin llamar
+  const evacuarLeadsSinLlamar = async () => {
+    try {
+      // Obtener todos los leads con estado SIN_LLAMAR
+      const { data: leadsSinLlamar, error: queryError } = await supabase
+        .from("leads")
+        .select("id")
+        .eq("estado", "SIN_LLAMAR")
+        .not("asignado_a", "is", null);
+
+      if (queryError) throw queryError;
+
+      if (leadsSinLlamar?.length) {
+        // Actualizar los leads quitando la asignación
+        const { error: updateError } = await supabase
+          .from("leads")
+          .update({
+            asignado_a: null,
+            updated_at: new Date().toISOString()
+          })
+          .in("id", leadsSinLlamar.map(lead => lead.id));
+
+        if (updateError) throw updateError;
+
+        console.log(`${leadsSinLlamar.length} leads evacuados`);
+      }
+    } catch (error) {
+      console.error("Error al evacuar leads:", error);
+    }
+  };
+
+  // Programar la evacuación de leads a las 00:00 hora de Chile
+  useEffect(() => {
+    const programarEvacuacion = () => {
+      const ahora = new Date();
+      const zonaHoraria = 'America/Santiago';
+      const horaChile = new Date(ahora.toLocaleString('en-US', { timeZone: zonaHoraria }));
+      
+      // Calcular tiempo hasta la próxima medianoche en Chile
+      const medianoche = new Date(horaChile);
+      medianoche.setHours(24, 0, 0, 0);
+      
+      const tiempoHastaMedianoche = medianoche.getTime() - horaChile.getTime();
+      
+      // Programar la evacuación
+      const timer = setTimeout(() => {
+        evacuarLeadsSinLlamar();
+        // Reprogramar para la siguiente medianoche
+        programarEvacuacion();
+      }, tiempoHastaMedianoche);
+
+      return () => clearTimeout(timer);
+    };
+
+    return programarEvacuacion();
+  }, []);
+
+  // Agregar función para cargar formulario por ID
+  const loadFormById = async (formId: string) => {
+    try {
+      const fbToken = localStorage.getItem('fb_access_token');
+      if (!fbToken) {
+        toast.error('No hay token de acceso configurado');
+        return;
+      }
+
+      // Obtener información del formulario
+      const response = await fetch(
+        `https://graph.facebook.com/v18.0/${formId}?fields=id,name,status,created_time,leads_count`,
+        { headers: { 'Authorization': `Bearer ${fbToken}` } }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'Error al obtener el formulario');
+      }
+
+      const formData = await response.json();
+      
+      // Crear array con el único formulario
+      const formWithInfo = [{
+        ...formData,
+        page_id: formId, // Usamos el mismo ID como referencia
+        page_name: 'Formulario directo' // Nombre genérico
+      }];
+
+      setFacebookForms(formWithInfo);
+      toast.success('Formulario encontrado');
+
+    } catch (error) {
+      console.error('Error cargando formulario:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      toast.error(`Error al cargar formulario: ${errorMessage}`);
+      setFacebookForms([]);
+    }
+  };
+
+  // Agregar query para obtener formularios guardados
+  const { data: savedForms, refetch: refetchForms } = useQuery({
+    queryKey: ["facebook-forms"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("facebook_forms")
+        .select("*")
+        .eq("is_active", true)
+        .order("created_at", { ascending: false });
+      return data || [];
+    }
+  });
+
+  // Modificar la función para guardar formulario
+  const saveFormById = async (formId: string) => {
+    try {
+      const fbToken = localStorage.getItem('fb_access_token');
+      if (!fbToken) {
+        toast.error('No hay token de acceso configurado');
+        return;
+      }
+
+      // Verificar si el formulario ya existe
+      const existingForm = savedForms?.find(f => f.form_id === formId);
+      if (existingForm) {
+        toast.error('Este formulario ya está registrado');
+        return;
+      }
+
+      // Limpiar el ID del formulario (remover 'form_' si existe)
+      const cleanFormId = formId.replace('form_', '');
+
+      // 1. Primero verificar los permisos del token
+      const permissionsResponse = await fetch(
+        'https://graph.facebook.com/v18.0/me/permissions',
+        { headers: { 'Authorization': `Bearer ${fbToken}` } }
+      );
+
+      const permissionsData = await permissionsResponse.json();
+      console.log('Permisos disponibles:', permissionsData);
+
+      // 2. Intentar obtener el formulario usando la API de Marketing
+      const response = await fetch(
+        `https://graph.facebook.com/v18.0/${cleanFormId}?fields=id,name,status,created_time,leads_count,page,form_info`,
+        { 
+          headers: { 
+            'Authorization': `Bearer ${fbToken}`
+          }
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Error detallado de Facebook:', errorData);
+        
+        if (errorData.error?.code === 190) {
+          throw new Error('Token inválido o expirado');
+        } else if (errorData.error?.code === 10) {
+          throw new Error('ID de formulario inválido');
+        } else {
+          throw new Error(errorData.error?.message || 'Error al obtener el formulario');
+        }
+      }
+
+      const formData = await response.json();
+      console.log('Datos del formulario:', formData);
+
+      // 3. Guardar el formulario en la base de datos
+      const { error: saveError } = await supabase
+        .from("facebook_forms")
+        .insert({
+          form_id: cleanFormId,
+          name: formData.name || 'Formulario sin nombre',
+          status: formData.status || 'ACTIVE',
+          leads_count: formData.leads_count || 0,
+          page_id: formData.page?.id,
+          page_name: formData.page?.name
+        });
+
+      if (saveError) throw saveError;
+
+      await refetchForms();
+      toast.success('Formulario guardado correctamente');
+      setSelectedPageId(''); // Limpiar input
+
+    } catch (error) {
+      console.error('Error completo:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      
+      // Mejorar los mensajes de error
+      if (errorMessage.includes('missing permissions')) {
+        toast.error(`
+          No tienes los permisos necesarios. Verifica que el token tenga:
+          - leads_retrieval
+          - pages_show_list
+          - pages_read_engagement
+          - pages_manage_metadata
+        `);
+      } else if (errorMessage.includes('Token inválido')) {
+        toast.error('El token ha expirado o es inválido. Por favor reconfigura el token.');
+      } else if (errorMessage.includes('ID de formulario')) {
+        toast.error('El ID del formulario no es válido. Verifica que hayas copiado el ID correcto.');
+      } else {
+        toast.error(`Error al guardar formulario: ${errorMessage}`);
+      }
     }
   };
 
@@ -861,53 +1403,173 @@ const Campanas = () => {
               <DialogTitle>Conectar con Facebook</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              {!facebookPages.length ? (
-                <Button 
-                  className="w-full" 
-                  onClick={loadFacebookPages}
-                  disabled={isLoadingFB}
-                >
-                  {isLoadingFB ? "Cargando..." : "Cargar Páginas de Facebook"}
-                </Button>
-              ) : (
+              {facebookConfig ? (
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Página de Facebook</Label>
-                    <select
-                      className="w-full p-2 border rounded-md"
-                      value={selectedPage}
-                      onChange={(e) => {
-                        setSelectedPage(e.target.value);
-                        if (e.target.value) {
-                          loadFormsByPage(e.target.value);
-                        }
-                      }}
-                    >
-                      <option value="">Selecciona una página</option>
-                      {facebookPages.map(page => (
-                        <option key={page.id} value={page.id}>{page.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {facebookForms.length > 0 && (
-                    <div className="space-y-2">
-                      <Label>Formularios Disponibles</Label>
-                      <div className="space-y-2">
-                        {facebookForms.map(form => (
-                          <div key={form.id} className="flex items-center justify-between p-2 border rounded">
-                            <span>{form.name}</span>
-                            <Button
-                              size="sm"
-                              onClick={() => importLeadsFromForm(form.id)}
-                            >
-                              Importar Leads
-                            </Button>
+                  {!isEditingToken ? (
+                    <>
+                      <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-sm text-green-800">
+                              ✓ Conexión activa con Facebook
+                            </p>
+                            <p className="text-xs text-green-600">
+                              Último uso: {new Date(facebookConfig.last_used).toLocaleString()}
+                            </p>
+                            <p className="text-xs text-green-600">
+                              Expira: {new Date(facebookConfig.expires_at).toLocaleDateString()}
+                            </p>
                           </div>
-                        ))}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsEditingToken(true)}
+                          >
+                            Reconfigurar Token
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>Agregar Formulario de Facebook</Label>
+                          <div className="space-y-4 border rounded-md p-4">
+                            <div className="space-y-2">
+                              <Label>ID del Formulario</Label>
+                              <div className="flex gap-2">
+                                <Input
+                                  placeholder="Ej: 123456789"
+                                  value={selectedPageId}
+                                  onChange={(e) => setSelectedPageId(e.target.value)}
+                                />
+                                <Button 
+                                  onClick={() => saveFormById(selectedPageId)}
+                                  disabled={!selectedPageId}
+                                >
+                                  Agregar
+                                </Button>
+                              </div>
+                              <div className="text-sm text-muted-foreground space-y-1">
+                                <p>Para encontrar el ID del formulario:</p>
+                                <ol className="list-decimal list-inside space-y-1 pl-2">
+                                  <li>Ve a Meta Business Suite (business.facebook.com)</li>
+                                  <li>En el menú lateral, ve a "Todos los Herramientas" {'>'} "Formularios de clientes potenciales"</li>
+                                  <li>Selecciona la página que contiene el formulario</li>
+                                  <li>Haz clic en el formulario que deseas importar</li>
+                                  <li>El ID del formulario está en la URL después de /forms/ o /form/</li>
+                                  <li>El formato puede ser algo como: 123456789 o form_123456789</li>
+                                </ol>
+                                <p className="mt-2 text-xs font-medium">
+                                  El token debe tener estos permisos:
+                                </p>
+                                <ul className="list-disc list-inside text-xs pl-2">
+                                  <li>leads_retrieval</li>
+                                  <li>pages_show_list</li>
+                                  <li>pages_read_engagement</li>
+                                  <li>pages_manage_metadata</li>
+                                </ul>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Lista de Formularios guardados */}
+                        {savedForms && savedForms.length > 0 && (
+                          <div className="space-y-2">
+                            <Label>Formularios Conectados ({savedForms.length})</Label>
+                            <div className="max-h-[400px] overflow-y-auto space-y-2 border rounded-md p-4">
+                              {savedForms.map(form => (
+                                <div key={form.id} className="flex items-center justify-between p-3 border rounded-md bg-white">
+                                  <div>
+                                    <p className="font-medium">{form.name}</p>
+                                    <div className="text-sm text-muted-foreground space-y-1">
+                                      <p>ID: {form.form_id}</p>
+                                      <p>Estado: {form.status} | Leads: {form.leads_count}</p>
+                                      {form.last_import && (
+                                        <p>Última importación: {new Date(form.last_import).toLocaleString()}</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <Button
+                                      size="sm"
+                                      onClick={() => importLeadsFromForm(form.form_id)}
+                                      disabled={form.status !== 'ACTIVE'}
+                                    >
+                                      Importar Leads
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={async () => {
+                                        if (confirm('¿Estás seguro de que deseas eliminar este formulario?')) {
+                                          await supabase
+                                            .from("facebook_forms")
+                                            .update({ is_active: false })
+                                            .eq("id", form.id);
+                                          refetchForms();
+                                          toast.success('Formulario eliminado');
+                                        }
+                                      }}
+                                    >
+                                      Eliminar
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                        <p className="text-sm text-yellow-800">
+                          Reconfigurando token de acceso
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Nuevo Token de Acceso de Facebook</Label>
+                        <Input
+                          type="password"
+                          placeholder="Ingresa el nuevo token de acceso"
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              saveFacebookToken(e.target.value)
+                                .then(() => setIsEditingToken(false));
+                            }
+                          }}
+                        />
+                        <div className="flex justify-end gap-2 mt-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => setIsEditingToken(false)}
+                          >
+                            Cancelar
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Token de Acceso de Facebook</Label>
+                    <Input
+                      type="password"
+                      placeholder="Ingresa el token de acceso de larga duración"
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          saveFacebookToken(e.target.value);
+                        }
+                      }}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Ingresa el token de acceso de larga duración obtenido desde Facebook Business
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -1033,6 +1695,36 @@ const Campanas = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Nuevo botón para evacuación manual */}
+        <Button 
+          variant="outline" 
+          className="w-[200px]"
+          onClick={() => {
+            if (confirm("¿Está seguro que desea evacuar todos los leads sin llamar? Esta acción quitará la asignación de todos los leads con estado SIN_LLAMAR.")) {
+              evacuarLeadsSinLlamar().then(() => {
+                refetch();
+                toast.success("Evacuación manual completada");
+              });
+            }
+          }}
+        >
+          <svg 
+            xmlns="http://www.w3.org/2000/svg" 
+            className="h-4 w-4 mr-2" 
+            fill="none" 
+            viewBox="0 0 24 24" 
+            stroke="currentColor"
+          >
+            <path 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              strokeWidth={2} 
+              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" 
+            />
+          </svg>
+          Forzar Evacuación
+        </Button>
       </div>
 
       {/* Sección de Batches */}
@@ -1132,9 +1824,17 @@ const Campanas = () => {
                     <span className="text-sm text-muted-foreground">
                       {new Date(batch.created_at).toLocaleDateString()}
                     </span>
-                    <span className="text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                      {batch.leads.length} leads
-                    </span>
+                    <div className="flex gap-2">
+                      <span className="text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                        Total: {batch.leads.length}
+                      </span>
+                      <span className="text-sm bg-green-100 text-green-800 px-2 py-1 rounded">
+                        Asignados: {batch.leads.filter(lead => lead.asignado_a).length}
+                      </span>
+                      <span className="text-sm bg-gray-100 text-gray-800 px-2 py-1 rounded">
+                        Sin Asignar: {batch.leads.filter(lead => !lead.asignado_a).length}
+                      </span>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <div
