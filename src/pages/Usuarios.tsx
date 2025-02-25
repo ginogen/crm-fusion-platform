@@ -319,7 +319,11 @@ const Usuarios = () => {
           if (passwordError) throw passwordError;
         }
 
-        const supervisorId = newUser.supervisor_id === 'no_supervisor' ? null : newUser.supervisor_id;
+        // Determinar el supervisor_id correcto
+        let supervisorId = null;
+        if (newUser.user_position !== 'CEO') {
+          supervisorId = newUser.supervisor_id === 'no_supervisor' ? null : newUser.supervisor_id || null;
+        }
 
         // Actualizar usuario base
         const { error: userError } = await supabase
@@ -331,7 +335,7 @@ const Usuarios = () => {
             estructura_id: MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position) 
               ? null 
               : parseInt(newUser.estructura_id),
-            supervisor_id: supervisorId,
+            supervisor_id: supervisorId, // Usar el valor corregido
           })
           .eq('id', newUser.id);
 
@@ -340,12 +344,14 @@ const Usuarios = () => {
         // Si es un rol con múltiples estructuras, actualizar las relaciones
         if (MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position)) {
           // Primero eliminar relaciones existentes
-          await supabase
+          const { error: deleteError } = await supabase
             .from("user_estructuras")
             .delete()
             .eq('user_id', newUser.id);
 
-          // Insertar nuevas relaciones
+          if (deleteError) throw deleteError;
+
+          // Insertar nuevas relaciones solo si hay estructuras seleccionadas
           if (newUser.estructura_ids.length > 0) {
             const { error: estructurasError } = await supabase
               .from("user_estructuras")
@@ -363,6 +369,9 @@ const Usuarios = () => {
         toast({
           title: "Usuario actualizado exitosamente",
         });
+
+        setIsCreateModalOpen(false);
+        refetchUsers();
       } else {
         console.log('Iniciando creación de usuario:', { ...newUser, password: '***' });
 
@@ -467,7 +476,7 @@ const Usuarios = () => {
       console.error("Error completo al guardar usuario:", error);
       toast({
         variant: "destructive",
-        title: "Error al crear usuario",
+        title: "Error al guardar usuario",
         description: error.message || "Por favor intente nuevamente",
       });
     }
