@@ -18,6 +18,7 @@ import Organizacion from "./pages/Organizacion";
 import Usuarios from "./pages/Usuarios";
 import NotFound from "./pages/NotFound";
 import Auth from "./pages/Auth";
+import TimeControl from "./pages/TimeControl";
 
 const queryClient = new QueryClient();
 
@@ -80,6 +81,15 @@ function App() {
               <Route path="usuarios" element={
                 <ProtectedRoute>
                   <Usuarios />
+                </ProtectedRoute>
+              } />
+              <Route path="time-control" element={
+                <ProtectedRoute requiredPosition={[
+                  RESTRICTED_POSITIONS.CEO,
+                  RESTRICTED_POSITIONS.DIRECTOR_INTERNACIONAL,
+                  RESTRICTED_POSITIONS.DIRECTOR_NACIONAL
+                ]}>
+                  <TimeControl />
                 </ProtectedRoute>
               } />
               <Route path="*" element={<NotFound />} />

@@ -1,4 +1,3 @@
-
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { NAVIGATION_ITEMS } from "@/lib/constants";
@@ -14,6 +13,7 @@ import * as Icons from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { AvailabilityStatus } from "@/components/ui/availability-status";
 
 export const AppSidebar = () => {
   const location = useLocation();
@@ -28,14 +28,15 @@ export const AppSidebar = () => {
       // Obtener el rol del usuario
       const { data: userProfile } = await supabase
         .from("users")
-        .select("email, nombre_completo, role")
+        .select("email, nombre_completo, user_position")
         .eq("id", user.id)
         .single();
 
       return {
+        id: user.id,
         email: user.email,
         nombre_completo: userProfile?.nombre_completo || "Usuario",
-        role: userProfile?.role || "Usuario",
+        role: userProfile?.user_position || "Usuario",
       };
     },
   });
@@ -65,6 +66,9 @@ export const AppSidebar = () => {
                 {userData?.email}
               </p>
               <p className="text-xs text-primary font-medium">{userData?.role}</p>
+              {userData?.id && (
+                <AvailabilityStatus userId={userData.id} className="mt-2" />
+              )}
             </div>
           </div>
         </div>
@@ -73,6 +77,19 @@ export const AppSidebar = () => {
             const Icon = Icons[item.icon as keyof typeof Icons] as LucideIcon;
             const isActive = location.pathname === item.href;
             
+            // Debug log
+            if (item.roles) {
+              console.log('Item:', item.label);
+              console.log('Required roles:', item.roles);
+              console.log('User role:', userData?.role);
+              console.log('Has access:', !item.roles || (userData?.role && item.roles.includes(userData.role)));
+            }
+
+            // Si el item tiene roles definidos y el usuario no tiene uno de esos roles, no mostrar
+            if (item.roles && (!userData?.role || !item.roles.includes(userData.role))) {
+              return null;
+            }
+
             return (
               <Button
                 key={item.href}

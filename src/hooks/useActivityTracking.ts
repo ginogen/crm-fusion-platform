@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
+const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutos en milisegundos
+
 export function useActivityTracking(userId: string | undefined) {
   useEffect(() => {
     if (!userId) return;
@@ -12,25 +14,44 @@ export function useActivityTracking(userId: string | undefined) {
         // Primero verificamos si existe un registro
         const { data: existingData } = await supabase
           .from('user_activity')
-          .select('id')
+          .select('id, last_active')
           .eq('user_id', userId)
           .single();
 
         const currentTime = new Date().toISOString();
 
         if (existingData) {
-          // Si existe, actualizamos
-          const { data, error } = await supabase
-            .from('user_activity')
-            .update({
-              last_active: currentTime,
-              is_online: true
-            })
-            .eq('user_id', userId);
+          // Verificar si la última actividad fue hace más de 30 minutos
+          const lastActive = new Date(existingData.last_active);
+          const timeSinceLastActive = Date.now() - lastActive.getTime();
 
-          console.log('Update result:', { data, error });
+          if (timeSinceLastActive > INACTIVITY_TIMEOUT) {
+            // Si pasaron más de 30 minutos, crear una nueva sesión
+            const { data, error } = await supabase
+              .from('user_activity')
+              .insert({
+                user_id: userId,
+                last_active: currentTime,
+                session_start: currentTime,
+                is_online: true
+              })
+              .select();
+
+            console.log('New session created:', { data, error });
+          } else {
+            // Si no, actualizar la sesión existente
+            const { data, error } = await supabase
+              .from('user_activity')
+              .update({
+                last_active: currentTime,
+                is_online: true
+              })
+              .eq('user_id', userId);
+
+            console.log('Session updated:', { data, error });
+          }
         } else {
-          // Si no existe, insertamos
+          // Si no existe, insertamos una nueva sesión
           const { data, error } = await supabase
             .from('user_activity')
             .insert({
@@ -41,7 +62,7 @@ export function useActivityTracking(userId: string | undefined) {
             })
             .select();
 
-          console.log('Insert result:', { data, error });
+          console.log('First session created:', { data, error });
         }
       } catch (error) {
         console.error('Error tracking activity:', error);
@@ -52,7 +73,7 @@ export function useActivityTracking(userId: string | undefined) {
       clearTimeout(activityTimeout);
       updateActivity();
       
-      // Marcar como inactivo después de 5 minutos sin actividad
+      // Configurar el timeout para marcar como inactivo después de 30 minutos
       activityTimeout = setTimeout(async () => {
         const { error } = await supabase
           .from('user_activity')
@@ -62,7 +83,10 @@ export function useActivityTracking(userId: string | undefined) {
         if (error) {
           console.error('Error setting offline status:', error);
         }
-      }, 5 * 60 * 1000);
+
+        // Forzar el cierre de sesión después de 30 minutos de inactividad
+        supabase.auth.signOut();
+      }, INACTIVITY_TIMEOUT);
     };
 
     // Eventos a monitorear

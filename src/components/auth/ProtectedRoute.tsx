@@ -7,7 +7,6 @@ type JerarquiaPosicion = typeof JERARQUIA_POSICIONES[number];
 interface UserData {
   id: string;
   user_position: JerarquiaPosicion;
-  // ... otros campos necesarios
 }
 
 const JERARQUIA_POSICIONES = [
@@ -23,17 +22,9 @@ const JERARQUIA_POSICIONES = [
   'Asesor Training'
 ] as const;
 
-const RESTRICTED_POSITIONS = {
-  ASESOR_TRAINING: 'Asesor Training'
-} as const;
-
-const getNivelJerarquico = (position: JerarquiaPosicion) => {
-  return JERARQUIA_POSICIONES.indexOf(position);
-};
-
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  requiredPosition?: JerarquiaPosicion[];
+  requiredPosition?: string[];
 }
 
 export const ProtectedRoute = ({ children, requiredPosition }: ProtectedRouteProps) => {
@@ -45,7 +36,7 @@ export const ProtectedRoute = ({ children, requiredPosition }: ProtectedRoutePro
 
       const { data } = await supabase
         .from("users")
-        .select("*")
+        .select("id, user_position")
         .eq("id", user.id)
         .single();
 
@@ -55,7 +46,7 @@ export const ProtectedRoute = ({ children, requiredPosition }: ProtectedRoutePro
 
   // Si está cargando, mostramos null o un componente de carga
   if (isLoading) {
-    return null; // o return <LoadingSpinner />
+    return null;
   }
 
   // Si no hay usuario, redirigir a auth
@@ -63,11 +54,13 @@ export const ProtectedRoute = ({ children, requiredPosition }: ProtectedRoutePro
     return <Navigate to="/auth" replace />;
   }
 
-  const hasRequiredPosition = !requiredPosition || 
-    (currentUser?.user_position && (
-      requiredPosition.includes(currentUser.user_position) ||
-      getNivelJerarquico(currentUser.user_position) < getNivelJerarquico(RESTRICTED_POSITIONS.ASESOR_TRAINING)
-    ));
+  // Si no se requiere una posición específica, permitir acceso
+  if (!requiredPosition) {
+    return <>{children}</>;
+  }
+
+  // Verificar si el usuario tiene la posición requerida
+  const hasRequiredPosition = requiredPosition.includes(currentUser.user_position);
 
   if (!hasRequiredPosition) {
     return <Navigate to="/" replace />;

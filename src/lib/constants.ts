@@ -1,6 +1,13 @@
 export const APP_NAME = "CRM Fusion";
 
-export const NAVIGATION_ITEMS = [
+type NavigationItem = {
+  label: string;
+  icon: string;
+  href: string;
+  roles?: string[];
+};
+
+export const NAVIGATION_ITEMS: NavigationItem[] = [
   { label: "Dashboard", icon: "LayoutDashboard", href: "/" },
   { label: "Datos", icon: "Database", href: "/datos" },
   { label: "Campañas", icon: "Megaphone", href: "/campanas" },
@@ -8,7 +15,13 @@ export const NAVIGATION_ITEMS = [
   { label: "Informes", icon: "BarChart", href: "/informes" },
   { label: "Organización", icon: "Building", href: "/organizacion" },
   { label: "Usuarios", icon: "Users", href: "/usuarios" },
-] as const;
+  { 
+    label: "Control de Tiempo", 
+    icon: "Clock", 
+    href: "/time-control",
+    roles: ["CEO", "Director Internacional", "Director Nacional"]
+  },
+];
 
 export const LEAD_STATUSES = [
   "SIN_LLAMAR",
