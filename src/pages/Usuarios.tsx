@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Ban, Edit, RefreshCw } from "lucide-react";
+import { Plus, Search, Ban, Edit, RefreshCw, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { supabaseAdmin } from "@/integrations/supabase/admin-client";
 import { ROLES, STRUCTURE_TYPES, STRUCTURE_TYPES_MAPPING } from "@/lib/constants";
@@ -163,6 +163,8 @@ const Usuarios = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
 
   // Actualizar el estado inicial
   const [newUser, setNewUser] = useState<NewUserState>({
@@ -549,12 +551,25 @@ const Usuarios = () => {
     }
   };
 
-  const handleEditUser = (user: UserData) => {
+  const handleEditUser = async (user: UserData) => {
     if (!canEditUsers(currentUser?.user_position)) {
       toast({
         variant: "destructive",
         title: "Acceso denegado",
         description: "No tienes permisos para editar usuarios",
+      });
+      return;
+    }
+
+    // Obtener la contraseña actual del usuario
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.getUserById(user.id);
+    
+    if (authError) {
+      console.error("Error getting user password:", authError);
+      toast({
+        variant: "destructive",
+        title: "Error al obtener datos del usuario",
+        description: "No se pudo obtener la contraseña actual del usuario",
       });
       return;
     }
@@ -571,10 +586,10 @@ const Usuarios = () => {
       id: user.id,
       email: user.email,
       nombre_completo: user.nombre_completo,
-      password: "", // No incluimos la contraseña actual
+      password: "", // La contraseña se maneja de forma segura y no se muestra
       role: user.role,
       user_position: user.user_position,
-      tipo_estructura: estructura?.tipo || "", // Asegurarnos de establecer el tipo
+      tipo_estructura: estructura?.tipo || "",
       estructura_id: user.estructura_id?.toString() || "",
       supervisor_id: user.supervisor_id || "",
       estructura_ids: estructuraIds,
@@ -874,6 +889,8 @@ const Usuarios = () => {
         if (!open) {
           setIsEditing(false);
           setIsChangingPassword(false);
+          setShowPassword(false);
+          setShowEditPassword(false);
           setNewUser({
             email: "",
             nombre_completo: "",
@@ -904,12 +921,27 @@ const Usuarios = () => {
             {!isEditing ? (
               <div className="space-y-2">
                 <Label>Contraseña</Label>
-                <Input
-                  type="password"
-                  value={newUser.password}
-                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  placeholder="Contraseña"
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    placeholder="Contraseña"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="space-y-2">
@@ -918,19 +950,41 @@ const Usuarios = () => {
                   <Button 
                     variant="ghost" 
                     size="sm"
-                    onClick={() => setIsChangingPassword(!isChangingPassword)}
+                    onClick={() => {
+                      setIsChangingPassword(!isChangingPassword);
+                      if (!isChangingPassword) {
+                        setShowEditPassword(false);
+                        setNewUser(prev => ({ ...prev, password: "" }));
+                      }
+                    }}
                   >
                     {isChangingPassword ? 'Cancelar cambio' : 'Cambiar contraseña'}
                   </Button>
                 </div>
-                {isChangingPassword && (
+                <div className="relative">
                   <Input
                     type="password"
-                    value={newUser.password}
+                    value={isChangingPassword ? newUser.password : "••••••••"}
                     onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                    placeholder="Nueva contraseña"
+                    placeholder={isChangingPassword ? "Nueva contraseña" : "Contraseña encriptada"}
+                    disabled={!isChangingPassword}
                   />
-                )}
+                  {isChangingPassword && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                      onClick={() => setShowEditPassword(!showEditPassword)}
+                    >
+                      {showEditPassword ? (
+                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
             <div className="space-y-2">

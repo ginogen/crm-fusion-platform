@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -6,6 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +20,7 @@ import { format } from "date-fns";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MANAGEMENT_TYPES } from "@/lib/constants";
+import { MANAGEMENT_TYPES, REJECTION_REASONS } from "@/lib/constants";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LeadHistorialSheet } from "@/components/leads/LeadHistorialSheet";
 
@@ -82,6 +83,12 @@ const CSV_HEADERS = [
   "Observaciones",
 ];
 
+const ORIGEN_OPTIONS = [
+  "Redes Sociales",
+  "Directo",
+  "Referido"
+];
+
 const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
   const [formData, setFormData] = useState({
     nombre_completo: lead?.nombre_completo || "",
@@ -96,9 +103,15 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
 
   const updateLead = useMutation({
     mutationFn: async (data: any) => {
+      const updateData = {
+        ...data,
+        telefono: lead.telefono,
+        origen: lead.origen
+      };
+
       const { error } = await supabase
         .from("leads")
-        .update(data)
+        .update(updateData)
         .eq("id", lead.id);
 
       if (error) throw error;
@@ -109,8 +122,8 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
         action: "ACTUALIZACIÓN",
         details: JSON.stringify({ 
           previous: lead,
-          new: data,
-          changes: Object.keys(data).filter(key => data[key] !== lead[key])
+          new: updateData,
+          changes: Object.keys(updateData).filter(key => updateData[key] !== lead[key])
         })
       });
     },
@@ -172,6 +185,8 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
                 value={formData.telefono}
                 onChange={handleInputChange}
                 required
+                disabled
+                className="bg-muted"
               />
             </div>
             <div className="space-y-2">
@@ -182,6 +197,8 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
                 value={formData.origen}
                 onChange={handleInputChange}
                 required
+                disabled
+                className="bg-muted"
               />
             </div>
             <div className="space-y-2">
@@ -229,31 +246,80 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
   );
 };
 
-const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
-  const [tipo, setTipo] = useState<string>("");
-  const [fecha, setFecha] = useState<Date>();
-  const [observaciones, setObservaciones] = useState("");
+const GestionModal = ({ lead, isOpen, onClose, initialData }: { lead: any, isOpen: boolean, onClose: () => void, initialData?: any }) => {
+  const [tipo, setTipo] = useState<string>(initialData?.tipo || "");
+  const [fecha, setFecha] = useState<Date | undefined>(initialData?.fecha ? new Date(initialData.fecha) : undefined);
+  const [observaciones, setObservaciones] = useState(initialData?.observaciones || "");
+  const [razonRechazo, setRazonRechazo] = useState<string>("");
+  const [loading, setLoading] = useState(false);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (initialData?.observaciones) {
+      const parts = initialData.observaciones.split(" - ");
+      if (parts.length > 1) {
+        setRazonRechazo(parts[0]);
+        setObservaciones(parts[1]);
+      }
+    }
+  }, [initialData]);
+
+  const { data: existingGestion } = useQuery({
+    queryKey: ["lead-gestion", lead.id],
+    queryFn: async () => {
+      if (!initialData) {
+        const { data } = await supabase
+          .from("tareas")
+          .select("*")
+          .eq("lead_id", lead.id);
+        return data?.[0];
+      }
+      return null;
+    },
+    enabled: !initialData && isOpen
+  });
 
   const createGestion = useMutation({
     mutationFn: async () => {
-      const { error: taskError } = await supabase
-        .from("tareas")
-        .insert({
-          lead_id: lead.id,
-          tipo,
-          fecha: fecha?.toISOString(),
-          observaciones,
-          user_id: (await supabase.auth.getUser()).data.user?.id
-        });
+      setLoading(true);
+      
+      if (!initialData && existingGestion) {
+        throw new Error("Ya existe una gestión para este lead");
+      }
 
-      if (taskError) throw taskError;
+      const gestionData = {
+        lead_id: lead.id,
+        tipo,
+        fecha: fecha?.toISOString(),
+        observaciones: razonRechazo ? `${razonRechazo} - ${observaciones}` : observaciones,
+        user_id: (await supabase.auth.getUser()).data.user?.id
+      };
+
+      if (initialData) {
+        const { error: updateError } = await supabase
+          .from("tareas")
+          .update(gestionData)
+          .eq("id", initialData.id);
+
+        if (updateError) throw updateError;
+      } else {
+        const { error: createError } = await supabase
+          .from("tareas")
+          .insert([gestionData]);
+
+        if (createError) throw createError;
+      }
 
       await supabase.from("lead_history").insert({
         lead_id: lead.id,
         user_id: (await supabase.auth.getUser()).data.user?.id,
-        action: tipo,
-        details: JSON.stringify({ fecha, observaciones })
+        action: initialData ? "ACTUALIZACIÓN_GESTIÓN" : tipo,
+        details: JSON.stringify({ 
+          fecha, 
+          observaciones: razonRechazo ? `${razonRechazo} - ${observaciones}` : observaciones,
+          tipo_anterior: initialData?.tipo,
+          tipo_nuevo: tipo
+        })
       });
 
       if (tipo === "CITA") {
@@ -264,39 +330,112 @@ const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, o
       }
     },
     onSuccess: () => {
-      toast.success("Gestión registrada correctamente");
+      toast.success(initialData ? "Gestión actualizada correctamente" : "Gestión registrada correctamente");
       queryClient.invalidateQueries({ queryKey: ["leads"] });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       onClose();
     },
-    onError: (error) => {
-      toast.error("Error al registrar la gestión");
-      console.error("Error creating gestion:", error);
+    onError: (error: any) => {
+      if (error.message === "Ya existe una gestión para este lead") {
+        toast.error("Este lead ya tiene una gestión registrada");
+      } else {
+        toast.error("Error al registrar la gestión");
+        console.error("Error creating gestion:", error);
+      }
+    },
+    onSettled: () => {
+      setLoading(false);
     }
   });
+
+  const handleTipoChange = (value: string) => {
+    setTipo(value);
+    setRazonRechazo("");
+  };
+
+  if (!initialData && existingGestion) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nueva Gestión</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-center text-red-600">
+              Este lead ya tiene una gestión registrada. No es posible crear múltiples gestiones para el mismo lead.
+            </p>
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={onClose}>
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Nueva Gestión</DialogTitle>
+          <DialogTitle>{initialData ? "Modificar Gestión" : "Nueva Gestión"}</DialogTitle>
+          <DialogDescription>
+            {initialData ? "Modifica la gestión para" : "Registra una nueva gestión para"} {lead.nombre_completo}
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
             <label className="text-sm font-medium">Tipo de Gestión</label>
-            <Select value={tipo} onValueChange={setTipo}>
+            <Select value={tipo} onValueChange={handleTipoChange}>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar tipo..." />
               </SelectTrigger>
               <SelectContent>
                 {MANAGEMENT_TYPES.map((tipo) => (
                   <SelectItem key={tipo} value={tipo}>
-                    {tipo}
+                    {tipo.replace(/_/g, " ")}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
+
+          {tipo === "NO_INTERESA" && (
+            <div>
+              <label className="text-sm font-medium">Razón</label>
+              <Select value={razonRechazo} onValueChange={setRazonRechazo}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar razón..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {REJECTION_REASONS.NO_INTERESA.map((razon) => (
+                    <SelectItem key={razon} value={razon}>
+                      {razon.replace(/_/g, " ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {tipo === "NO_CUMPLE_REQUISITO" && (
+            <div>
+              <label className="text-sm font-medium">Razón</label>
+              <Select value={razonRechazo} onValueChange={setRazonRechazo}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar razón..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {REJECTION_REASONS.NO_CUMPLE_REQUISITO.map((razon) => (
+                    <SelectItem key={razon} value={razon}>
+                      {razon.replace(/_/g, " ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {(tipo === "CITA" || tipo === "LLAMADA") && (
             <div>
@@ -324,9 +463,15 @@ const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, o
             </Button>
             <Button 
               onClick={() => createGestion.mutate()}
-              disabled={!tipo || ((tipo === "CITA" || tipo === "LLAMADA") && !fecha) || !observaciones}
+              disabled={
+                loading ||
+                !tipo || 
+                ((tipo === "CITA" || tipo === "LLAMADA") && !fecha) || 
+                !observaciones ||
+                ((tipo === "NO_INTERESA" || tipo === "NO_CUMPLE_REQUISITO") && !razonRechazo)
+              }
             >
-              Guardar
+              {loading ? "Guardando..." : initialData ? "Actualizar" : "Guardar"}
             </Button>
           </div>
         </div>
@@ -348,6 +493,9 @@ const Datos = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showGestionModal, setShowGestionModal] = useState(false);
   const [showHistorialSheet, setShowHistorialSheet] = useState(false);
+  const [origenOptions, setOrigenOptions] = useState<string[]>(ORIGEN_OPTIONS);
+  const [showNewOrigenInput, setShowNewOrigenInput] = useState(false);
+  const [newOrigenValue, setNewOrigenValue] = useState("");
 
   const handleSelectLead = (leadId: number, selected: boolean) => {
     if (selected) {
@@ -369,7 +517,7 @@ const Datos = () => {
     const { data } = await supabase
       .from("leads")
       .select("*")
-      .or(`email.eq."${formData.email}",telefono.eq."${formData.telefono}"`);
+      .eq("telefono", formData.telefono);
 
     const isDup = data && data.length > 0;
     setIsDuplicate(isDup);
@@ -588,7 +736,6 @@ const Datos = () => {
                       type="email"
                       value={formData.email}
                       onChange={handleInputChange}
-                      required
                     />
                   </div>
                   <div className="space-y-2">
@@ -603,13 +750,69 @@ const Datos = () => {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="origen">Origen</Label>
-                    <Input
-                      id="origen"
-                      name="origen"
-                      value={formData.origen}
-                      onChange={handleInputChange}
-                      required
-                    />
+                    {showNewOrigenInput ? (
+                      <div className="flex gap-2">
+                        <Input
+                          id="new-origen"
+                          value={newOrigenValue}
+                          onChange={(e) => setNewOrigenValue(e.target.value)}
+                          placeholder="Nuevo origen..."
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            if (newOrigenValue.trim()) {
+                              setOrigenOptions(prev => [...prev, newOrigenValue.trim()]);
+                              setFormData(prev => ({ ...prev, origen: newOrigenValue.trim() }));
+                              setNewOrigenValue("");
+                              setShowNewOrigenInput(false);
+                            }
+                          }}
+                        >
+                          Añadir
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => {
+                            setNewOrigenValue("");
+                            setShowNewOrigenInput(false);
+                          }}
+                        >
+                          Cancelar
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Select
+                          value={formData.origen}
+                          onValueChange={(value) => setFormData(prev => ({ ...prev, origen: value }))}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Seleccionar origen" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {origenOptions.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="w-full justify-start px-2 py-1.5 text-sm"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setShowNewOrigenInput(true);
+                              }}
+                            >
+                              + Crear nuevo origen
+                            </Button>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="pais">País</Label>

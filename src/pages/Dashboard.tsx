@@ -13,7 +13,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { CalendarCheck2, Users, Calendar as CalendarIcon, GraduationCap, Eye, ClipboardList, History } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS } from "@/lib/constants";
+import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS, REJECTION_REASONS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { format, addDays } from "date-fns";
@@ -196,31 +196,80 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
   );
 };
 
-const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, onClose: () => void }) => {
-  const [tipo, setTipo] = useState<TipoGestion | "">("");
-  const [fecha, setFecha] = useState<Date>();
-  const [observaciones, setObservaciones] = useState("");
+const GestionModal = ({ lead, isOpen, onClose, initialData }: { lead: any, isOpen: boolean, onClose: () => void, initialData?: any }) => {
+  const [tipo, setTipo] = useState<TipoGestion | "">(initialData?.tipo || "");
+  const [fecha, setFecha] = useState<Date | undefined>(initialData?.fecha ? new Date(initialData.fecha) : undefined);
+  const [observaciones, setObservaciones] = useState(initialData?.observaciones || "");
+  const [razonRechazo, setRazonRechazo] = useState<string>("");
+  const [loading, setLoading] = useState(false);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (initialData?.observaciones) {
+      const parts = initialData.observaciones.split(" - ");
+      if (parts.length > 1) {
+        setRazonRechazo(parts[0]);
+        setObservaciones(parts[1]);
+      }
+    }
+  }, [initialData]);
+
+  const { data: existingGestion } = useQuery({
+    queryKey: ["lead-gestion", lead.id],
+    queryFn: async () => {
+      if (!initialData) {
+        const { data } = await supabase
+          .from("tareas")
+          .select("*")
+          .eq("lead_id", lead.id);
+        return data?.[0];
+      }
+      return null;
+    },
+    enabled: !initialData && isOpen
+  });
 
   const createGestion = useMutation({
     mutationFn: async () => {
-      const { error: taskError } = await supabase
-        .from("tareas")
-        .insert({
-          lead_id: lead.id,
-          tipo,
-          fecha: fecha?.toISOString(),
-          observaciones,
-          user_id: (await supabase.auth.getUser()).data.user?.id
-        });
+      setLoading(true);
+      
+      if (!initialData && existingGestion) {
+        throw new Error("Ya existe una gestión para este lead");
+      }
 
-      if (taskError) throw taskError;
+      const gestionData = {
+        lead_id: lead.id,
+        tipo,
+        fecha: fecha?.toISOString(),
+        observaciones: razonRechazo ? `${razonRechazo} - ${observaciones}` : observaciones,
+        user_id: (await supabase.auth.getUser()).data.user?.id
+      };
+
+      if (initialData) {
+        const { error: updateError } = await supabase
+          .from("tareas")
+          .update(gestionData)
+          .eq("id", initialData.id);
+
+        if (updateError) throw updateError;
+      } else {
+        const { error: createError } = await supabase
+          .from("tareas")
+          .insert([gestionData]);
+
+        if (createError) throw createError;
+      }
 
       await supabase.from("lead_history").insert({
         lead_id: lead.id,
         user_id: (await supabase.auth.getUser()).data.user?.id,
-        action: tipo,
-        details: JSON.stringify({ fecha, observaciones })
+        action: initialData ? "ACTUALIZACIÓN_GESTIÓN" : tipo,
+        details: JSON.stringify({ 
+          fecha, 
+          observaciones: razonRechazo ? `${razonRechazo} - ${observaciones}` : observaciones,
+          tipo_anterior: initialData?.tipo,
+          tipo_nuevo: tipo
+        })
       });
 
       if (tipo === "CITA") {
@@ -231,42 +280,112 @@ const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, o
       }
     },
     onSuccess: () => {
-      toast.success("Gestión registrada correctamente");
+      toast.success(initialData ? "Gestión actualizada correctamente" : "Gestión registrada correctamente");
       queryClient.invalidateQueries({ queryKey: ["leads"] });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       onClose();
     },
-    onError: (error) => {
-      toast.error("Error al registrar la gestión");
-      console.error("Error creating gestion:", error);
+    onError: (error: any) => {
+      if (error.message === "Ya existe una gestión para este lead") {
+        toast.error("Este lead ya tiene una gestión registrada");
+      } else {
+        toast.error("Error al registrar la gestión");
+        console.error("Error creating gestion:", error);
+      }
+    },
+    onSettled: () => {
+      setLoading(false);
     }
   });
+
+  const handleTipoChange = (value: TipoGestion) => {
+    setTipo(value);
+    setRazonRechazo("");
+  };
+
+  if (!initialData && existingGestion) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nueva Gestión</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-center text-red-600">
+              Este lead ya tiene una gestión registrada. No es posible crear múltiples gestiones para el mismo lead.
+            </p>
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={onClose}>
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Nueva Gestión</DialogTitle>
+          <DialogTitle>{initialData ? "Modificar Gestión" : "Nueva Gestión"}</DialogTitle>
           <DialogDescription>
-            Registra una nueva gestión para {lead.nombre_completo}
+            {initialData ? "Modifica la gestión para" : "Registra una nueva gestión para"} {lead.nombre_completo}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
             <label className="text-sm font-medium">Tipo de Gestión</label>
-            <Select value={tipo} onValueChange={(value: TipoGestion) => setTipo(value)}>
+            <Select value={tipo} onValueChange={handleTipoChange}>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar tipo..." />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(MANAGEMENT_TYPES).map(([key, value]) => (
-                  <SelectItem key={key} value={value}>
-                    {value}
+                {MANAGEMENT_TYPES.map((tipo) => (
+                  <SelectItem key={tipo} value={tipo}>
+                    {tipo.replace(/_/g, " ")}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
+
+          {tipo === "NO_INTERESA" && (
+            <div>
+              <label className="text-sm font-medium">Razón</label>
+              <Select value={razonRechazo} onValueChange={setRazonRechazo}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar razón..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {REJECTION_REASONS.NO_INTERESA.map((razon) => (
+                    <SelectItem key={razon} value={razon}>
+                      {razon.replace(/_/g, " ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {tipo === "NO_CUMPLE_REQUISITO" && (
+            <div>
+              <label className="text-sm font-medium">Razón</label>
+              <Select value={razonRechazo} onValueChange={setRazonRechazo}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar razón..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {REJECTION_REASONS.NO_CUMPLE_REQUISITO.map((razon) => (
+                    <SelectItem key={razon} value={razon}>
+                      {razon.replace(/_/g, " ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {(tipo === "CITA" || tipo === "LLAMADA") && (
             <div>
@@ -297,9 +416,15 @@ const GestionModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, o
             </Button>
             <Button 
               onClick={() => createGestion.mutate()}
-              disabled={!tipo || ((tipo === "CITA" || tipo === "LLAMADA") && !fecha) || !observaciones}
+              disabled={
+                loading ||
+                !tipo || 
+                ((tipo === "CITA" || tipo === "LLAMADA") && !fecha) || 
+                !observaciones ||
+                ((tipo === "NO_INTERESA" || tipo === "NO_CUMPLE_REQUISITO") && !razonRechazo)
+              }
             >
-              Guardar
+              {loading ? "Guardando..." : initialData ? "Actualizar" : "Guardar"}
             </Button>
           </div>
         </div>
@@ -358,6 +483,8 @@ const TaskList = () => {
   const [filterEstado, setFilterEstado] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [showGestionModal, setShowGestionModal] = useState(false);
 
   const handlePresetChange = (days: number) => {
     const today = new Date();
@@ -407,7 +534,7 @@ const TaskList = () => {
   return (
     <Card className="p-6">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-lg font-semibold">Listado de Tareas</h2>
+        <h2 className="text-lg font-semibold">Listado de Tareas y Gestiones</h2>
         <div className="flex gap-2">
           <Select value={filterTipo} onValueChange={setFilterTipo}>
             <SelectTrigger className="w-[180px]">
@@ -584,6 +711,7 @@ const TaskList = () => {
               <TableHead>Responsable</TableHead>
               <TableHead>Fecha</TableHead>
               <TableHead>Observaciones</TableHead>
+              <TableHead>Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -613,11 +741,35 @@ const TaskList = () => {
                     {task.observaciones || "-"}
                   </p>
                 </TableCell>
+                <TableCell>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedTask(task);
+                      setShowGestionModal(true);
+                    }}
+                  >
+                    Gestión
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
+
+      {selectedTask && (
+        <GestionModal
+          lead={selectedTask.leads}
+          isOpen={showGestionModal}
+          onClose={() => {
+            setShowGestionModal(false);
+            setSelectedTask(null);
+          }}
+          initialData={selectedTask}
+        />
+      )}
     </Card>
   );
 };
@@ -841,6 +993,7 @@ const Dashboard = () => {
               setShowGestionModal(false);
               setSelectedLead(null);
             }}
+            initialData={selectedLead}
           />
           <LeadHistorialSheet
             lead={selectedLead}

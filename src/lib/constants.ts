@@ -27,10 +27,19 @@ export const LEAD_STATUS_LABELS = {
 export const MANAGEMENT_TYPES = [
   "CITA",
   "LLAMADA",
-  "RECHAZO",
+  "NO_INTERESA",
   "NUMERO_EQUIVOCADO",
   "DATO_DUPLICADO",
+  "SIN_RESPUESTA",
+  "NO_EXISTE",
+  "TOMO_PROGRAMA",
+  "NO_CUMPLE_REQUISITO"
 ] as const;
+
+export const REJECTION_REASONS = {
+  NO_INTERESA: ["POR_METODO", "POR_DINERO", "POR_TIEMPO"],
+  NO_CUMPLE_REQUISITO: ["POR_EDAD", "POR_TIEMPO", "NO_QUIERE_CITA"]
+} as const;
 
 export const ROLES = [
   "CEO",
