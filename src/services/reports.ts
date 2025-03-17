@@ -155,7 +155,7 @@ export const ReportsService = {
   },
 
   // Función auxiliar para calcular tiempo activo
-  private calcularTiempoActivo(inicio: string, ultimo: string): string {
+  calcularTiempoActivo(inicio: string, ultimo: string): string {
     const start = new Date(inicio);
     const last = new Date(ultimo);
     const diff = last.getTime() - start.getTime();
