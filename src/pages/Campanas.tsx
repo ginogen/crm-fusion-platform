@@ -90,8 +90,8 @@ interface WebhookConfig {
 interface FacebookPage {
   id: string;
   name: string;
-  access_token: string;
   ads_account: string;
+  access_token: string;
 }
 
 interface FacebookForm {
@@ -189,7 +189,11 @@ const Campanas = () => {
   const [isLoadingFB, setIsLoadingFB] = useState(false);
   const [editingBatchId, setEditingBatchId] = useState<number | null>(null);
   const [isEditingToken, setIsEditingToken] = useState(false);
-  const [availablePages, setAvailablePages] = useState<{id: string, name: string}[]>([]);
+  const [availablePages, setAvailablePages] = useState<{
+    id: string;
+    name: string;
+    access_token: string;
+  }[]>([]);
   const [selectedPageId, setSelectedPageId] = useState<string>("");
 
   const { data: batches, refetch } = useQuery({
@@ -1306,54 +1310,64 @@ const Campanas = () => {
         return;
       }
 
-      // Limpiar el ID del formulario (remover 'form_' si existe)
+      // Limpiar el ID del formulario
       const cleanFormId = formId.replace('form_', '');
 
-      // 1. Primero verificar los permisos del token
-      const permissionsResponse = await fetch(
-        'https://graph.facebook.com/v18.0/me/permissions',
+      // 1. Primero obtener las páginas a las que tenemos acceso
+      const pagesResponse = await fetch(
+        'https://graph.facebook.com/v18.0/me/accounts',
         { headers: { 'Authorization': `Bearer ${fbToken}` } }
       );
 
-      const permissionsData = await permissionsResponse.json();
-      console.log('Permisos disponibles:', permissionsData);
+      const pagesData = await pagesResponse.json();
+      console.log('Páginas disponibles:', pagesData);
 
-      // 2. Intentar obtener el formulario usando la API de Marketing
-      const response = await fetch(
-        `https://graph.facebook.com/v18.0/${cleanFormId}?fields=id,name,status,created_time,leads_count,page,form_info`,
-        { 
-          headers: { 
-            'Authorization': `Bearer ${fbToken}`
+      if (pagesData.error) {
+        throw new Error(pagesData.error.message);
+      }
+
+      // 2. Para cada página, intentar obtener el formulario específico
+      let formFound = null;
+      for (const page of pagesData.data) {
+        try {
+          const formResponse = await fetch(
+            `https://graph.facebook.com/v18.0/${cleanFormId}?fields=id,name,status,created_time,leads_count&access_token=${page.access_token}`
+          );
+          
+          const formData = await formResponse.json();
+          if (!formData.error) {
+            formFound = {
+              ...formData,
+              page_id: page.id,
+              page_name: page.name,
+              page_access_token: page.access_token
+            };
+            break;
           }
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Error detallado de Facebook:', errorData);
-        
-        if (errorData.error?.code === 190) {
-          throw new Error('Token inválido o expirado');
-        } else if (errorData.error?.code === 10) {
-          throw new Error('ID de formulario inválido');
-        } else {
-          throw new Error(errorData.error?.message || 'Error al obtener el formulario');
+        } catch (error) {
+          console.log(`Error al buscar en página ${page.name}:`, error);
+          continue;
         }
       }
 
-      const formData = await response.json();
-      console.log('Datos del formulario:', formData);
+      if (!formFound) {
+        throw new Error('No se encontró el formulario o no tienes acceso a él. Verifica que:' +
+          '\n1. El ID del formulario sea correcto' +
+          '\n2. El formulario pertenezca a una de tus páginas' +
+          '\n3. Tengas rol de administrador en la página');
+      }
 
       // 3. Guardar el formulario en la base de datos
       const { error: saveError } = await supabase
         .from("facebook_forms")
         .insert({
-          form_id: cleanFormId,
-          name: formData.name || 'Formulario sin nombre',
-          status: formData.status || 'ACTIVE',
-          leads_count: formData.leads_count || 0,
-          page_id: formData.page?.id,
-          page_name: formData.page?.name
+          form_id: formFound.id,
+          name: formFound.name,
+          status: formFound.status,
+          leads_count: formFound.leads_count,
+          page_id: formFound.page_id,
+          page_name: formFound.page_name,
+          page_access_token: formFound.page_access_token
         });
 
       if (saveError) throw saveError;
@@ -1366,19 +1380,11 @@ const Campanas = () => {
       console.error('Error completo:', error);
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
       
-      // Mejorar los mensajes de error
-      if (errorMessage.includes('missing permissions')) {
-        toast.error(`
-          No tienes los permisos necesarios. Verifica que el token tenga:
-          - leads_retrieval
-          - pages_show_list
-          - pages_read_engagement
-          - pages_manage_metadata
-        `);
-      } else if (errorMessage.includes('Token inválido')) {
-        toast.error('El token ha expirado o es inválido. Por favor reconfigura el token.');
-      } else if (errorMessage.includes('ID de formulario')) {
-        toast.error('El ID del formulario no es válido. Verifica que hayas copiado el ID correcto.');
+      if (errorMessage.includes('permission')) {
+        toast.error('No tienes los permisos necesarios. Verifica que:');
+        toast.error('1. El ID del formulario sea correcto');
+        toast.error('2. Tengas rol de administrador en la página');
+        toast.error('3. El formulario pertenezca a una de tus páginas');
       } else {
         toast.error(`Error al guardar formulario: ${errorMessage}`);
       }
@@ -1456,17 +1462,16 @@ const Campanas = () => {
                                   <li>En el menú lateral, ve a "Todos los Herramientas" {'>'} "Formularios de clientes potenciales"</li>
                                   <li>Selecciona la página que contiene el formulario</li>
                                   <li>Haz clic en el formulario que deseas importar</li>
-                                  <li>El ID del formulario está en la URL después de /forms/ o /form/</li>
-                                  <li>El formato puede ser algo como: 123456789 o form_123456789</li>
+                                  <li>En "Detalles del formulario", busca el "Identificador del formulario"</li>
+                                  <li>El ID es un número como: 416172877562699</li>
                                 </ol>
                                 <p className="mt-2 text-xs font-medium">
-                                  El token debe tener estos permisos:
+                                  Requisitos:
                                 </p>
                                 <ul className="list-disc list-inside text-xs pl-2">
-                                  <li>leads_retrieval</li>
-                                  <li>pages_show_list</li>
-                                  <li>pages_read_engagement</li>
-                                  <li>pages_manage_metadata</li>
+                                  <li>Debes ser administrador de la página que contiene el formulario</li>
+                                  <li>El formulario debe estar activo</li>
+                                  <li>El formulario debe pertenecer a una de tus páginas</li>
                                 </ul>
                               </div>
                             </div>

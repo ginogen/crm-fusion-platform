@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { MainLayout } from "./components/layout/main-layout";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // Pages
 import Dashboard from "./pages/Dashboard";
@@ -20,10 +22,17 @@ import Auth from "./pages/Auth";
 const queryClient = new QueryClient();
 
 const RESTRICTED_POSITIONS = {
-  ASESOR_TRAINING: 'Asesor Training'
+  ASESOR_TRAINING: 'Asesor Training',
+  CEO: 'CEO',
+  DIRECTOR_INTERNACIONAL: 'Director Internacional',
+  DIRECTOR_NACIONAL: 'Director Nacional'
 } as const;
 
 function App() {
+  const { session } = useAuth();
+  console.log('Session user:', session?.user);
+  useActivityTracking(session?.user?.id);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
@@ -50,7 +59,11 @@ function App() {
                 </ProtectedRoute>
               } />
               <Route path="campanas" element={
-                <ProtectedRoute>
+                <ProtectedRoute requiredPosition={[
+                  RESTRICTED_POSITIONS.CEO,
+                  RESTRICTED_POSITIONS.DIRECTOR_INTERNACIONAL,
+                  RESTRICTED_POSITIONS.DIRECTOR_NACIONAL
+                ]}>
                   <Campanas />
                 </ProtectedRoute>
               } />

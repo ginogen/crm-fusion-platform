@@ -369,7 +369,7 @@ const Datos = () => {
     const { data } = await supabase
       .from("leads")
       .select("*")
-      .or(`email.eq.${formData.email},telefono.eq.${formData.telefono}`);
+      .or(`email.eq."${formData.email}",telefono.eq."${formData.telefono}"`);
 
     const isDup = data && data.length > 0;
     setIsDuplicate(isDup);
@@ -389,10 +389,19 @@ const Datos = () => {
       return;
     }
 
-    const { error } = await supabase.from("leads").insert([formData]);
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+
+    const { error } = await supabase.from("leads").insert([{
+      ...formData,
+      user_id: userId,
+      asignado_a: userId,
+      estado: "SIN_LLAMAR"
+    }]);
 
     if (error) {
       toast.error("Error al guardar el lead");
+      console.error("Error al guardar:", error);
       return;
     }
 
@@ -447,10 +456,21 @@ const Datos = () => {
       return;
     }
 
-    const { error } = await supabase.from("leads").insert(csvData);
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+
+    const leadsWithUserId = csvData.map(lead => ({
+      ...lead,
+      user_id: userId,
+      asignado_a: userId,
+      estado: "SIN_LLAMAR"
+    }));
+
+    const { error } = await supabase.from("leads").insert(leadsWithUserId);
 
     if (error) {
       toast.error("Error al cargar los leads");
+      console.error("Error en carga masiva:", error);
       return;
     }
 

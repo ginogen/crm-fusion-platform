@@ -2,9 +2,11 @@ import { Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
+type JerarquiaPosicion = typeof JERARQUIA_POSICIONES[number];
+
 interface UserData {
   id: string;
-  user_position: string;
+  user_position: JerarquiaPosicion;
   // ... otros campos necesarios
 }
 
@@ -25,13 +27,13 @@ const RESTRICTED_POSITIONS = {
   ASESOR_TRAINING: 'Asesor Training'
 } as const;
 
-const getNivelJerarquico = (position: string) => {
+const getNivelJerarquico = (position: JerarquiaPosicion) => {
   return JERARQUIA_POSICIONES.indexOf(position);
 };
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  requiredPosition?: string[];
+  requiredPosition?: JerarquiaPosicion[];
 }
 
 export const ProtectedRoute = ({ children, requiredPosition }: ProtectedRouteProps) => {
@@ -62,11 +64,13 @@ export const ProtectedRoute = ({ children, requiredPosition }: ProtectedRoutePro
   }
 
   const hasRequiredPosition = !requiredPosition || 
-    (currentUser?.user_position && 
-     getNivelJerarquico(currentUser.user_position) < getNivelJerarquico(RESTRICTED_POSITIONS.ASESOR_TRAINING));
+    (currentUser?.user_position && (
+      requiredPosition.includes(currentUser.user_position) ||
+      getNivelJerarquico(currentUser.user_position) < getNivelJerarquico(RESTRICTED_POSITIONS.ASESOR_TRAINING)
+    ));
 
   if (!hasRequiredPosition) {
-    return <Navigate to="/" replace />; // Cambiamos /dashboard por /
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
