@@ -49,7 +49,11 @@ function App() {
               <Route 
                 path="organizacion" 
                 element={
-                  <ProtectedRoute requiredPosition={[RESTRICTED_POSITIONS.ASESOR_TRAINING]}>
+                  <ProtectedRoute requiredPosition={[
+                    RESTRICTED_POSITIONS.CEO,
+                    RESTRICTED_POSITIONS.DIRECTOR_INTERNACIONAL,
+                    RESTRICTED_POSITIONS.DIRECTOR_NACIONAL
+                  ]}>
                     <Organizacion />
                   </ProtectedRoute>
                 } 
