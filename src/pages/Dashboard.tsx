@@ -13,7 +13,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { CalendarCheck2, Users, Calendar as CalendarIcon, GraduationCap, Eye, ClipboardList, History } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS, REJECTION_REASONS } from "@/lib/constants";
+import { LEAD_STATUSES, MANAGEMENT_TYPES, LEAD_STATUS_LABELS, REJECTION_REASONS, USER_ROLES, ROLE_HIERARCHY } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { format, addDays } from "date-fns";
@@ -520,6 +520,7 @@ const TaskList = () => {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [showGestionModal, setShowGestionModal] = useState(false);
+  const [userFilter, setUserFilter] = useState<string>("my_tasks");
 
   const handlePresetChange = (days: number) => {
     const today = new Date();
@@ -536,9 +537,75 @@ const TaskList = () => {
     }
   };
 
-  const { data: tasks } = useQuery({
-    queryKey: ["tasks", filterTipo, filterEstado, dateRange],
+  // Obtener el usuario actual
+  const { data: currentUser } = useQuery({
+    queryKey: ["current-user-tasks"],
     queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No user found");
+      
+      const { data: userData } = await supabase
+        .from("users")
+        .select(`
+          id,
+          email,
+          nombre_completo,
+          user_position,
+          estructuras (
+            id,
+            tipo,
+            nombre,
+            custom_name,
+            parent_id
+          )
+        `)
+        .eq("id", user.id)
+        .single();
+      
+      return userData;
+    },
+  });
+
+  // Obtener usuarios para el filtro
+  const { data: users } = useQuery({
+    queryKey: ["users-for-tasks"],
+    queryFn: async () => {
+      if (!currentUser) return [];
+      
+      // Si el usuario es CEO, Director Nacional o Internacional, puede ver todos los usuarios
+      if (
+        currentUser.user_position === USER_ROLES.CEO ||
+        currentUser.user_position === USER_ROLES.DIRECTOR_NACIONAL ||
+        currentUser.user_position === USER_ROLES.DIRECTOR_INTERNACIONAL
+      ) {
+        const { data } = await supabase
+          .from("users")
+          .select("id, nombre_completo")
+          .order("nombre_completo");
+        return data || [];
+      }
+      
+      // Para otros roles, obtener subordinados
+      const { data: subordinateUsers } = await supabase
+        .from("users")
+        .select("id, nombre_completo, user_position, estructuras!inner(id)")
+        .in("user_position", ROLE_HIERARCHY[currentUser.user_position] || [])
+        .eq("estructuras.id", currentUser.estructuras?.[0]?.id);
+      
+      // Incluir al usuario actual en la lista
+      return [
+        { id: currentUser.id, nombre_completo: currentUser.nombre_completo },
+        ...(subordinateUsers || [])
+      ];
+    },
+    enabled: !!currentUser
+  });
+
+  const { data: tasks } = useQuery({
+    queryKey: ["tasks", filterTipo, filterEstado, dateRange, userFilter, currentUser],
+    queryFn: async () => {
+      if (!currentUser) return [];
+
       let query = supabase
         .from("tareas")
         .select(`
@@ -547,6 +614,40 @@ const TaskList = () => {
           users (nombre_completo)
         `);
 
+      // Aplicar filtros de permisos según el rol
+      if (userFilter === "my_tasks") {
+        // Si se selecciona "Mis Tareas", mostrar solo las tareas del usuario actual
+        query = query.eq('user_id', currentUser.id);
+      } else if (userFilter !== "all") {
+        // Si hay un filtro de usuario específico, lo aplicamos directamente
+        query = query.eq('user_id', userFilter);
+      } else if (
+        currentUser.user_position !== USER_ROLES.CEO && 
+        currentUser.user_position !== USER_ROLES.DIRECTOR_NACIONAL && 
+        currentUser.user_position !== USER_ROLES.DIRECTOR_INTERNACIONAL
+      ) {
+        // Para otros roles, necesitamos obtener los usuarios subordinados
+        if (currentUser.user_position === USER_ROLES.ASESOR_TRAINING) {
+          // Asesor Training solo ve sus propias tareas
+          query = query.eq('user_id', currentUser.id);
+        } else {
+          // Para otros roles, necesitamos obtener los usuarios subordinados
+          const { data: subordinateUsers } = await supabase
+            .from("users")
+            .select("id, user_position, estructuras!inner(id)")
+            .in("user_position", ROLE_HIERARCHY[currentUser.user_position] || [])
+            .eq("estructuras.id", currentUser.estructuras?.[0]?.id);
+
+          const subordinateIds = subordinateUsers?.map(u => u.id) || [];
+          if (subordinateIds.length > 0) {
+            query = query.in('user_id', [currentUser.id, ...subordinateIds]);
+          } else {
+            query = query.eq('user_id', currentUser.id);
+          }
+        }
+      }
+
+      // Aplicar filtros de búsqueda
       if (filterTipo !== "all") {
         query = query.eq('tipo', filterTipo);
       }
@@ -560,17 +661,66 @@ const TaskList = () => {
         query = query.lte('fecha', dateRange.to.toISOString());
       }
 
-      const { data, error } = await query;
+      const { data, error } = await query.order('fecha', { ascending: false });
       if (error) throw error;
       return data;
     },
+    enabled: !!currentUser
   });
+
+  // Verificar si el usuario puede ver o editar una tarea específica
+  const canManageTask = (taskUserId: string) => {
+    if (!currentUser) return false;
+    
+    // Roles superiores pueden gestionar todas las tareas
+    if (
+      currentUser.user_position === USER_ROLES.CEO ||
+      currentUser.user_position === USER_ROLES.DIRECTOR_NACIONAL ||
+      currentUser.user_position === USER_ROLES.DIRECTOR_INTERNACIONAL
+    ) {
+      return true;
+    }
+    
+    // Los usuarios pueden gestionar sus propias tareas
+    if (taskUserId === currentUser.id) {
+      return true;
+    }
+    
+    // Para otros roles, verificar jerarquía
+    if (currentUser.user_position === USER_ROLES.ASESOR_TRAINING) {
+      return false; // Asesores training solo pueden ver sus propias tareas
+    }
+    
+    // Verificar subordinación para otros roles
+    return ROLE_HIERARCHY[currentUser.user_position]?.length > 0;
+  };
 
   return (
     <Card className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-lg font-semibold">Listado de Tareas y Gestiones</h2>
         <div className="flex gap-2">
+          <Select value={userFilter} onValueChange={setUserFilter}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filtrar por usuario" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="my_tasks">Mis Tareas</SelectItem>
+              {(currentUser?.user_position === USER_ROLES.CEO || 
+                currentUser?.user_position === USER_ROLES.DIRECTOR_NACIONAL || 
+                currentUser?.user_position === USER_ROLES.DIRECTOR_INTERNACIONAL) && (
+                <SelectItem value="all">Todas las Tareas</SelectItem>
+              )}
+              {users?.map((user) => (
+                user.id !== currentUser?.id && (
+                  <SelectItem key={user.id} value={user.id}>
+                    {user.nombre_completo}
+                  </SelectItem>
+                )
+              ))}
+            </SelectContent>
+          </Select>
+
           <Select value={filterTipo} onValueChange={setFilterTipo}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Tipo de tarea" />
@@ -777,7 +927,30 @@ const TaskList = () => {
                   </p>
                 </TableCell>
                 <TableCell>
-                  <div className="flex gap-2">
+                  {canManageTask(task.user_id) ? (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedTask(task);
+                          setShowGestionModal(true);
+                        }}
+                      >
+                        Gestión
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedTask(task);
+                          setShowGestionModal(true);
+                        }}
+                      >
+                        Editar
+                      </Button>
+                    </div>
+                  ) : (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -785,20 +958,11 @@ const TaskList = () => {
                         setSelectedTask(task);
                         setShowGestionModal(true);
                       }}
+                      disabled={!canManageTask(task.user_id)}
                     >
-                      Gestión
+                      Ver
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedTask(task);
-                        setShowGestionModal(true);
-                      }}
-                    >
-                      Editar
-                    </Button>
-                  </div>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
