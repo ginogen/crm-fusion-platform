@@ -202,6 +202,9 @@ const Campanas = () => {
   const [selectedPageId, setSelectedPageId] = useState<string>("");
   const [showWebhookDeleteModal, setShowWebhookDeleteModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showEvacuacionModal, setShowEvacuacionModal] = useState(false);
+  const [evacuacionEmpresa, setEvacuacionEmpresa] = useState<number | null>(null);
+  const [evacuacionPais, setEvacuacionPais] = useState<number | null>(null);
 
   const { data: batches, refetch } = useQuery({
     queryKey: ["batches"],
@@ -1300,15 +1303,66 @@ const Campanas = () => {
     }
   };
 
-  // Función para evacuar leads sin llamar
-  const evacuarLeadsSinLlamar = async () => {
+  // Modificar la función para evacuar leads sin llamar
+  const evacuarLeadsSinLlamar = async (empresaId?: number, paisId?: number) => {
     try {
-      // Obtener todos los leads con estado SIN_LLAMAR
-      const { data: leadsSinLlamar, error: queryError } = await supabase
+      setLoading(true);
+      
+      // Construir la consulta base
+      let query = supabase
         .from("leads")
         .select("id")
         .eq("estado", "SIN_LLAMAR")
         .not("asignado_a", "is", null);
+      
+      // Si se especificaron empresa y país, filtrar por estructuras
+      if (empresaId && paisId) {
+        // Obtenemos las estructuras relacionadas
+        const { data: estructurasRelacionadas } = await supabase
+          .from("estructuras")
+          .select("*")
+          .or(
+            `parent_estructura_id.eq.${empresaId},` +
+            `id.eq.${empresaId},` +
+            `parent_estructura_id.eq.${paisId},` +
+            `id.eq.${paisId}`
+          );
+
+        // También obtener las estructuras hijas
+        const { data: estructurasHijas } = await supabase
+          .from("estructuras")
+          .select("*")
+          .in("parent_id", [empresaId, paisId]);
+
+        // Combinar todas las estructuras relacionadas
+        const todasLasEstructuras = [
+          ...(estructurasRelacionadas || []),
+          ...(estructurasHijas || []),
+          { id: empresaId },
+          { id: paisId }
+        ];
+
+        // Eliminar duplicados
+        const estructurasIds = [...new Set(todasLasEstructuras.map(e => e.id))];
+        
+        // Obtener usuarios de estas estructuras
+        const { data: usuarios } = await supabase
+          .from("users")
+          .select("id")
+          .in("estructura_id", estructurasIds);
+        
+        if (usuarios && usuarios.length > 0) {
+          // Filtrar solo los leads asignados a estos usuarios
+          query = query.in("asignado_a", usuarios.map(u => u.id));
+        } else {
+          toast.error("No se encontraron usuarios en las estructuras seleccionadas");
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Ejecutar la consulta
+      const { data: leadsSinLlamar, error: queryError } = await query;
 
       if (queryError) throw queryError;
 
@@ -1325,9 +1379,17 @@ const Campanas = () => {
         if (updateError) throw updateError;
 
         console.log(`${leadsSinLlamar.length} leads evacuados`);
+        toast.success(`${leadsSinLlamar.length} leads han sido evacuados correctamente`);
+        await refetch();
+      } else {
+        toast.info("No se encontraron leads para evacuar con los criterios seleccionados");
       }
     } catch (error) {
       console.error("Error al evacuar leads:", error);
+      toast.error("Error al evacuar leads");
+    } finally {
+      setLoading(false);
+      setShowEvacuacionModal(false);
     }
   };
 
@@ -1523,6 +1585,76 @@ const saveFormById = async (formId: string) => {
               disabled={loading}
             >
               {loading ? "Desactivando..." : "Desactivar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal para evacuación de leads */}
+      <Dialog open={showEvacuacionModal} onOpenChange={setShowEvacuacionModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Evacuar Leads Sin Llamar</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p>Selecciona la empresa y el país para evacuar leads con estado SIN_LLAMAR. Esta acción quitará la asignación de todos los leads sin llamar en las estructuras seleccionadas.</p>
+            
+            <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-2">
+                <Label>Empresa</Label>
+                <select
+                  className="w-full p-2 border rounded-md"
+                  value={evacuacionEmpresa || ""}
+                  onChange={(e) => setEvacuacionEmpresa(e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">Selecciona una empresa</option>
+                  {empresas.map((empresa) => (
+                    <option key={empresa.id} value={empresa.id}>
+                      {empresa.custom_name || empresa.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>País</Label>
+                <select
+                  className="w-full p-2 border rounded-md"
+                  value={evacuacionPais || ""}
+                  onChange={(e) => setEvacuacionPais(e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">Selecciona un país</option>
+                  {paises.map((pais) => (
+                    <option key={pais.id} value={pais.id}>
+                      {pais.custom_name || pais.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 text-sm text-yellow-800">
+              <p className="font-medium">Importante:</p>
+              <ul className="list-disc list-inside pl-2">
+                <li>Si seleccionas empresa y país, solo se evacuarán los leads de esas estructuras</li>
+                <li>Si dejas ambos campos vacíos, se evacuarán TODOS los leads sin llamar del sistema</li>
+              </ul>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowEvacuacionModal(false)}
+              disabled={loading}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={() => evacuarLeadsSinLlamar(evacuacionEmpresa || undefined, evacuacionPais || undefined)}
+              disabled={loading}
+            >
+              {loading ? "Evacuando..." : "Evacuar Leads"}
             </Button>
           </div>
         </DialogContent>
@@ -1862,14 +1994,7 @@ const saveFormById = async (formId: string) => {
         <Button 
           variant="outline" 
           className="w-[200px]"
-          onClick={() => {
-            if (confirm("¿Está seguro que desea evacuar todos los leads sin llamar? Esta acción quitará la asignación de todos los leads con estado SIN_LLAMAR.")) {
-              evacuarLeadsSinLlamar().then(() => {
-                refetch();
-                toast.success("Evacuación manual completada");
-              });
-            }
-          }}
+          onClick={() => setShowEvacuacionModal(true)}
         >
           <svg 
             xmlns="http://www.w3.org/2000/svg" 
