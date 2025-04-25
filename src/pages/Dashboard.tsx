@@ -24,6 +24,8 @@ import ModifyLeadsDialog from "@/components/leads/ModifyLeadsDialog";
 import { Topbar } from "@/components/layout/topbar";
 import LeadsTable from "@/components/leads/LeadsTable";
 import { LeadHistorialSheet } from "@/components/leads/LeadHistorialSheet";
+import { es } from 'date-fns/locale';
+import { TimePicker } from "@/components/ui/time-picker";
 
 const CALENDAR_VIEWS = {
   MONTH: "month",
@@ -253,6 +255,18 @@ const GestionModal = ({ lead, isOpen, onClose, initialData }: { lead: any, isOpe
 
         if (updateError) throw updateError;
       } else {
+        // Validar que no exista una tarea para este lead
+        const { data: existingTask, error: checkError } = await supabase
+          .from("tareas")
+          .select("*")
+          .eq("lead_id", lead.id);
+          
+        if (checkError) throw checkError;
+        
+        if (existingTask && existingTask.length > 0) {
+          throw new Error("Ya existe una gestión para este lead");
+        }
+        
         const { error: createError } = await supabase
           .from("tareas")
           .insert([gestionData]);
@@ -387,17 +401,37 @@ const GestionModal = ({ lead, isOpen, onClose, initialData }: { lead: any, isOpe
             </div>
           )}
 
-          {(tipo === "CITA" || tipo === "LLAMADA") && (
+          {(tipo === "LLAMADA" || tipo === "CITA") && (
             <div>
-              <label className="text-sm font-medium">Fecha</label>
-              <div className="mt-1">
-                <Calendar
-                  mode="single"
-                  selected={fecha}
-                  onSelect={setFecha}
-                  className="rounded-md border"
-                />
-              </div>
+              <label className="text-sm font-medium">Fecha y Hora</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !fecha && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIconLucide className="mr-2 h-4 w-4" />
+                    {fecha ? format(fecha, "PPP HH:mm", {locale: es}) : <span>Seleccionar fecha</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={fecha}
+                    onSelect={(date) => date && setFecha(date)}
+                    initialFocus
+                  />
+                  <div className="p-3 border-t border-border">
+                    <TimePicker
+                      setDate={(date) => setFecha(date)}
+                      date={fecha}
+                    />
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           )}
 
@@ -406,7 +440,8 @@ const GestionModal = ({ lead, isOpen, onClose, initialData }: { lead: any, isOpe
             <Textarea
               value={observaciones}
               onChange={(e) => setObservaciones(e.target.value)}
-              placeholder="Ingrese las observaciones..."
+              placeholder="Ingresa tus observaciones..."
+              className="resize-none"
             />
           </div>
 
@@ -742,16 +777,28 @@ const TaskList = () => {
                   </p>
                 </TableCell>
                 <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedTask(task);
-                      setShowGestionModal(true);
-                    }}
-                  >
-                    Gestión
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedTask(task);
+                        setShowGestionModal(true);
+                      }}
+                    >
+                      Gestión
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedTask(task);
+                        setShowGestionModal(true);
+                      }}
+                    >
+                      Editar
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
