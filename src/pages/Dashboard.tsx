@@ -937,6 +937,19 @@ const Dashboard = () => {
         ))}
       </div>
 
+      {/* Mensaje informativo sobre el botón ESTOY EN CITA */}
+      <Card className="p-4 border-l-4 border-l-blue-500 bg-blue-50">
+        <div className="flex items-start gap-3">
+          <CalendarIconLucide className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+          <div>
+            <h3 className="font-medium text-blue-800">Recordatorio importante</h3>
+            <p className="text-sm text-blue-700 mt-1">
+              Cuando ingreses en Cita o Llamada, por favor activar el botón <span className="font-bold">ESTOY EN CITA</span> en la barra lateral, al finalizar, recordar desactivarlo.
+            </p>
+          </div>
+        </div>
+      </Card>
+
       <TaskList />
 
       <Card className="p-6">

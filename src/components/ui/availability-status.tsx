@@ -122,10 +122,15 @@ export function AvailabilityStatus({ userId, className, ...props }: Availability
   return (
     <div className={cn("flex items-center gap-2", className)} {...props}>
       <span className={cn(
-        "text-sm",
-        isAvailable ? "text-green-500" : "text-gray-500"
+        "text-sm font-medium",
+        isAvailable ? "text-green-500" : "text-red-500 font-semibold"
       )}>
-        {isAvailable ? elapsedTime : "Estoy en cita"}
+        {isAvailable ? elapsedTime : (
+          <span className="flex items-center">
+            <span className="h-2 w-2 rounded-full bg-red-500 mr-1.5 animate-pulse"></span>
+            Estoy en cita
+          </span>
+        )}
       </span>
       <Switch
         checked={isAvailable}
