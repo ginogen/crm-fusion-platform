@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
-const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutos en milisegundos
+const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutos en milisegundos
 
 export function useActivityTracking(userId: string | undefined) {
   useEffect(() => {
@@ -21,12 +21,12 @@ export function useActivityTracking(userId: string | undefined) {
         const currentTime = new Date().toISOString();
 
         if (existingData) {
-          // Verificar si la última actividad fue hace más de 30 minutos
+          // Verificar si la última actividad fue hace más de 15 minutos
           const lastActive = new Date(existingData.last_active);
           const timeSinceLastActive = Date.now() - lastActive.getTime();
 
           if (timeSinceLastActive > INACTIVITY_TIMEOUT) {
-            // Si pasaron más de 30 minutos, crear una nueva sesión
+            // Si pasaron más de 15 minutos, crear una nueva sesión
             const { data, error } = await supabase
               .from('user_activity')
               .insert({
@@ -73,7 +73,7 @@ export function useActivityTracking(userId: string | undefined) {
       clearTimeout(activityTimeout);
       updateActivity();
       
-      // Configurar el timeout para marcar como inactivo después de 30 minutos
+      // Configurar el timeout para marcar como inactivo después de 15 minutos
       activityTimeout = setTimeout(async () => {
         const { error } = await supabase
           .from('user_activity')

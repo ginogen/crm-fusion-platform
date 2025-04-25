@@ -21,7 +21,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
         const now = new Date();
         
         // Si han pasado más de 30 minutos, eliminar la sesión
-        if (now.getTime() - lastActive.getTime() > 30 * 60 * 1000) {
+        if (now.getTime() - lastActive.getTime() > 15 * 60 * 1000) {
           localStorage.removeItem(key);
           return null;
         }

@@ -17,7 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { History, Search, ChevronDown, ChevronRight, Clock, Users, Calendar } from "lucide-react";
+import { History, Search, ChevronDown, ChevronRight, Clock, Users, Calendar, CalendarIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Accordion,
@@ -36,6 +36,13 @@ interface UserTimeRecord {
   duration_seconds: number;
   created_at: string;
   is_active?: boolean; // Indica si el registro está activo (usuario en cita)
+}
+
+// Interfaz para representar los registros agrupados por día
+interface DayGroupedRecords {
+  date: string; // Fecha formateada (DD/MM/YYYY)
+  records: UserTimeRecord[];
+  count: number; // Cantidad de registros en ese día
 }
 
 interface UserData {
@@ -65,6 +72,7 @@ const TimeControl = () => {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [expandedUsers, setExpandedUsers] = useState<Record<string, boolean>>({});
   const [usersInAppointment, setUsersInAppointment] = useState<number>(0);
+  const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({});
 
   // Obtener registros de tiempo para todos los usuarios
   const { data: timeRecords, isLoading: isLoadingTimeRecords } = useQuery({
@@ -201,6 +209,12 @@ const TimeControl = () => {
     return new Date(dateString).toLocaleString();
   };
 
+  // Formatear fecha como solo día
+  const formatDateAsDay = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString();
+  };
+
   // Formatear duración
   const formatDuration = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
@@ -208,9 +222,37 @@ const TimeControl = () => {
     return `${minutes}m ${remainingSeconds}s`;
   };
 
-  // Obtener registros de tiempo de un usuario específico
-  const getUserTimeRecords = (userId: string) => {
-    return timeRecords?.filter(record => record.user_id === userId) || [];
+  // Obtener registros de tiempo de un usuario específico agrupados por día
+  const getUserTimeRecords = (userId: string): DayGroupedRecords[] => {
+    const records = timeRecords?.filter(record => record.user_id === userId) || [];
+    
+    // Si no hay registros, retornar un array vacío
+    if (records.length === 0) return [];
+    
+    // Agrupar los registros por día
+    const recordsByDay: Record<string, UserTimeRecord[]> = {};
+    
+    records.forEach(record => {
+      const day = formatDateAsDay(record.start_time);
+      if (!recordsByDay[day]) {
+        recordsByDay[day] = [];
+      }
+      recordsByDay[day].push(record);
+    });
+    
+    // Convertir el objeto a un array de días agrupados y ordenarlos por fecha (más reciente primero)
+    return Object.entries(recordsByDay)
+      .map(([date, dayRecords]) => ({
+        date,
+        records: dayRecords,
+        count: dayRecords.length
+      }))
+      .sort((a, b) => {
+        // Ordenar por fecha, más reciente primero
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateB - dateA;
+      });
   };
 
   // Alternar la expansión de un usuario
@@ -219,6 +261,21 @@ const TimeControl = () => {
       ...prev,
       [userId]: !prev[userId]
     }));
+  };
+
+  // Alternar la expansión de un día
+  const toggleDayExpansion = (userId: string, date: string) => {
+    const key = `${userId}-${date}`;
+    setExpandedDays(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  // Verificar si un día está expandido
+  const isDayExpanded = (userId: string, date: string) => {
+    const key = `${userId}-${date}`;
+    return !!expandedDays[key];
   };
 
   if (isLoadingUsers || isLoadingTimeRecords) {
@@ -338,36 +395,64 @@ const TimeControl = () => {
                               <Clock className="h-4 w-4 mr-2" />
                               Registros de Tiempo
                             </h4>
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Inicio</TableHead>
-                                  <TableHead>Fin</TableHead>
-                                  <TableHead>Duración</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {getUserTimeRecords(user.id).length > 0 ? (
-                                  getUserTimeRecords(user.id).map((record) => (
-                                    <TableRow key={record.id}>
-                                      <TableCell>{formatDate(record.start_time)}</TableCell>
-                                      <TableCell>{record.end_time ? formatDate(record.end_time) : "En curso"}</TableCell>
-                                      <TableCell>
-                                        {record.end_time 
-                                          ? formatDuration(record.duration_seconds) 
-                                          : "En curso"}
-                                      </TableCell>
-                                    </TableRow>
-                                  ))
-                                ) : (
-                                  <TableRow>
-                                    <TableCell colSpan={3} className="text-center text-muted-foreground">
-                                      No hay registros de tiempo para este usuario
-                                    </TableCell>
-                                  </TableRow>
-                                )}
-                              </TableBody>
-                            </Table>
+                            <div className="space-y-3">
+                              {getUserTimeRecords(user.id).length > 0 ? (
+                                getUserTimeRecords(user.id).map((dayGroup) => (
+                                  <div key={dayGroup.date} className="border rounded-md">
+                                    <div 
+                                      className="flex items-center justify-between p-3 bg-slate-100 cursor-pointer"
+                                      onClick={() => toggleDayExpansion(user.id, dayGroup.date)}
+                                    >
+                                      <div className="flex items-center">
+                                        {isDayExpanded(user.id, dayGroup.date) ? (
+                                          <ChevronDown className="h-4 w-4 mr-2" />
+                                        ) : (
+                                          <ChevronRight className="h-4 w-4 mr-2" />
+                                        )}
+                                        <CalendarIcon className="h-4 w-4 mr-2" />
+                                        <span className="font-medium">{dayGroup.date}</span>
+                                      </div>
+                                      <div className="flex items-center">
+                                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                                          {dayGroup.count} {dayGroup.count === 1 ? "registro" : "registros"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    
+                                    {isDayExpanded(user.id, dayGroup.date) && (
+                                      <div className="p-3">
+                                        <Table>
+                                          <TableHeader>
+                                            <TableRow>
+                                              <TableHead>Inicio</TableHead>
+                                              <TableHead>Fin</TableHead>
+                                              <TableHead>Duración</TableHead>
+                                            </TableRow>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {dayGroup.records.map((record) => (
+                                              <TableRow key={record.id}>
+                                                <TableCell>{formatDate(record.start_time)}</TableCell>
+                                                <TableCell>{record.end_time ? formatDate(record.end_time) : "En curso"}</TableCell>
+                                                <TableCell>
+                                                  {record.end_time 
+                                                    ? formatDuration(record.duration_seconds) 
+                                                    : "En curso"}
+                                                </TableCell>
+                                              </TableRow>
+                                            ))}
+                                          </TableBody>
+                                        </Table>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="text-center py-4 text-muted-foreground">
+                                  No hay registros de tiempo para este usuario
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </TableCell>
                       </TableRow>
