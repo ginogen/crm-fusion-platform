@@ -1,0 +1,25 @@
+id,nombre_completo,email,telefono,estado,origen,asignado_a,organization_id,created_at,updated_at,pais,filial,observaciones,batch_id,is_from_batch,is_assigned,campaign_lead_id,user_id
+33,Ignacio Morales Za–artu,nacho.royster@gmail.com,56954021808,MATRICULA,Ad empleos,d624c2f7-dae7-4697-9076-1593c9041435,,,,Chile,,,,false,false,,
+34,Djolannedi Dorvil,evenidedorvil1998@gmail.com,56947896267,SIN_LLAMAR,Ad empleos,,,,2025-03-10 18:56:01.412,Chile,,,,false,false,,
+35,Jose Osvaldo O–ate Oses,joseosvaldoonateoses@gmail.com,56995868402,SIN_LLAMAR,Ad empleos,,,,2025-03-10 18:56:01.412,Chile,,,,false,false,,
+36,Silvia Valderrama,silviafna@gmail.com,56992306306,SIN_LLAMAR,Ad empleos,,,,2025-03-10 18:56:01.412,Chile,,,,false,false,,
+37,Pamelita Frores,margaritaatero19@gmail.com,56969019029,SIN_LLAMAR,Ad empleos,,,,2025-03-10 18:56:01.412,Chile,,,,false,false,,
+38,Manuel Valdivia,valdiviavergaram@gmail.com,56972554604,CITA_PROGRAMADA,Ad empleos,744cc05c-fc59-4cbf-b6c5-ddb8f5d45595,,,,Chile,,,,false,false,,
+39,Andres Nu–ez,criss.arriagada@gmail.com,56935157089,CITA_PROGRAMADA,Ad empleos,,,,,Chile,,,,false,false,,
+40,Rafael Bravo Rebolledo,bravochile@yahoo.com,56981970208,CITA_PROGRAMADA,Ad empleos,951c9381-888c-414e-b0ac-30adc191d02c,,,,Chile,,,,false,false,,
+41,Paola Opazo Regginatto,paopareg2@gmail.com,56964064410,SIN_LLAMAR,Ad empleos,,,,2025-03-10 18:56:01.412,Chile,,,,false,false,,
+42,Paula Carrera,paulacarrera74@gmail.com,56977007953,SIN_LLAMAR,Ad empleos,,,,2025-03-10 18:56:01.412,Chile,,,,false,false,,
+43,Floralysia Galleguillos Campos,florvgc@yahoo.cl,56998715874,SIN_LLAMAR,Ad empleos,,,,2025-03-10 18:56:01.412,Chile,,,,false,false,,
+44,Lead Test 1,test1@test1.com,111111111,SIN_LLAMAR,Batch,,,2025-02-25 16:40:43.023,2025-03-10 18:56:01.412,Chile,,,19,true,false,,
+45,Lead Test 2,test2@test2.com,22222222,SIN_LLAMAR,Batch,,,2025-02-25 16:40:43.023,2025-03-10 18:56:01.412,Chile,,,19,true,false,,
+46,Lead Test 3,test3@test3.com,33333333,SIN_LLAMAR,Batch,,,2025-02-25 16:40:43.023,2025-03-10 18:56:01.412,Chile,,,19,true,false,,
+47,Lead Test 4,test4@test4.com,44444444,SIN_LLAMAR,Batch,,,2025-02-25 16:40:43.023,2025-03-10 18:56:01.412,Chile,,,19,true,false,,
+48,Juana,cuadraleiton@gmail.com,9990 05689,SIN_LLAMAR,directo,,,,2025-03-10 18:56:01.412,Chile,olimpo,"ss ",,false,false,,
+49,Lead Test 1,test1@test1.com,111111111,SIN_LLAMAR,Batch,,,2025-03-10 18:54:47.873,2025-04-24 01:41:46.022,Chile,,,20,true,false,,
+50,Lead Test 2,test2@test2.com,22222222,SIN_LLAMAR,Batch,,,2025-03-10 18:54:47.873,2025-04-24 01:41:46.022,Chile,,,20,true,false,,
+51,Lead Test 3,test3@test3.com,33333333,SIN_LLAMAR,Batch,,,2025-03-10 18:54:47.873,2025-04-24 01:41:46.022,Chile,,,20,true,false,,
+52,Lead Test 4,test4@test4.com,44444444,SIN_LLAMAR,Batch,,,2025-03-10 18:54:47.873,2025-04-24 01:41:46.022,Chile,,,20,true,false,,
+53,asd,df@adas.com,234234324,SIN_LLAMAR,así,,,,,dasd,asd,,,false,false,,a5061dce-7663-482e-9ab1-d6ef078de9b7
+54,Testin,ad@das.com,23423432,CITA_PROGRAMADA,asdg,951c9381-888c-414e-b0ac-30adc191d02c,,,,a,a,,,false,false,,a5061dce-7663-482e-9ab1-d6ef078de9b7
+55,isidora donoso,,97777333888,CITA_PROGRAMADA,Directo,88ca30a6-5a93-44c2-94d6-579dc393405e,,,,chile,oceano,,,false,false,,88ca30a6-5a93-44c2-94d6-579dc393405e
+56,DFGSDFS,,925632566,SIN_LLAMAR,Directo,,,,2025-04-24 01:41:46.022,Chile,OCEANO,X,,false,false,,951c9381-888c-414e-b0ac-30adc191d02c

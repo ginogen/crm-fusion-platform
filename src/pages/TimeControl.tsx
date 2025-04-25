@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Table,
@@ -17,16 +17,25 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { History, Search } from "lucide-react";
+import { History, Search, ChevronDown, ChevronRight, Clock, Users, Calendar } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-interface UserActivity {
+interface UserTimeRecord {
   id: string;
   user_id: string;
-  last_active: string;
-  session_start: string;
-  is_online: boolean;
+  start_time: string;
+  end_time: string;
+  duration_seconds: number;
   created_at: string;
+  is_active?: boolean; // Indica si el registro está activo (usuario en cita)
 }
 
 interface UserData {
@@ -39,17 +48,13 @@ interface UserData {
   estructura_id: number;
   supervisor_id: string | null;
   is_active: boolean;
-  is_online: boolean;
-  last_active?: string;
   estructura?: {
     id: number;
     nombre: string;
     custom_name?: string;
   };
-  user_activity?: {
-    is_online: boolean;
-    last_active: string;
-  }[];
+  in_appointment?: boolean;
+  current_appointment?: UserTimeRecord | null;
 }
 
 const MULTI_ESTRUCTURA_POSITIONS = ['Director de Zona', 'Director Internacional', 'CEO'];
@@ -58,23 +63,81 @@ const TimeControl = () => {
   const [emailFilter, setEmailFilter] = useState("");
   const [nombreFilter, setNombreFilter] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [expandedUsers, setExpandedUsers] = useState<Record<string, boolean>>({});
+  const [usersInAppointment, setUsersInAppointment] = useState<number>(0);
 
-  // Obtener usuarios
-  const { data: users, isLoading } = useQuery({
-    queryKey: ["users-time"],
+  // Obtener registros de tiempo para todos los usuarios
+  const { data: timeRecords, isLoading: isLoadingTimeRecords } = useQuery({
+    queryKey: ["time-records"],
     queryFn: async () => {
-      const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutos en milisegundos
+      const { data, error } = await supabase
+        .from("user_time_records")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      return data as UserTimeRecord[];
+    },
+    refetchInterval: 10000, // Actualizar cada 10 segundos para ver cambios en tiempo real
+  });
+
+  // Determinar qué usuarios están actualmente en cita
+  // Un usuario está en cita si tiene un registro de tiempo sin end_time o donde end_time es null
+  const getUsersInAppointment = () => {
+    if (!timeRecords) return new Map();
+    
+    const appointmentMap = new Map();
+    const now = new Date().getTime();
+    
+    timeRecords.forEach(record => {
+      const startTime = new Date(record.start_time).getTime();
+      const endTime = record.end_time ? new Date(record.end_time).getTime() : null;
       
-      // Obtener todos los usuarios con sus estados de conexión
+      // El usuario está en una cita si:
+      // 1. La cita tiene hora de inicio
+      // 2. No tiene hora de finalización O la hora de finalización es futura
+      const isActive = startTime && (!endTime || endTime > now);
+      
+      if (isActive) {
+        appointmentMap.set(record.user_id, {
+          isInAppointment: true,
+          appointmentRecord: record
+        });
+      } else if (!appointmentMap.has(record.user_id)) {
+        appointmentMap.set(record.user_id, {
+          isInAppointment: false,
+          appointmentRecord: null
+        });
+      }
+    });
+    
+    return appointmentMap;
+  };
+
+  // Actualizar contador de usuarios en cita
+  useEffect(() => {
+    if (!timeRecords) return;
+    
+    const appointmentMap = getUsersInAppointment();
+    let count = 0;
+    
+    appointmentMap.forEach(value => {
+      if (value.isInAppointment) count++;
+    });
+    
+    setUsersInAppointment(count);
+  }, [timeRecords]);
+
+  // Obtener usuarios y estado de citas en tiempo real
+  const { data: users, isLoading: isLoadingUsers } = useQuery({
+    queryKey: ["users-time", timeRecords],
+    queryFn: async () => {
+      // Obtener todos los usuarios
       const { data: usersData, error: usersError } = await supabase
         .from("users")
         .select(`
           *,
-          estructura:estructuras(*),
-          user_activity(
-            is_online,
-            last_active
-          )
+          estructura:estructuras(*)
         `)
         .order('created_at', { ascending: false });
 
@@ -83,42 +146,48 @@ const TimeControl = () => {
         throw usersError;
       }
 
-      // Procesar los datos para obtener el último estado de actividad
+      // Obtener el mapa de usuarios en cita
+      const appointmentMap = getUsersInAppointment();
+
+      // Procesar los datos
       const processedUsers = usersData.map(user => {
-        const lastActive = user.user_activity?.[0]?.last_active;
-        const isWithinTimeout = lastActive ? 
-          (Date.now() - new Date(lastActive).getTime()) < INACTIVITY_TIMEOUT : 
-          false;
+        // Obtener si el usuario está en cita desde el mapa de citas
+        const appointmentInfo = appointmentMap.get(user.id) || { isInAppointment: false, appointmentRecord: null };
 
         return {
           ...user,
-          is_online: user.user_activity?.[0]?.is_online && isWithinTimeout,
-          last_active: lastActive || null
+          in_appointment: appointmentInfo.isInAppointment,
+          current_appointment: appointmentInfo.appointmentRecord
         };
       });
 
       return processedUsers as UserData[];
     },
-    refetchInterval: 60000, // Actualizar cada minuto
+    refetchInterval: 10000, // Actualizar cada 10 segundos para ver cambios en tiempo real
   });
 
-  // Obtener registros de actividad para un usuario específico
-  const { data: activityRecords } = useQuery({
-    queryKey: ["activity-records", selectedUserId],
-    queryFn: async () => {
-      if (!selectedUserId) return [];
+  // Configurar suscripción a cambios en registros de tiempo en tiempo real
+  useEffect(() => {
+    const timeRecordsChannel = supabase
+      .channel('time-records-changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'user_time_records'
+      }, (payload) => {
+        // Recargar datos cuando haya cambios en la tabla de registros de tiempo
+        setTimeout(() => {
+          const queryClient = require('@tanstack/react-query').queryClient;
+          queryClient.invalidateQueries({ queryKey: ["time-records"] });
+        }, 500);
+      })
+      .subscribe();
 
-      const { data, error } = await supabase
-        .from("user_activity")
-        .select("*")
-        .eq("user_id", selectedUserId)
-        .order("session_start", { ascending: false });
-
-      if (error) throw error;
-      return data as UserActivity[];
-    },
-    enabled: !!selectedUserId,
-  });
+    // Limpiar suscripción al desmontar
+    return () => {
+      supabase.removeChannel(timeRecordsChannel);
+    };
+  }, []);
 
   // Filtrar usuarios
   const filteredUsers = users?.filter((user) => {
@@ -132,7 +201,27 @@ const TimeControl = () => {
     return new Date(dateString).toLocaleString();
   };
 
-  if (isLoading) {
+  // Formatear duración
+  const formatDuration = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}m ${remainingSeconds}s`;
+  };
+
+  // Obtener registros de tiempo de un usuario específico
+  const getUserTimeRecords = (userId: string) => {
+    return timeRecords?.filter(record => record.user_id === userId) || [];
+  };
+
+  // Alternar la expansión de un usuario
+  const toggleUserExpansion = (userId: string) => {
+    setExpandedUsers(prev => ({
+      ...prev,
+      [userId]: !prev[userId]
+    }));
+  };
+
+  if (isLoadingUsers || isLoadingTimeRecords) {
     return (
       <div className="flex justify-center items-center h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -140,130 +229,156 @@ const TimeControl = () => {
     );
   }
 
-  console.log('Usuarios cargados:', users); // Para debug
-
   return (
     <div className="animate-fade-in space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Control de Tiempo</h1>
       </div>
 
-      {/* Filtros */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Email</Label>
-          <div className="relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Filtrar por email"
-              value={emailFilter}
-              onChange={(e) => setEmailFilter(e.target.value)}
-              className="pl-8"
-            />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label>Nombre</Label>
-          <div className="relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Filtrar por nombre"
-              value={nombreFilter}
-              onChange={(e) => setNombreFilter(e.target.value)}
-              className="pl-8"
-            />
-          </div>
-        </div>
+      {/* Card de usuarios en cita */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <Card className="bg-blue-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xl flex items-center">
+              <Calendar className="h-5 w-5 mr-2 text-blue-600" />
+              Usuarios en Cita
+            </CardTitle>
+            <CardDescription>
+              Usuarios actualmente en cita
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <span className="text-3xl font-bold text-blue-700">{usersInAppointment}</span>
+              <span className="text-sm text-blue-600">Total de {users?.length || 0} usuarios</span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Tabla */}
-      <div className="border rounded-lg">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nombre</TableHead>
-              <TableHead>Cargo</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Estructura</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead>Acción</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredUsers?.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell>{user.nombre_completo}</TableCell>
-                <TableCell>{user.user_position}</TableCell>
-                <TableCell>{user.email}</TableCell>
-                <TableCell>
-                  <span>
-                    {user.estructura?.custom_name || 
-                     user.estructura?.nombre || 
-                     'Sin estructura'}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <span className={`px-2 py-1 rounded-full text-xs ${
-                    user.is_online
-                      ? "bg-green-100 text-green-800"
-                      : "bg-red-100 text-red-800"
-                  }`}>
-                    {user.is_online ? "En línea" : "Desconectado"}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setSelectedUserId(user.id)}
-                  >
-                    <History className="h-4 w-4" />
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      <Tabs defaultValue="registros-tiempo">
+        <TabsList className="w-full">
+          <TabsTrigger value="registros-tiempo" className="flex-1">Registros de Tiempo</TabsTrigger>
+        </TabsList>
 
-      {/* Modal de Historial */}
-      <Dialog open={!!selectedUserId} onOpenChange={() => setSelectedUserId(null)}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>
-              Historial de Conexiones - {users?.find(u => u.id === selectedUserId)?.nombre_completo}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="mt-4">
+        <TabsContent value="registros-tiempo" className="space-y-6">
+          {/* Filtros para la tabla */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Filtrar por email"
+                  value={emailFilter}
+                  onChange={(e) => setEmailFilter(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Nombre</Label>
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Filtrar por nombre"
+                  value={nombreFilter}
+                  onChange={(e) => setNombreFilter(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Tabla acordeón de usuarios y sus registros de tiempo */}
+          <div className="border rounded-lg">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Inicio de Sesión</TableHead>
-                  <TableHead>Última Actividad</TableHead>
-                  <TableHead>Estado</TableHead>
+                  <TableHead className="w-10"></TableHead>
+                  <TableHead>Nombre de Usuario</TableHead>
+                  <TableHead>Cargo</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Estructura del Usuario</TableHead>
+                  <TableHead>En Cita</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {activityRecords?.map((record) => (
-                  <TableRow key={record.id}>
-                    <TableCell>{formatDate(record.session_start)}</TableCell>
-                    <TableCell>{formatDate(record.last_active)}</TableCell>
-                    <TableCell>
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        record.is_online
-                          ? "bg-green-100 text-green-800"
-                          : "bg-red-100 text-red-800"
-                      }`}>
-                        {record.is_online ? "En línea" : "Desconectado"}
-                      </span>
-                    </TableCell>
-                  </TableRow>
+                {filteredUsers?.map((user) => (
+                  <>
+                    <TableRow key={user.id} className="cursor-pointer hover:bg-slate-50" onClick={() => toggleUserExpansion(user.id)}>
+                      <TableCell>
+                        {expandedUsers[user.id] ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                      </TableCell>
+                      <TableCell>{user.nombre_completo}</TableCell>
+                      <TableCell>{user.user_position}</TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>
+                        {user.estructura?.custom_name || user.estructura?.nombre || 'Sin estructura'}
+                      </TableCell>
+                      <TableCell>
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          user.in_appointment
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-gray-100 text-gray-800"
+                        }`}>
+                          {user.in_appointment ? "Sí" : "No"}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                    {expandedUsers[user.id] && (
+                      <TableRow className="bg-slate-50">
+                        <TableCell colSpan={6} className="p-0">
+                          <div className="p-4">
+                            <h4 className="text-sm font-semibold mb-2 flex items-center">
+                              <Clock className="h-4 w-4 mr-2" />
+                              Registros de Tiempo
+                            </h4>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Inicio</TableHead>
+                                  <TableHead>Fin</TableHead>
+                                  <TableHead>Duración</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {getUserTimeRecords(user.id).length > 0 ? (
+                                  getUserTimeRecords(user.id).map((record) => (
+                                    <TableRow key={record.id}>
+                                      <TableCell>{formatDate(record.start_time)}</TableCell>
+                                      <TableCell>{record.end_time ? formatDate(record.end_time) : "En curso"}</TableCell>
+                                      <TableCell>
+                                        {record.end_time 
+                                          ? formatDuration(record.duration_seconds) 
+                                          : "En curso"}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))
+                                ) : (
+                                  <TableRow>
+                                    <TableCell colSpan={3} className="text-center text-muted-foreground">
+                                      No hay registros de tiempo para este usuario
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
                 ))}
               </TableBody>
             </Table>
           </div>
-        </DialogContent>
-      </Dialog>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

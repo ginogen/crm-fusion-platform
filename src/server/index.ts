@@ -1,8 +1,19 @@
-import { supabase } from "@/integrations/supabase/client";
+import express from 'express';
+import cors from 'cors';
+import bodyParser from 'body-parser';
+import { supabase } from '../lib/supabase';
 
-export async function POST(request: Request) {
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middlewares
+app.use(cors());
+app.use(bodyParser.json());
+
+// Endpoint para webhooks
+app.post('/api/webhook/:token', async (req, res) => {
   try {
-    const token = request.url.split("/").pop();
+    const token = req.params.token;
     
     // Verificar token
     const { data: webhookConfig } = await supabase
@@ -12,10 +23,10 @@ export async function POST(request: Request) {
       .single();
 
     if (!webhookConfig || !webhookConfig.is_active) {
-      return new Response("Unauthorized", { status: 401 });
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const formData = await request.json();
+    const formData = req.body;
     
     // Determinar el origen y el nombre del batch según la fuente
     let batchName = "Leads Web";
@@ -23,7 +34,6 @@ export async function POST(request: Request) {
     let origen = formData.origen || "Web";
     
     // Si el origen indica Facebook, usar configuración específica
-    // Ya no dependemos de webhook_name que no existe
     if (origen.toLowerCase().includes("facebook")) {
       batchName = "Leads Facebook vía Make";
       source = "FACEBOOK";
@@ -60,7 +70,10 @@ export async function POST(request: Request) {
     // Validar campos requeridos
     if (!formData.nombre_completo || !formData.email) {
       console.error("Datos incompletos:", formData);
-      return new Response("Datos incompletos: se requiere nombre_completo y email", { status: 400 });
+      return res.status(400).json({ 
+        success: false, 
+        message: "Datos incompletos: se requiere nombre_completo y email" 
+      });
     }
 
     // Extraer campos adicionales para Facebook leads
@@ -70,9 +83,9 @@ export async function POST(request: Request) {
     // En algunos casos, Make puede enviar los datos en una estructura diferente
     if (formData.field_data) {
       // Formato alternativo desde Facebook lead
-      const fullNameField = formData.field_data.find(f => f.name === 'full_name' || f.name === 'nombre_completo');
-      const emailField = formData.field_data.find(f => f.name === 'email');
-      const phoneField = formData.field_data.find(f => f.name === 'phone_number' || f.name === 'telefono');
+      const fullNameField = formData.field_data.find((f: any) => f.name === 'full_name' || f.name === 'nombre_completo');
+      const emailField = formData.field_data.find((f: any) => f.name === 'email');
+      const phoneField = formData.field_data.find((f: any) => f.name === 'phone_number' || f.name === 'telefono');
       
       if (fullNameField && fullNameField.values && fullNameField.values.length > 0) {
         formData.nombre_completo = fullNameField.values[0];
@@ -112,8 +125,6 @@ export async function POST(request: Request) {
     }
 
     // Incrementar contador de leads en webhookConfig
-    // Creamos un objeto de actualización solo con last_used
-    // por si leads_count no existe en la tabla
     const updateData: any = {
       last_used: new Date().toISOString()
     };
@@ -129,24 +140,33 @@ export async function POST(request: Request) {
       .eq("id", webhookConfig.id);
 
     // Devolver respuesta con información del lead
-    return new Response(JSON.stringify({
+    return res.status(200).json({
       success: true,
       message: `Lead ${formData.nombre_completo} recibido correctamente`,
       lead_id: lead?.id
-    }), { 
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
     });
     
   } catch (error) {
     console.error("Error en webhook:", error);
-    return new Response(JSON.stringify({ 
+    return res.status(500).json({ 
       success: false, 
       message: "Error interno del servidor",
       error: error instanceof Error ? error.message : "Error desconocido"
-    }), { 
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
     });
   }
-} 
+});
+
+// Función para iniciar el servidor
+export function startServer() {
+  return app.listen(PORT, () => {
+    console.log(`Servidor Express ejecutándose en el puerto ${PORT}`);
+  });
+}
+
+// Iniciar el servidor solo si estamos ejecutándolo directamente
+if (require.main === module) {
+  startServer();
+}
+
+// Exportamos el app para poder usarlo en Vercel
+export default app; 

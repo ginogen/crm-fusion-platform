@@ -1,11 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { LEAD_STATUSES, LEAD_STATUS_LABELS } from "@/lib/constants";
 import type { LeadEstado } from "@/lib/types";
+import { SearchableSelect, type OptionType } from "@/components/ui/searchable-select";
+import { useState } from "react";
 
 interface ModifyLeadsDialogProps {
   isOpen: boolean;
@@ -15,6 +16,8 @@ interface ModifyLeadsDialogProps {
 
 const ModifyLeadsDialog = ({ isOpen, onClose, selectedLeads }: ModifyLeadsDialogProps) => {
   const queryClient = useQueryClient();
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [selectedEstado, setSelectedEstado] = useState<string>("");
   
   const { data: users, isLoading, error } = useQuery({
     queryKey: ["users"],
@@ -31,6 +34,16 @@ const ModifyLeadsDialog = ({ isOpen, onClose, selectedLeads }: ModifyLeadsDialog
       return data || [];
     },
   });
+
+  const userOptions: OptionType[] = users?.map(user => ({
+    value: user.id,
+    label: user.nombre_completo || user.email
+  })) || [];
+
+  const estadoOptions: OptionType[] = LEAD_STATUSES.map(estado => ({
+    value: estado,
+    label: LEAD_STATUS_LABELS[estado]
+  }));
 
   const updateLeads = useMutation({
     mutationFn: async ({ userId, estado }: { userId?: string, estado?: LeadEstado }) => {
@@ -78,9 +91,8 @@ const ModifyLeadsDialog = ({ isOpen, onClose, selectedLeads }: ModifyLeadsDialog
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const userId = formData.get("userId")?.toString();
-    const estado = formData.get("estado")?.toString() as LeadEstado | undefined;
+    const userId = selectedUserId || undefined;
+    const estado = selectedEstado as LeadEstado | undefined;
     
     updateLeads.mutate({ userId, estado });
   };
@@ -94,46 +106,31 @@ const ModifyLeadsDialog = ({ isOpen, onClose, selectedLeads }: ModifyLeadsDialog
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Asignar a</label>
-            <Select name="userId">
-              <SelectTrigger disabled={isLoading}>
-                <SelectValue placeholder={
-                  isLoading ? "Cargando usuarios..." : 
-                  error ? "Error al cargar usuarios" :
-                  "Seleccionar usuario..."
-                } />
-              </SelectTrigger>
-              <SelectContent>
-                {isLoading ? (
-                  <SelectItem value="loading" disabled>Cargando...</SelectItem>
-                ) : error ? (
-                  <SelectItem value="error" disabled>Error al cargar usuarios</SelectItem>
-                ) : users && users.length > 0 ? (
-                  users.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.nombre_completo || user.email}
-                    </SelectItem>
-                  ))
-                ) : (
-                  <SelectItem value="empty" disabled>No hay usuarios disponibles</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              options={userOptions}
+              value={selectedUserId}
+              onValueChange={setSelectedUserId}
+              placeholder={
+                isLoading ? "Cargando usuarios..." : 
+                error ? "Error al cargar usuarios" :
+                "Seleccionar usuario..."
+              }
+              emptyMessage="No hay usuarios disponibles"
+              disabled={isLoading || !!error}
+              name="userId"
+            />
           </div>
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Cambiar Estado</label>
-            <Select name="estado">
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar estado..." />
-              </SelectTrigger>
-              <SelectContent>
-                {LEAD_STATUSES.map((estado) => (
-                  <SelectItem key={estado} value={estado}>
-                    {LEAD_STATUS_LABELS[estado]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              options={estadoOptions}
+              value={selectedEstado}
+              onValueChange={setSelectedEstado}
+              placeholder="Seleccionar estado..."
+              emptyMessage="No hay estados disponibles"
+              name="estado"
+            />
           </div>
 
           <div className="flex justify-end gap-2">

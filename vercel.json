@@ -8,9 +8,17 @@
         "buildCommand": "npm run build",
         "outputDirectory": "dist"
       }
+    },
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
+    {
+      "src": "/api/webhook/(.*)",
+      "dest": "/api/webhook/[token].js"
+    },
     {
       "handle": "filesystem"
     },

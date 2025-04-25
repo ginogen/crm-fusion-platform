@@ -173,6 +173,7 @@ const Campanas = () => {
   const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
   const [isFacebookModalOpen, setIsFacebookModalOpen] = useState(false);
   const [isBatchUploadModalOpen, setIsBatchUploadModalOpen] = useState(false);
+  const [isMakeWebhookModalOpen, setIsMakeWebhookModalOpen] = useState(false);
   const [batchName, setBatchName] = useState("");
   const [csvData, setCsvData] = useState<any[]>([]);
   const [previewData, setPreviewData] = useState<any[]>([]);
@@ -180,6 +181,10 @@ const Campanas = () => {
   const [selectedPais, setSelectedPais] = useState<number | null>(null);
   const [webhookToken, setWebhookToken] = useState<string>("");
   const [webhookUrl, setWebhookUrl] = useState<string>("");
+  const [makeWebhookToken, setMakeWebhookToken] = useState<string>("");
+  const [makeWebhookUrl, setMakeWebhookUrl] = useState<string>("");
+  const [makeLeadsCount, setMakeLeadsCount] = useState(0);
+  const [recentMakeLeads, setRecentMakeLeads] = useState<BatchLead[]>([]);
   const [todayLeadsCount, setTodayLeadsCount] = useState(0);
   const [recentWebhookLeads, setRecentWebhookLeads] = useState<BatchLead[]>([]);
   const [facebookPages, setFacebookPages] = useState<FacebookPage[]>([]);
@@ -195,6 +200,8 @@ const Campanas = () => {
     access_token: string;
   }[]>([]);
   const [selectedPageId, setSelectedPageId] = useState<string>("");
+  const [showWebhookDeleteModal, setShowWebhookDeleteModal] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const { data: batches, refetch } = useQuery({
     queryKey: ["batches"],
@@ -266,21 +273,25 @@ const Campanas = () => {
     },
   });
 
+  // Consulta para obtener la configuración del webhook
   const { data: webhookConfig, isLoading: isLoadingWebhook } = useQuery({
     queryKey: ["webhook-config"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("webhook_config")
         .select("*")
-        .single();
-      
-      if (data) {
-        setWebhookUrl(`${window.location.origin}/api/webhook/${data.webhook_token}`);
-        setWebhookToken(data.webhook_token);
-      }
-      return data;
+        .eq("is_active", true)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      return data && data.length > 0 ? data[0] : null;
     }
   });
+
+  // Mostrar el contador de leads o un valor por defecto
+  const leadsCount = webhookConfig && 'leads_count' in webhookConfig 
+    ? webhookConfig.leads_count 
+    : 0;
 
   // Filtrar estructuras por tipo
   const empresas = estructuras?.filter(e => e.tipo === 'Empresa') || [];
@@ -672,8 +683,14 @@ const Campanas = () => {
       return;
     }
 
+    // Para desarrollo local con ngrok
+    const isLocalDev = window.location.hostname === 'localhost';
+    const baseUrl = isLocalDev 
+      ? "https://ed6a-181-92-102-131.ngrok-free.app" // URL de ngrok proporcionada
+      : window.location.origin;
+    
     setWebhookToken(token);
-    setWebhookUrl(`${window.location.origin}/api/webhook/${token}`);
+    setWebhookUrl(`${baseUrl}/api/webhook/${token}`);
     toast.success("Webhook configurado correctamente");
   };
 
@@ -695,6 +712,105 @@ const Campanas = () => {
 
     setWebhookToken("");
     setWebhookUrl("");
+    toast.success("Webhook desactivado correctamente");
+  };
+
+  // Consulta para buscar la configuración del webhook de Make
+  const { data: makeWebhookConfig, refetch: refetchMakeWebhook } = useQuery({
+    queryKey: ["make-webhook-config"],
+    queryFn: async () => {
+      // No filtramos por webhook_name ya que no existe esa columna
+      const { data: configs } = await supabase
+        .from("webhook_config")
+        .select("*")
+        .eq("is_active", true);
+      
+      // Buscamos el webhook más reciente o el primero disponible
+      const config = configs && configs.length > 0 ? configs[0] : null;
+      
+      if (config) {
+        setMakeWebhookToken(config.webhook_token);
+        setMakeWebhookUrl(`${window.location.origin}/api/webhook/${config.webhook_token}`);
+      }
+      return config;
+    },
+    staleTime: 60000
+  });
+
+  const { data: makeLeads } = useQuery({
+    queryKey: ["make-leads"],
+    queryFn: async () => {
+      // Obtener los últimos 30 días
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const { data: leads } = await supabase
+        .from("campaign_leads")
+        .select("*")
+        .eq("origen", "Facebook")
+        .gte("created_at", thirtyDaysAgo.toISOString())
+        .order("created_at", { ascending: false });
+
+      if (leads) {
+        setMakeLeadsCount(leads.length);
+        setRecentMakeLeads(leads.slice(0, 5)); // Últimos 5 leads
+      }
+
+      return leads;
+    },
+    refetchInterval: 60000, // Refresca cada minuto
+    staleTime: 30000
+  });
+
+  const generateMakeWebhookToken = async () => {
+    const token = crypto.randomUUID();
+    
+    const { error } = await supabase
+      .from("webhook_config")
+      .upsert({
+        webhook_token: token,
+        is_active: true,
+        // No incluimos webhook_name ya que no existe esa columna
+        created_at: new Date().toISOString()
+      });
+
+    if (error) {
+      toast.error("Error al generar el token");
+      return;
+    }
+
+    // Para desarrollo local con ngrok
+    const isLocalDev = window.location.hostname === 'localhost';
+    const baseUrl = isLocalDev 
+      ? "https://ed6a-181-92-102-131.ngrok-free.app" // URL de ngrok proporcionada
+      : window.location.origin;
+    
+    setMakeWebhookToken(token);
+    setMakeWebhookUrl(`${baseUrl}/api/webhook/${token}`);
+    toast.success("Webhook para Make configurado correctamente");
+    
+    // Actualizar la configuración
+    refetchMakeWebhook();
+  };
+
+  const copyMakeWebhookUrl = () => {
+    navigator.clipboard.writeText(makeWebhookUrl);
+    toast.success("URL copiada al portapapeles");
+  };
+
+  const deactivateMakeWebhook = async () => {
+    const { error } = await supabase
+      .from("webhook_config")
+      .update({ is_active: false })
+      .eq("webhook_token", makeWebhookToken);
+
+    if (error) {
+      toast.error("Error al desactivar el webhook");
+      return;
+    }
+
+    setMakeWebhookToken("");
+    setMakeWebhookUrl("");
     toast.success("Webhook desactivado correctamente");
   };
 
@@ -1295,108 +1411,127 @@ const Campanas = () => {
   });
 
   // Modificar la función para guardar formulario
-  const saveFormById = async (formId: string) => {
-    try {
-      const fbToken = localStorage.getItem('fb_access_token');
-      if (!fbToken) {
-        toast.error('No hay token de acceso configurado');
-        return;
-      }
-
-      // Verificar si el formulario ya existe
-      const existingForm = savedForms?.find(f => f.form_id === formId);
-      if (existingForm) {
-        toast.error('Este formulario ya está registrado');
-        return;
-      }
-
-      // Limpiar el ID del formulario
-      const cleanFormId = formId.replace('form_', '');
-
-      // 1. Primero obtener las páginas a las que tenemos acceso
-      const pagesResponse = await fetch(
-        'https://graph.facebook.com/v18.0/me/accounts',
-        { headers: { 'Authorization': `Bearer ${fbToken}` } }
-      );
-
-      const pagesData = await pagesResponse.json();
-      console.log('Páginas disponibles:', pagesData);
-
-      if (pagesData.error) {
-        throw new Error(pagesData.error.message);
-      }
-
-      // 2. Para cada página, intentar obtener el formulario específico
-      let formFound = null;
-      for (const page of pagesData.data) {
-        try {
-          const formResponse = await fetch(
-            `https://graph.facebook.com/v18.0/${cleanFormId}?fields=id,name,status,created_time,leads_count&access_token=${page.access_token}`
-          );
-          
-          const formData = await formResponse.json();
-          if (!formData.error) {
-            formFound = {
-              ...formData,
-              page_id: page.id,
-              page_name: page.name,
-              page_access_token: page.access_token
-            };
-            break;
-          }
-        } catch (error) {
-          console.log(`Error al buscar en página ${page.name}:`, error);
-          continue;
-        }
-      }
-
-      if (!formFound) {
-        throw new Error('No se encontró el formulario o no tienes acceso a él. Verifica que:' +
-          '\n1. El ID del formulario sea correcto' +
-          '\n2. El formulario pertenezca a una de tus páginas' +
-          '\n3. Tengas rol de administrador en la página');
-      }
-
-      // 3. Guardar el formulario en la base de datos
-      const { error: saveError } = await supabase
-        .from("facebook_forms")
-        .insert({
-          form_id: formFound.id,
-          name: formFound.name,
-          status: formFound.status,
-          leads_count: formFound.leads_count,
-          page_id: formFound.page_id,
-          page_name: formFound.page_name,
-          page_access_token: formFound.page_access_token
-        });
-
-      if (saveError) throw saveError;
-
-      await refetchForms();
-      toast.success('Formulario guardado correctamente');
-      setSelectedPageId(''); // Limpiar input
-
-    } catch (error) {
-      console.error('Error completo:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-      
-      if (errorMessage.includes('permission')) {
-        toast.error('No tienes los permisos necesarios. Verifica que:');
-        toast.error('1. El ID del formulario sea correcto');
-        toast.error('2. Tengas rol de administrador en la página');
-        toast.error('3. El formulario pertenezca a una de tus páginas');
-      } else {
-        toast.error(`Error al guardar formulario: ${errorMessage}`);
-      }
+const saveFormById = async (formId: string) => {
+  try {
+    const fbToken = localStorage.getItem('fb_access_token');
+    if (!fbToken) {
+      toast.error('No hay token de acceso configurado');
+      return;
     }
+
+    // Verificar si el formulario ya existe
+    const existingForm = savedForms?.find(f => f.form_id === formId);
+    if (existingForm) {
+      toast.error('Este formulario ya está registrado');
+      return;
+    }
+
+    // Limpiar el ID del formulario
+    const cleanFormId = formId.replace('form_', '');
+    console.log('ID del formulario limpio:', cleanFormId);
+
+    // Intentar obtener el formulario directamente
+    const formResponse = await fetch(
+      `https://graph.facebook.com/v18.0/${cleanFormId}?fields=id,name,status,created_time,leads_count,page`,
+      { headers: { 'Authorization': `Bearer ${fbToken}` } }
+    );
+    
+    const formData = await formResponse.json();
+    console.log('Respuesta directa del formulario:', formData);
+    
+    if (formData.error) {
+      throw new Error(`Error al obtener el formulario: ${formData.error.message}`);
+    }
+    
+    // Guardar el formulario en la base de datos
+    const { error: saveError } = await supabase
+      .from("facebook_forms")
+      .insert({
+        form_id: formData.id,
+        name: formData.name || `Formulario ${formData.id}`,
+        status: formData.status || 'ACTIVE',
+        leads_count: formData.leads_count || 0,
+        page_id: formData.page?.id || 'direct_access',
+        page_name: formData.page?.name || 'Acceso directo',
+        page_access_token: fbToken
+      });
+
+    if (saveError) throw saveError;
+
+    await refetchForms();
+    toast.success('Formulario guardado correctamente');
+    setSelectedPageId(''); // Limpiar input
+    
+  } catch (error) {
+    console.error('Error completo:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+    toast.error(`Error al guardar formulario: ${errorMessage}`);
+  }
+};
+
+  const handleWebhookDelete = async () => {
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from("webhook_config")
+        .update({ is_active: false })
+        .eq("id", webhookConfig && 'id' in webhookConfig ? webhookConfig.id : '');
+
+      if (error) throw error;
+      toast.success("Configuracion de webhook eliminada correctamente");
+      setShowWebhookDeleteModal(false);
+      webHookConfigRemoved();
+    } catch (error) {
+      console.error("Error deleting webhook config:", error);
+      toast.error("Error al eliminar la configuracion de webhook");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const webHookConfigRemoved = () => {
+    // Actualizar la interfaz de usuario después de eliminar la configuración del webhook
+    setWebhookToken("");
+    setWebhookUrl("");
+    queryClient.invalidateQueries({ queryKey: ["webhook-config"] });
   };
 
   return (
     <div className="space-y-6 animate-fade-in">
       <h1 className="text-2xl font-bold">Campañas</h1>
 
+      {/* Modal de confirmación para eliminar webhook */}
+      <Dialog open={showWebhookDeleteModal} onOpenChange={setShowWebhookDeleteModal}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Confirmar desactivación</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p>¿Estás seguro que deseas desactivar este webhook? Esta acción eliminará la configuración actual.</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowWebhookDeleteModal(false)}
+              disabled={loading}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleWebhookDelete}
+              disabled={loading}
+            >
+              {loading ? "Desactivando..." : "Desactivar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Botones de conexión */}
       <div className="flex gap-4">
+        {/* Botón de Facebook - Oculto */}
+        {/*
         <Dialog open={isFacebookModalOpen} onOpenChange={setIsFacebookModalOpen}>
           <DialogTrigger asChild>
             <Button variant="outline" className="w-[200px]">
@@ -1404,183 +1539,12 @@ const Campanas = () => {
               Conectar Facebook
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
-            <DialogHeader>
-              <DialogTitle>Conectar con Facebook</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              {facebookConfig ? (
-                <div className="space-y-4">
-                  {!isEditingToken ? (
-                    <>
-                      <div className="bg-green-50 border border-green-200 rounded-md p-4">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="text-sm text-green-800">
-                              ✓ Conexión activa con Facebook
-                            </p>
-                            <p className="text-xs text-green-600">
-                              Último uso: {new Date(facebookConfig.last_used).toLocaleString()}
-                            </p>
-                            <p className="text-xs text-green-600">
-                              Expira: {new Date(facebookConfig.expires_at).toLocaleDateString()}
-                            </p>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setIsEditingToken(true)}
-                          >
-                            Reconfigurar Token
-                          </Button>
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <Label>Agregar Formulario de Facebook</Label>
-                          <div className="space-y-4 border rounded-md p-4">
-                            <div className="space-y-2">
-                              <Label>ID del Formulario</Label>
-                              <div className="flex gap-2">
-                                <Input
-                                  placeholder="Ej: 123456789"
-                                  value={selectedPageId}
-                                  onChange={(e) => setSelectedPageId(e.target.value)}
-                                />
-                                <Button 
-                                  onClick={() => saveFormById(selectedPageId)}
-                                  disabled={!selectedPageId}
-                                >
-                                  Agregar
-                                </Button>
-                              </div>
-                              <div className="text-sm text-muted-foreground space-y-1">
-                                <p>Para encontrar el ID del formulario:</p>
-                                <ol className="list-decimal list-inside space-y-1 pl-2">
-                                  <li>Ve a Meta Business Suite (business.facebook.com)</li>
-                                  <li>En el menú lateral, ve a "Todos los Herramientas" {'>'} "Formularios de clientes potenciales"</li>
-                                  <li>Selecciona la página que contiene el formulario</li>
-                                  <li>Haz clic en el formulario que deseas importar</li>
-                                  <li>En "Detalles del formulario", busca el "Identificador del formulario"</li>
-                                  <li>El ID es un número como: 416172877562699</li>
-                                </ol>
-                                <p className="mt-2 text-xs font-medium">
-                                  Requisitos:
-                                </p>
-                                <ul className="list-disc list-inside text-xs pl-2">
-                                  <li>Debes ser administrador de la página que contiene el formulario</li>
-                                  <li>El formulario debe estar activo</li>
-                                  <li>El formulario debe pertenecer a una de tus páginas</li>
-                                </ul>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Lista de Formularios guardados */}
-                        {savedForms && savedForms.length > 0 && (
-                          <div className="space-y-2">
-                            <Label>Formularios Conectados ({savedForms.length})</Label>
-                            <div className="max-h-[400px] overflow-y-auto space-y-2 border rounded-md p-4">
-                              {savedForms.map(form => (
-                                <div key={form.id} className="flex items-center justify-between p-3 border rounded-md bg-white">
-                                  <div>
-                                    <p className="font-medium">{form.name}</p>
-                                    <div className="text-sm text-muted-foreground space-y-1">
-                                      <p>ID: {form.form_id}</p>
-                                      <p>Estado: {form.status} | Leads: {form.leads_count}</p>
-                                      {form.last_import && (
-                                        <p>Última importación: {new Date(form.last_import).toLocaleString()}</p>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <Button
-                                      size="sm"
-                                      onClick={() => importLeadsFromForm(form.form_id)}
-                                      disabled={form.status !== 'ACTIVE'}
-                                    >
-                                      Importar Leads
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="destructive"
-                                      onClick={async () => {
-                                        if (confirm('¿Estás seguro de que deseas eliminar este formulario?')) {
-                                          await supabase
-                                            .from("facebook_forms")
-                                            .update({ is_active: false })
-                                            .eq("id", form.id);
-                                          refetchForms();
-                                          toast.success('Formulario eliminado');
-                                        }
-                                      }}
-                                    >
-                                      Eliminar
-                                    </Button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="space-y-4">
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
-                        <p className="text-sm text-yellow-800">
-                          Reconfigurando token de acceso
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Nuevo Token de Acceso de Facebook</Label>
-                        <Input
-                          type="password"
-                          placeholder="Ingresa el nuevo token de acceso"
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              saveFacebookToken(e.target.value)
-                                .then(() => setIsEditingToken(false));
-                            }
-                          }}
-                        />
-                        <div className="flex justify-end gap-2 mt-2">
-                          <Button
-                            variant="outline"
-                            onClick={() => setIsEditingToken(false)}
-                          >
-                            Cancelar
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Token de Acceso de Facebook</Label>
-                    <Input
-                      type="password"
-                      placeholder="Ingresa el token de acceso de larga duración"
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          saveFacebookToken(e.target.value);
-                        }
-                      }}
-                    />
-                    <p className="text-sm text-muted-foreground">
-                      Ingresa el token de acceso de larga duración obtenido desde Facebook Business
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </DialogContent>
+          ...resto del código del diálogo...
         </Dialog>
+        */}
 
+        {/* Botón de Webhook - Oculto */}
+        {/*
         <Dialog open={isWebhookModalOpen} onOpenChange={setIsWebhookModalOpen}>
           <DialogTrigger asChild>
             <Button variant="outline" className="w-[200px]">
@@ -1588,35 +1552,98 @@ const Campanas = () => {
               {webhookConfig?.is_active ? "Webhook Conectado" : "Conectar Web"}
             </Button>
           </DialogTrigger>
+          ...resto del código del diálogo...
+        </Dialog>
+        */}
+
+        <Dialog open={isMakeWebhookModalOpen} onOpenChange={setIsMakeWebhookModalOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline" className="w-[200px]">
+              <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+              Conectar con Make
+            </Button>
+          </DialogTrigger>
           <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
-              <DialogTitle>Configurar Webhook para Elementor</DialogTitle>
+              <DialogTitle>Configurar Make para Facebook Leads</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              {webhookConfig?.is_active ? (
+              {makeWebhookToken ? (
                 <>
                   <div className="bg-green-50 border border-green-200 rounded-md p-4 space-y-2">
                     <p className="text-sm text-green-800">
-                      ✓ El webhook está activo y recibiendo leads
+                      ✓ El webhook está listo para ser usado con Make
                     </p>
-                    <p className="text-sm text-green-600">
-                      Leads recibidos hoy: {todayLeadsCount}
-                    </p>
+                    {makeLeadsCount > 0 && (
+                      <p className="text-sm text-green-600">
+                        Leads recibidos desde Facebook en los últimos 30 días: {makeLeadsCount}
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-2">
-                    <Label>URL del Webhook</Label>
+                    <Label>URL del Webhook para Make</Label>
                     <div className="flex gap-2">
-                      <Input value={webhookUrl} readOnly />
-                      <Button onClick={copyWebhookUrl}>
+                      <Input value={makeWebhookUrl} readOnly />
+                      <Button onClick={copyMakeWebhookUrl}>
                         Copiar
                       </Button>
                     </div>
                   </div>
 
-                  {recentWebhookLeads.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Probar el Webhook</Label>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        className="w-full"
+                        onClick={async () => {
+                          try {
+                            toast.loading("Enviando datos de prueba...");
+                            
+                            const testData = {
+                              nombre_completo: "Cliente Prueba",
+                              email: "prueba@ejemplo.com",
+                              telefono: "123456789",
+                              origen: "Test desde UI",
+                              observaciones: "Lead de prueba generado manualmente"
+                            };
+                            
+                            const response = await fetch(makeWebhookUrl, {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json'
+                              },
+                              body: JSON.stringify(testData)
+                            });
+                            
+                            const result = await response.json();
+                            
+                            if (response.ok) {
+                              toast.success("Prueba exitosa: Lead de prueba creado correctamente");
+                              refetch(); // Actualizar los datos para mostrar el nuevo lead
+                            } else {
+                              throw new Error(result.message || "Error en la respuesta del servidor");
+                            }
+                          } catch (error) {
+                            console.error("Error al probar webhook:", error);
+                            toast.error(`Error: ${error instanceof Error ? error.message : "Error desconocido"}`);
+                          }
+                        }}
+                      >
+                        Enviar Lead de Prueba
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Esto enviará datos de prueba al webhook para verificar que todo está configurado correctamente
+                    </p>
+                  </div>
+
+                  {recentMakeLeads.length > 0 && (
                     <div className="space-y-2">
-                      <Label>Últimos leads recibidos:</Label>
+                      <Label>Últimos leads de Facebook recibidos:</Label>
                       <div className="rounded-md border overflow-hidden">
                         <Table>
                           <TableHeader>
@@ -1624,17 +1651,17 @@ const Campanas = () => {
                               <TableHead>Nombre</TableHead>
                               <TableHead>Email</TableHead>
                               <TableHead>Teléfono</TableHead>
-                              <TableHead>Hora</TableHead>
+                              <TableHead>Fecha</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {recentWebhookLeads.map((lead) => (
+                            {recentMakeLeads.map((lead) => (
                               <TableRow key={lead.id}>
                                 <TableCell>{lead.nombre_completo}</TableCell>
                                 <TableCell>{lead.email}</TableCell>
                                 <TableCell>{lead.telefono}</TableCell>
                                 <TableCell>
-                                  {new Date(lead.created_at).toLocaleTimeString()}
+                                  {new Date(lead.created_at).toLocaleString()}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -1644,16 +1671,156 @@ const Campanas = () => {
                     </div>
                   )}
 
+                  <div className="space-y-2">
+                    <Label>Formato de datos esperado</Label>
+                    <div className="rounded-md bg-gray-50 p-4 text-sm font-mono">
+                      {`{
+  "nombre_completo": "Nombre del lead",
+  "email": "email@ejemplo.com",
+  "telefono": "+123456789",
+  "origen": "Facebook",
+  "observaciones": "Lead de Facebook via Make"
+}`}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Configuración en Make</Label>
+                    <ol className="list-decimal list-inside space-y-2 text-sm">
+                      <li>Crea un escenario en Make.com</li>
+                      <li>Añade un módulo trigger "Facebook Lead Ads"</li>
+                      <li>Selecciona tu página y formulario</li>
+                      <li>Añade un módulo HTTP para enviar datos a este webhook</li>
+                      <li>Mapea los campos según el formato mostrado arriba</li>
+                    </ol>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Guía detallada</Label>
+                    <Accordion type="single" collapsible className="w-full">
+                      <AccordionItem value="config-make">
+                        <AccordionTrigger>Configuración paso a paso</AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-4 text-sm">
+                            <div className="space-y-2">
+                              <h4 className="font-semibold">1. Crear un escenario en Make</h4>
+                              <ul className="list-disc list-inside pl-2 space-y-1">
+                                <li>Inicia sesión en <a href="https://www.make.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Make.com</a></li>
+                                <li>Haz clic en "Crear un nuevo escenario"</li>
+                                <li>Elige un nombre descriptivo (ej. "Facebook Leads a CRM")</li>
+                              </ul>
+                            </div>
+
+                            <div className="space-y-2">
+                              <h4 className="font-semibold">2. Configurar Facebook Lead Ads</h4>
+                              <ul className="list-disc list-inside pl-2 space-y-1">
+                                <li>Busca y selecciona el módulo "Facebook Lead Ads" como trigger</li>
+                                <li>Crea una conexión con Facebook (sigue los pasos de autenticación)</li>
+                                <li>Selecciona la página de Facebook que contiene el formulario</li>
+                                <li>Elige el formulario de leads específico</li>
+                                <li>Configura la frecuencia de verificación (recomendado: 15 minutos)</li>
+                              </ul>
+                            </div>
+
+                            <div className="space-y-2">
+                              <h4 className="font-semibold">3. Añadir módulo HTTP</h4>
+                              <ul className="list-disc list-inside pl-2 space-y-1">
+                                <li>Añade un nuevo módulo y selecciona "HTTP"</li>
+                                <li>Configura el método como "POST"</li>
+                                <li>En URL, pega la URL del webhook mostrada arriba</li>
+                                <li>En "Tipo de contenido", selecciona "application/json"</li>
+                              </ul>
+                            </div>
+
+                            <div className="space-y-2">
+                              <h4 className="font-semibold">4. Mapear los campos</h4>
+                              <ul className="list-disc list-inside pl-2 space-y-1">
+                                <li>En el cuerpo de la solicitud, configura un objeto JSON con:</li>
+                                <li className="pl-4">nombre_completo: Mapea al campo de nombre completo del lead</li>
+                                <li className="pl-4">email: Mapea al campo de email del lead</li>
+                                <li className="pl-4">telefono: Mapea al campo de teléfono del lead</li>
+                                <li className="pl-4">origen: Escribe "Facebook" o el nombre de la campaña</li>
+                                <li className="pl-4">observaciones: Puedes incluir información adicional</li>
+                              </ul>
+                              <div className="bg-gray-50 p-3 rounded-md font-mono text-xs">
+                                {`{
+  "nombre_completo": {{1.lead_id.field_data.full_name.values.[0]}},
+  "email": {{1.lead_id.field_data.email.values.[0]}},
+  "telefono": {{1.lead_id.field_data.phone_number.values.[0]}},
+  "origen": "Facebook",
+  "observaciones": "Formulario: {{1.form_id.name}}"
+}`}
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <h4 className="font-semibold">5. Activar el escenario</h4>
+                              <ul className="list-disc list-inside pl-2 space-y-1">
+                                <li>Guarda el escenario haciendo clic en "Guardar"</li>
+                                <li>Activa el escenario con el botón "Ejecutar una vez" para probar</li>
+                                <li>Si no hay errores, activa la programación para que se ejecute automáticamente</li>
+                              </ul>
+                            </div>
+
+                            <div className="p-3 bg-blue-50 border border-blue-100 rounded-md">
+                              <p className="text-blue-800 font-medium">Consejos:</p>
+                              <ul className="list-disc list-inside pl-2 text-blue-700">
+                                <li>Puedes añadir filtros para procesar solo ciertos leads</li>
+                                <li>Configura notificaciones de error para que te alerten si algo falla</li>
+                                <li>En la primera ejecución, Make puede procesar leads anteriores</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                      
+                      <AccordionItem value="troubleshooting">
+                        <AccordionTrigger>Solución de problemas</AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-4 text-sm">
+                            <div className="space-y-2">
+                              <h4 className="font-semibold">Problemas comunes</h4>
+                              <ul className="list-disc list-inside pl-2 space-y-1">
+                                <li><span className="font-medium">Los leads no llegan:</span> Verifica que el escenario esté activo y que el webhook URL sea correcto</li>
+                                <li><span className="font-medium">Error de formato:</span> Asegúrate de que el formato JSON sea exactamente como se muestra</li>
+                                <li><span className="font-medium">Campos faltantes:</span> Algunos formularios pueden tener nombres de campo diferentes, ajusta el mapeo</li>
+                                <li><span className="font-medium">Límites de Make:</span> Verifica los límites de operaciones de tu plan en Make</li>
+                              </ul>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <h4 className="font-semibold">Para probar el webhook</h4>
+                              <ul className="list-disc list-inside pl-2 space-y-1">
+                                <li>Puedes usar Postman o similar para enviar un POST con datos de prueba</li>
+                                <li>Asegúrate de incluir al menos los campos obligatorios (nombre_completo, email)</li>
+                              </ul>
+                              <div className="bg-gray-50 p-3 rounded-md font-mono text-xs">
+                                {`// Ejemplo de datos para prueba
+{
+  "nombre_completo": "Cliente Prueba",
+  "email": "prueba@ejemplo.com",
+  "telefono": "123456789",
+  "origen": "Facebook Test",
+  "observaciones": "Lead de prueba"
+}`}
+                              </div>
+                            </div>
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
+                  </div>
+
                   <div className="flex justify-end gap-2">
                     <Button
                       variant="outline"
-                      onClick={() => setIsWebhookModalOpen(false)}
+                      onClick={() => setIsMakeWebhookModalOpen(false)}
                     >
                       Cerrar
                     </Button>
                     <Button 
                       variant="destructive"
-                      onClick={deactivateWebhook}
+                      onClick={deactivateMakeWebhook}
                     >
                       Desactivar Webhook
                     </Button>
@@ -1662,36 +1829,26 @@ const Campanas = () => {
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground">
-                    Sigue estos pasos para conectar tu formulario de Elementor:
+                    Configura un webhook para recibir leads de Facebook a través de Make:
                   </p>
                   
                   <div className="space-y-4">
                     <ol className="list-decimal list-inside space-y-2 text-sm">
                       <li>Genera un token único para tu webhook</li>
-                      <li>Copia la URL del webhook</li>
-                      <li>En Elementor, configura una acción después del envío del formulario</li>
-                      <li>Selecciona "Webhook" y pega la URL</li>
-                      <li>Asegúrate de que los campos del formulario tengan los siguientes nombres:
-                        <ul className="list-disc list-inside ml-4 mt-1 text-muted-foreground">
-                          <li>nombre_completo</li>
-                          <li>email</li>
-                          <li>telefono</li>
-                          <li>origen (opcional)</li>
-                          <li>pais (opcional)</li>
-                          <li>observaciones (opcional)</li>
-                        </ul>
-                      </li>
+                      <li>Usa la URL generada en tu escenario de Make</li>
+                      <li>Conecta Facebook Lead Ads con Make</li>
+                      <li>Configura Make para enviar los datos a este webhook</li>
                     </ol>
                   </div>
 
                   <div className="flex justify-end gap-2">
                     <Button
                       variant="outline"
-                      onClick={() => setIsWebhookModalOpen(false)}
+                      onClick={() => setIsMakeWebhookModalOpen(false)}
                     >
                       Cancelar
                     </Button>
-                    <Button onClick={generateWebhookToken}>
+                    <Button onClick={generateMakeWebhookToken}>
                       Generar Token
                     </Button>
                   </div>
