@@ -54,6 +54,7 @@ const LeadsTable = ({
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [isSeleccionarTodosOpen, setIsSeleccionarTodosOpen] = useState(false);
 
   const { data: users } = useQuery({
     queryKey: ["users"],
@@ -410,6 +411,99 @@ const LeadsTable = ({
     enabled: !!currentUser,
   });
 
+  // Función para seleccionar todos los leads que coinciden con los filtros actuales
+  const selectAllFilteredLeads = useMutation({
+    mutationFn: async () => {
+      if (!currentUser) return { leadIds: [] };
+
+      let baseQuery = supabase
+        .from("leads")
+        .select("id");
+      
+      // Aplicar los mismos filtros que en la consulta principal
+      if (filters.asignado === "my_leads") {
+        baseQuery = baseQuery.eq('asignado_a', currentUser.id);
+      } else if (filters.asignado !== "all") {
+        baseQuery = baseQuery.eq('asignado_a', filters.asignado);
+      } else if (currentUser.user_position !== USER_ROLES.CEO && 
+          currentUser.user_position !== USER_ROLES.DIRECTOR_NACIONAL && 
+          currentUser.user_position !== USER_ROLES.DIRECTOR_INTERNACIONAL) {
+        
+        if (currentUser.user_position === USER_ROLES.ASESOR_TRAINING) {
+          baseQuery = baseQuery.eq('asignado_a', currentUser.id);
+        } else {
+          const { data: subordinateUsers } = await supabase
+            .from("users")
+            .select("id, user_position, estructuras!inner(id)")
+            .in("user_position", ROLE_HIERARCHY[currentUser.user_position] || [])
+            .eq("estructuras.id", currentUser.estructuras?.[0]?.id);
+
+          const subordinateIds = subordinateUsers?.map(u => u.id) || [];
+          if (subordinateIds.length > 0) {
+            baseQuery = baseQuery.in('asignado_a', [currentUser.id, ...subordinateIds]);
+          } else {
+            baseQuery = baseQuery.eq('asignado_a', currentUser.id);
+          }
+        }
+      }
+
+      // Aplicar filtros de búsqueda
+      if (filters.nombre) {
+        baseQuery = baseQuery.ilike('nombre_completo', `%${filters.nombre}%`);
+      }
+      if (filters.telefono) {
+        baseQuery = baseQuery.ilike('telefono', `%${filters.telefono}%`);
+      }
+      if (filters.origen !== "all") {
+        baseQuery = baseQuery.eq('origen', filters.origen);
+      }
+      if (filters.estado !== "all") {
+        baseQuery = baseQuery.eq('estado', filters.estado);
+      }
+      if (dateRange?.from) {
+        baseQuery = baseQuery.gte('created_at', dateRange.from.toISOString());
+      }
+      if (dateRange?.to) {
+        baseQuery = baseQuery.lte('created_at', dateRange.to.toISOString());
+      }
+
+      const { data, error } = await baseQuery;
+      
+      if (error) throw error;
+
+      return { leadIds: data.map(lead => lead.id) };
+    },
+    onSuccess: (data) => {
+      // Seleccionar todos los IDs obtenidos
+      if (data.leadIds.length > 0) {
+        data.leadIds.forEach(id => {
+          if (!selectedLeads.includes(id)) {
+            onSelectLead?.(id, true);
+          }
+        });
+        toast.success(`Se han seleccionado ${data.leadIds.length} leads`);
+      } else {
+        toast.info("No se encontraron leads para seleccionar");
+      }
+      setIsSeleccionarTodosOpen(false);
+    },
+    onError: (error) => {
+      toast.error("Error al seleccionar todos los leads");
+      console.error("Error selecting all leads:", error);
+      setIsSeleccionarTodosOpen(false);
+    }
+  });
+
+  // Función para deseleccionar todos los leads
+  const deselectAllLeads = () => {
+    if (selectedLeads.length > 0) {
+      selectedLeads.forEach(id => {
+        onSelectLead?.(id, false);
+      });
+      toast.success(`Se han deseleccionado ${selectedLeads.length} leads`);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
@@ -669,6 +763,57 @@ const LeadsTable = ({
         </p>
       </div>
 
+      {showCheckboxes && (
+        <div className="flex justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-700">
+              {selectedLeads.length} leads seleccionados
+            </span>
+            {selectedLeads.length > 0 && (
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={deselectAllLeads}
+              >
+                Deseleccionar todos
+              </Button>
+            )}
+          </div>
+          <Popover open={isSeleccionarTodosOpen} onOpenChange={setIsSeleccionarTodosOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm">
+                Seleccionar todos los filtrados
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-4" align="end">
+              <div className="space-y-4">
+                <h4 className="font-medium">¿Seleccionar todos los leads?</h4>
+                <p className="text-sm text-gray-500">
+                  Esta acción seleccionará todos los leads que coinciden con tus filtros actuales ({leadsSummary?.total || 0} leads en total).
+                </p>
+                <div className="flex justify-end gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setIsSeleccionarTodosOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button 
+                    variant="default" 
+                    size="sm"
+                    onClick={() => selectAllFilteredLeads.mutate()}
+                    disabled={selectAllFilteredLeads.isPending}
+                  >
+                    {selectAllFilteredLeads.isPending ? "Seleccionando..." : "Confirmar"}
+                  </Button>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      )}
+
       <div className="rounded-md border">
         <Table className="text-sm">
           <TableHeader>
@@ -778,11 +923,12 @@ const LeadsTable = ({
                   <SelectValue placeholder="10" />
                 </SelectTrigger>
                 <SelectContent>
-                  {[10, 15, 20, 30, 50].map((value) => (
-                    <SelectItem key={value} value={value.toString()}>
-                      {value}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                  <SelectItem value="250">250</SelectItem>
+                  <SelectItem value="500">500</SelectItem>
                 </SelectContent>
               </Select>
             </div>
