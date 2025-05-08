@@ -337,7 +337,7 @@ const Campanas = () => {
           filial: values[5] || "",
           observaciones: values[6] || "",
         };
-      }).filter(lead => lead.nombre_completo && lead.email && lead.telefono);
+      }).filter(lead => lead.nombre_completo && lead.telefono); // Removida la validación de email
 
       setCsvData(parsedData);
       setPreviewData(parsedData.slice(0, 5));
@@ -584,10 +584,10 @@ const Campanas = () => {
 
       // 2. Preparar los leads para la tabla leads
       const leadsToInsert = csvData
-        .filter(lead => lead.nombre_completo && lead.email)
+        .filter(lead => lead.nombre_completo) // Solo validar nombre_completo
         .map(lead => ({
           nombre_completo: lead.nombre_completo,
-          email: lead.email,
+          email: lead.email || null, // Permitir email nulo
           telefono: lead.telefono || null,
           origen: "Batch",
           pais: lead.pais || null,
