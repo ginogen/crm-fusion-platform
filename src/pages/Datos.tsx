@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { MANAGEMENT_TYPES, REJECTION_REASONS } from "@/lib/constants";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LeadHistorialSheet } from "@/components/leads/LeadHistorialSheet";
+import { GestionTipo } from "@/lib/types";
 
 const formatHistoryDetails = (details: string) => {
   try {
@@ -247,7 +248,7 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
 };
 
 const GestionModal = ({ lead, isOpen, onClose, initialData }: { lead: any, isOpen: boolean, onClose: () => void, initialData?: any }) => {
-  const [tipo, setTipo] = useState<string>(initialData?.tipo || "");
+  const [tipo, setTipo] = useState<GestionTipo | "">(initialData?.tipo || "");
   const [fecha, setFecha] = useState<Date | undefined>(initialData?.fecha ? new Date(initialData.fecha) : undefined);
   const [observaciones, setObservaciones] = useState(initialData?.observaciones || "");
   const [razonRechazo, setRazonRechazo] = useState<string>("");
@@ -327,6 +328,11 @@ const GestionModal = ({ lead, isOpen, onClose, initialData }: { lead: any, isOpe
           .from("leads")
           .update({ estado: "CITA_PROGRAMADA" })
           .eq("id", lead.id);
+      } else if (tipo === "NO_INTERESA" || tipo === "SIN_RESPUESTA") {
+        await supabase
+          .from("leads")
+          .update({ estado: "RECHAZADO" })
+          .eq("id", lead.id);
       }
     },
     onSuccess: () => {
@@ -348,7 +354,7 @@ const GestionModal = ({ lead, isOpen, onClose, initialData }: { lead: any, isOpe
     }
   });
 
-  const handleTipoChange = (value: string) => {
+  const handleTipoChange = (value: GestionTipo) => {
     setTipo(value);
     setRazonRechazo("");
   };

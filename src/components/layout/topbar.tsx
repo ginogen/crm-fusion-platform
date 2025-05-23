@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useAuth } from '../../lib/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
+import { GestionTipo } from "@/lib/types";
 
 type Lead = {
   id: string;
@@ -31,7 +32,7 @@ type Notification = {
 type Tarea = {
   id: string;
   lead_id: string;
-  tipo: string;
+  tipo: GestionTipo;
   fecha: string;
   observaciones: string;
   rechazo_reason?: string;

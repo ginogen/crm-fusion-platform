@@ -124,7 +124,8 @@ export const LeadHistorialSheet = ({ lead, isOpen, onClose }: LeadHistorialSheet
                   lead?.estado === "SIN_LLAMAR" && "bg-gray-100 text-gray-800",
                   lead?.estado === "LLAMAR_DESPUES" && "bg-blue-100 text-blue-800",
                   lead?.estado === "CITA_PROGRAMADA" && "bg-yellow-100 text-yellow-800",
-                  lead?.estado === "MATRICULA" && "bg-green-100 text-green-800"
+                  lead?.estado === "MATRICULA" && "bg-green-100 text-green-800",
+                  lead?.estado === "RECHAZADO" && "bg-red-100 text-red-800"
                 )}>
                   {LEAD_STATUS_LABELS[lead?.estado as LeadEstado] || lead?.estado}
                 </div>

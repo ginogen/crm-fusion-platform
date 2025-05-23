@@ -1,4 +1,4 @@
-export type LeadEstado = "SIN_LLAMAR" | "LLAMAR_DESPUES" | "CITA_PROGRAMADA" | "MATRICULA";
+export type LeadEstado = "SIN_LLAMAR" | "LLAMAR_DESPUES" | "CITA_PROGRAMADA" | "MATRICULA" | "RECHAZADO";
 
 export type UserRole = 
   | 'ASESOR_TRAINING'
@@ -11,6 +11,17 @@ export type UserRole =
   | 'DIRECTOR_NACIONAL'
   | 'DIRECTOR_INTERNACIONAL'
   | 'CEO';
+
+export type GestionTipo = 
+  | 'CITA'
+  | 'LLAMADA'
+  | 'NO_INTERESA'
+  | 'NUMERO_EQUIVOCADO'
+  | 'DATO_DUPLICADO'
+  | 'SIN_RESPUESTA'
+  | 'NO_EXISTE'
+  | 'TOMO_PROGRAMA'
+  | 'NO_CUMPLE_REQUISITO';
 
 export interface User {
   id: number;

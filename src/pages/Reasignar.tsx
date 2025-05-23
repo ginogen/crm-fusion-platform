@@ -21,6 +21,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { LeadHistorialSheet } from "@/components/leads/LeadHistorialSheet";
 import ModifyLeadsDialog from "@/components/leads/ModifyLeadsDialog";
+import { GestionTipo } from "@/lib/types";
 
 const formatHistoryDetails = (details: string) => {
   try {
@@ -202,7 +203,7 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
 };
 
 const GestionModal = ({ lead, isOpen, onClose, initialData }: { lead: any, isOpen: boolean, onClose: () => void, initialData?: any }) => {
-  const [tipo, setTipo] = useState<string>(initialData?.tipo || "");
+  const [tipo, setTipo] = useState<GestionTipo | "">(initialData?.tipo || "");
   const [fecha, setFecha] = useState<Date | undefined>(initialData?.fecha ? new Date(initialData.fecha) : undefined);
   const [observaciones, setObservaciones] = useState(initialData?.observaciones || "");
   const [razonRechazo, setRazonRechazo] = useState<string>("");
@@ -303,7 +304,7 @@ const GestionModal = ({ lead, isOpen, onClose, initialData }: { lead: any, isOpe
     }
   });
 
-  const handleTipoChange = (value: string) => {
+  const handleTipoChange = (value: GestionTipo) => {
     setTipo(value);
     setRazonRechazo("");
   };

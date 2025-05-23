@@ -41,6 +41,7 @@ interface BatchLead {
   estado: string;
   batch_id: number;
   created_at?: string;
+  asignado_a?: number | null;
   user?: {
     id: number;
     nombre_completo: string;
@@ -55,6 +56,7 @@ interface Batch {
   campaign_name: string | null;
   created_at: string;
   leads: BatchLead[];
+  batch_estructura_permisos?: BatchEstructuraPermiso[];
 }
 
 interface Estructura {
@@ -76,6 +78,8 @@ interface BatchEstructuraPermiso {
     tipo: estructura_tipo;
     nombre: string;
     custom_name: string;
+    parent_id?: number | null;
+    parent_estructura_id?: number | null;
   };
 }
 
@@ -205,6 +209,8 @@ const Campanas = () => {
   const [showEvacuacionModal, setShowEvacuacionModal] = useState(false);
   const [evacuacionEmpresa, setEvacuacionEmpresa] = useState<number | null>(null);
   const [evacuacionPais, setEvacuacionPais] = useState<number | null>(null);
+  const [selectedBatchForUpload, setSelectedBatchForUpload] = useState<number | null>(null);
+  const [isAddingLeadsModalOpen, setIsAddingLeadsModalOpen] = useState(false);
 
   const { data: batches, refetch } = useQuery({
     queryKey: ["batches"],
@@ -420,30 +426,37 @@ const Campanas = () => {
 
       console.log('IDs de todas las estructuras:', estructurasIds);
 
-      // 4. Obtener usuarios activos vinculados a las estructuras
+      // 4. Obtener usuarios activos vinculados a las estructuras y verificar su estado de actividad
       const { data: usuarios } = await supabase
         .from("users")
         .select(`
           id,
           nombre_completo,
           email,
-          estructura_id
+          estructura_id,
+          user_activity!inner (
+            last_active,
+            is_online
+          )
         `)
         .in("estructura_id", estructurasIds)
-        .eq("is_active", true);
+        .eq("is_active", true)
+        .eq("user_activity.is_online", true)
+        .gte("user_activity.last_active", new Date(Date.now() - 15 * 60 * 1000).toISOString()); // Últimos 15 minutos
 
-      console.log('Usuarios encontrados:', usuarios);
+      console.log('Usuarios activos encontrados:', usuarios);
 
       if (!usuarios?.length) {
-        toast.error("No hay usuarios disponibles para asignar los leads");
+        toast.error("No hay usuarios activos disponibles para asignar los leads");
         return;
       }
 
-      // 5. Obtener los leads del batch que no están asignados
+      // 5. Obtener los leads del batch que no están asignados y SOLO tienen estado SIN_LLAMAR
       const { data: batchLeads, error: leadsError } = await supabase
         .from("leads")
         .select("*")
         .eq("batch_id", batchId)
+        .eq("estado", "SIN_LLAMAR") // Solo leads SIN_LLAMAR
         .is("asignado_a", null);
 
       if (leadsError) {
@@ -458,14 +471,14 @@ const Campanas = () => {
         return;
       }
 
-      // 6. Distribuir los leads entre los usuarios (10 leads por usuario)
+      // 6. Distribuir los leads entre los usuarios activos (10 leads por usuario)
       const leadsUpdates = [];
       const LEADS_POR_USUARIO = 10;
       let leadIndex = 0;
 
       // Distribuir leads mientras haya disponibles
       while (leadIndex < batchLeads.length) {
-        // Iterar sobre cada usuario
+        // Iterar sobre cada usuario activo
         for (const usuario of usuarios) {
           // Asignar hasta 10 leads a este usuario
           const leadsParaUsuario = Math.min(
@@ -481,7 +494,7 @@ const Campanas = () => {
             if (leadIndex < batchLeads.length) {
               leadsUpdates.push({
                 id: batchLeads[leadIndex].id,
-                estado: "SIN_LLAMAR",
+                estado: "SIN_LLAMAR", // Mantener el estado SIN_LLAMAR
                 asignado_a: usuario.id,
                 origen: "Batch",
                 updated_at: new Date().toISOString()
@@ -507,7 +520,7 @@ const Campanas = () => {
       }
 
       await refetch();
-      toast.success(`${leadsUpdates.length} leads distribuidos entre ${usuarios.length} usuarios`);
+      toast.success(`${leadsUpdates.length} leads distribuidos entre ${usuarios.length} usuarios activos`);
       return true;
 
     } catch (error) {
@@ -1308,11 +1321,11 @@ const Campanas = () => {
     try {
       setLoading(true);
       
-      // Construir la consulta base
+      // Construir la consulta base - ahora incluye tanto SIN_LLAMAR como RECHAZADO
       let query = supabase
         .from("leads")
-        .select("id")
-        .eq("estado", "SIN_LLAMAR")
+        .select("id, estado")
+        .in("estado", ["SIN_LLAMAR", "RECHAZADO"])
         .not("asignado_a", "is", null);
       
       // Si se especificaron empresa y país, filtrar por estructuras
@@ -1362,24 +1375,28 @@ const Campanas = () => {
       }
 
       // Ejecutar la consulta
-      const { data: leadsSinLlamar, error: queryError } = await query;
+      const { data: leadsAEvacuar, error: queryError } = await query;
 
       if (queryError) throw queryError;
 
-      if (leadsSinLlamar?.length) {
-        // Actualizar los leads quitando la asignación
+      if (leadsAEvacuar?.length) {
+        // Actualizar los leads quitando la asignación pero manteniendo su estado
         const { error: updateError } = await supabase
           .from("leads")
           .update({
             asignado_a: null,
             updated_at: new Date().toISOString()
           })
-          .in("id", leadsSinLlamar.map(lead => lead.id));
+          .in("id", leadsAEvacuar.map(lead => lead.id));
 
         if (updateError) throw updateError;
 
-        console.log(`${leadsSinLlamar.length} leads evacuados`);
-        toast.success(`${leadsSinLlamar.length} leads han sido evacuados correctamente`);
+        // Contar leads por estado para el mensaje
+        const sinLlamarCount = leadsAEvacuar.filter(lead => lead.estado === "SIN_LLAMAR").length;
+        const rechazadosCount = leadsAEvacuar.filter(lead => lead.estado === "RECHAZADO").length;
+
+        console.log(`${leadsAEvacuar.length} leads evacuados (${sinLlamarCount} SIN_LLAMAR, ${rechazadosCount} RECHAZADO)`);
+        toast.success(`${leadsAEvacuar.length} leads evacuados (${sinLlamarCount} SIN_LLAMAR, ${rechazadosCount} RECHAZADO)`);
         await refetch();
       } else {
         toast.info("No se encontraron leads para evacuar con los criterios seleccionados");
@@ -1556,6 +1573,57 @@ const saveFormById = async (formId: string) => {
     setWebhookToken("");
     setWebhookUrl("");
     queryClient.invalidateQueries({ queryKey: ["webhook-config"] });
+  };
+
+  const handleAddLeadsToBatch = async (batchId: number) => {
+    if (csvData.length === 0) {
+      toast.error("No hay datos para cargar");
+      return;
+    }
+
+    try {
+      // Preparar los leads para la tabla leads
+      const leadsToInsert = csvData
+        .filter(lead => lead.nombre_completo) // Solo validar nombre_completo
+        .map(lead => ({
+          nombre_completo: lead.nombre_completo,
+          email: lead.email || null, // Permitir email nulo
+          telefono: lead.telefono || null,
+          origen: "Batch",
+          pais: lead.pais || null,
+          filial: lead.filial || null,
+          observaciones: lead.observaciones || null,
+          estado: "SIN_LLAMAR",
+          batch_id: batchId,
+          is_from_batch: true,
+          is_assigned: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }));
+
+      if (leadsToInsert.length === 0) {
+        throw new Error("No hay leads válidos para cargar");
+      }
+
+      // Insertar leads directamente en la tabla leads
+      const { error: leadsError } = await supabase
+        .from("leads")
+        .insert(leadsToInsert);
+
+      if (leadsError) {
+        throw new Error("Error al cargar los leads");
+      }
+
+      toast.success(`${leadsToInsert.length} leads agregados al batch`);
+      setCsvData([]);
+      setPreviewData([]);
+      setIsAddingLeadsModalOpen(false);
+      refetch();
+
+    } catch (error) {
+      console.error('Error en handleAddLeadsToBatch:', error);
+      toast.error((error as Error).message || "Error al procesar la carga de leads");
+    }
   };
 
   return (
@@ -2098,7 +2166,7 @@ const saveFormById = async (formId: string) => {
         </div>
 
         <Accordion type="multiple" className="space-y-4">
-          {batches?.map((batch) => (
+          {batches?.map((batch: Batch) => (
             <AccordionItem
               key={batch.id}
               value={batch.id.toString()}
@@ -2124,6 +2192,18 @@ const saveFormById = async (formId: string) => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedBatchForUpload(batch.id);
+                        setIsAddingLeadsModalOpen(true);
+                      }}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Agregar Leads
+                    </Button>
                     <div
                       className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded cursor-pointer"
                       onClick={(e) => {
@@ -2335,6 +2415,7 @@ const saveFormById = async (formId: string) => {
                                 ${lead.estado === 'LLAMAR_DESPUES' ? 'bg-blue-100 text-blue-800' :
                                   lead.estado === 'CITA_PROGRAMADA' ? 'bg-yellow-100 text-yellow-800' :
                                   lead.estado === 'MATRICULA' ? 'bg-green-100 text-green-800' :
+                                  lead.estado === 'RECHAZADO' ? 'bg-red-100 text-red-800' :
                                   lead.estado === 'SIN_LLAMAR' ? 'bg-gray-100 text-gray-800' :
                                   'bg-gray-100 text-gray-800'
                                 }`}>
@@ -2356,6 +2437,82 @@ const saveFormById = async (formId: string) => {
           ))}
         </Accordion>
       </div>
+
+      {/* Agregar el nuevo modal para añadir leads a un batch existente */}
+      <Dialog open={isAddingLeadsModalOpen} onOpenChange={setIsAddingLeadsModalOpen}>
+        <DialogContent className="sm:max-w-[700px]">
+          <DialogHeader>
+            <DialogTitle>Agregar Leads al Batch</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <Label>Archivo CSV</Label>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={downloadTemplate}
+                >
+                  Descargar Plantilla
+                </Button>
+              </div>
+              <Input
+                type="file"
+                accept=".csv"
+                onChange={handleFileUpload}
+              />
+            </div>
+
+            {previewData.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="font-medium">Vista Previa (5 primeros registros)</h3>
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nombre</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Teléfono</TableHead>
+                        <TableHead>País</TableHead>
+                        <TableHead>Filial</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {previewData.map((lead, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{lead.nombre_completo}</TableCell>
+                          <TableCell>{lead.email}</TableCell>
+                          <TableCell>{lead.telefono}</TableCell>
+                          <TableCell>{lead.pais}</TableCell>
+                          <TableCell>{lead.filial}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsAddingLeadsModalOpen(false);
+                      setCsvData([]);
+                      setPreviewData([]);
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button 
+                    onClick={() => selectedBatchForUpload && handleAddLeadsToBatch(selectedBatchForUpload)}
+                  >
+                    Agregar {csvData.length} Leads
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

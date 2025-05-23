@@ -26,6 +26,7 @@ import LeadsTable from "@/components/leads/LeadsTable";
 import { LeadHistorialSheet } from "@/components/leads/LeadHistorialSheet";
 import { es } from 'date-fns/locale';
 import { TimePicker } from "@/components/ui/time-picker";
+import { GestionTipo } from "@/lib/types";
 
 const CALENDAR_VIEWS = {
   MONTH: "month",
@@ -199,7 +200,7 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
 };
 
 const GestionModal = ({ lead, isOpen, onClose, initialData }: { lead: any, isOpen: boolean, onClose: () => void, initialData?: any }) => {
-  const [tipo, setTipo] = useState<TipoGestion | "">(initialData?.tipo || "");
+  const [tipo, setTipo] = useState<GestionTipo | "">(initialData?.tipo || "");
   const [fecha, setFecha] = useState<Date | undefined>(initialData?.fecha ? new Date(initialData.fecha) : undefined);
   const [observaciones, setObservaciones] = useState(initialData?.observaciones || "");
   const [razonRechazo, setRazonRechazo] = useState<string>("");
@@ -312,7 +313,7 @@ const GestionModal = ({ lead, isOpen, onClose, initialData }: { lead: any, isOpe
     }
   });
 
-  const handleTipoChange = (value: TipoGestion) => {
+  const handleTipoChange = (value: GestionTipo) => {
     setTipo(value);
     setRazonRechazo("");
   };

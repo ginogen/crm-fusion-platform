@@ -49,6 +49,7 @@ const LeadsTable = ({
     origen: "all",
     estado: "all",
     asignado: "my_leads",
+    pais: "all",
   });
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -106,6 +107,21 @@ const LeadsTable = ({
         .single();
       
       return userData;
+    },
+  });
+
+  const { data: paises } = useQuery({
+    queryKey: ["lead-paises"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("leads")
+        .select("pais")
+        .not("pais", "is", null)
+        .order("pais");
+      
+      // Eliminar duplicados y valores nulos
+      const uniquePaises = [...new Set(data?.map(d => d.pais).filter(Boolean))];
+      return uniquePaises || [];
     },
   });
 
@@ -207,6 +223,10 @@ const LeadsTable = ({
       if (dateRange?.to) {
         baseQuery = baseQuery.lte('created_at', dateRange.to.toISOString());
         console.log('Applied date to filter:', dateRange.to.toISOString());
+      }
+      if (filters.pais !== "all") {
+        baseQuery = baseQuery.eq('pais', filters.pais);
+        console.log('Applied pais filter:', filters.pais);
       }
 
       try {
@@ -392,6 +412,9 @@ const LeadsTable = ({
       if (dateRange?.to) {
         baseQuery = baseQuery.lte('created_at', dateRange.to.toISOString());
       }
+      if (filters.pais !== "all") {
+        baseQuery = baseQuery.eq('pais', filters.pais);
+      }
 
       const { data, error } = await baseQuery;
       
@@ -466,6 +489,9 @@ const LeadsTable = ({
       if (dateRange?.to) {
         baseQuery = baseQuery.lte('created_at', dateRange.to.toISOString());
       }
+      if (filters.pais !== "all") {
+        baseQuery = baseQuery.eq('pais', filters.pais);
+      }
 
       const { data, error } = await baseQuery;
       
@@ -539,6 +565,26 @@ const LeadsTable = ({
               {origenes?.map((origen) => (
                 <SelectItem key={origen} value={origen}>
                   {origen}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <label className="text-sm text-muted-foreground">País</label>
+          <Select
+            value={filters.pais}
+            onValueChange={(value) => setFilters(prev => ({ ...prev, pais: value }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Todos los países" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los países</SelectItem>
+              {paises?.map((pais) => (
+                <SelectItem key={pais} value={pais}>
+                  {pais}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -749,6 +795,11 @@ const LeadsTable = ({
                   ` - ${format(dateRange.to, "dd/MM/yyyy")}`}
               </span>
             )}
+            {filters.pais !== "all" && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                País: {filters.pais}
+              </span>
+            )}
             {!filters.nombre && 
              !filters.telefono && 
              filters.origen === "all" && 
@@ -860,6 +911,7 @@ const LeadsTable = ({
                     lead.estado === "LLAMAR_DESPUES" && "bg-blue-100",
                     lead.estado === "CITA_PROGRAMADA" && "bg-yellow-100",
                     lead.estado === "MATRICULA" && "bg-green-100",
+                    lead.estado === "RECHAZADO" && "bg-red-100 text-red-800"
                   )}>
                     {LEAD_STATUS_LABELS[lead.estado]}
                   </div>
