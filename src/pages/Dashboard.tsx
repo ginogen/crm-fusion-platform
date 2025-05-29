@@ -995,68 +995,171 @@ const Dashboard = () => {
   const [showModifyDialog, setShowModifyDialog] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data: metrics } = useQuery({
-    queryKey: ["dashboard-metrics"],
+  // Obtener el usuario actual
+  const { data: currentUser } = useQuery({
+    queryKey: ["current-user-dashboard"],
     queryFn: async () => {
-      const { data: assigned } = await supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No user found");
+      
+      const { data: userData } = await supabase
+        .from("users")
+        .select(`
+          id,
+          email,
+          nombre_completo,
+          user_position,
+          estructuras (
+            id,
+            tipo,
+            nombre,
+            custom_name,
+            parent_id
+          )
+        `)
+        .eq("id", user.id)
+        .single();
+      
+      return userData;
+    },
+  });
+
+  // Función para obtener los IDs de usuarios que el usuario actual puede ver
+  const getUserIdsForQueries = async () => {
+    if (!currentUser) return [];
+
+    // Si el usuario es CEO, Director Nacional o Internacional, puede ver todos los leads
+    if (
+      currentUser.user_position === USER_ROLES.CEO ||
+      currentUser.user_position === USER_ROLES.DIRECTOR_NACIONAL ||
+      currentUser.user_position === USER_ROLES.DIRECTOR_INTERNACIONAL
+    ) {
+      return null; // null significa "todos los usuarios"
+    }
+
+    // Para Asesor Training, solo sus propios leads
+    if (currentUser.user_position === USER_ROLES.ASESOR_TRAINING) {
+      return [currentUser.id];
+    }
+
+    // Para otros roles, obtener subordinados
+    const { data: subordinateUsers } = await supabase
+      .from("users")
+      .select("id, user_position, estructuras!inner(id)")
+      .in("user_position", ROLE_HIERARCHY[currentUser.user_position] || [])
+      .eq("estructuras.id", currentUser.estructuras?.[0]?.id);
+
+    const subordinateIds = subordinateUsers?.map(u => u.id) || [];
+    return subordinateIds.length > 0 ? [currentUser.id, ...subordinateIds] : [currentUser.id];
+  };
+
+  const { data: metrics } = useQuery({
+    queryKey: ["dashboard-metrics", currentUser],
+    queryFn: async () => {
+      if (!currentUser) return [];
+
+      const userIds = await getUserIdsForQueries();
+
+      // Función helper para aplicar filtros de usuario a las consultas
+      const applyUserFilter = (query: any) => {
+        if (userIds === null) {
+          // No aplicar filtro (ver todos)
+          return query;
+        } else if (userIds.length === 1) {
+          // Un solo usuario
+          return query.eq('asignado_a', userIds[0]);
+        } else {
+          // Múltiples usuarios
+          return query.in('asignado_a', userIds);
+        }
+      };
+
+      // Leads Asignados
+      let assignedQuery = supabase
         .from("leads")
         .select("*", { count: "exact" });
+      assignedQuery = applyUserFilter(assignedQuery);
+      const { data: assigned } = await assignedQuery;
 
-      const { data: pending } = await supabase
+      // Por Evacuar (SIN_LLAMAR)
+      let pendingQuery = supabase
         .from("leads")
         .select("*", { count: "exact" })
         .eq("estado", "SIN_LLAMAR");
+      pendingQuery = applyUserFilter(pendingQuery);
+      const { data: pending } = await pendingQuery;
 
-      const { data: scheduled } = await supabase
+      // Citas Programadas
+      let scheduledQuery = supabase
         .from("leads")
         .select("*", { count: "exact" })
         .eq("estado", "CITA_PROGRAMADA");
+      scheduledQuery = applyUserFilter(scheduledQuery);
+      const { data: scheduled } = await scheduledQuery;
 
-      const { data: enrolled } = await supabase
+      // Matrículas
+      let enrolledQuery = supabase
         .from("leads")
         .select("*", { count: "exact" })
         .eq("estado", "MATRICULA");
+      enrolledQuery = applyUserFilter(enrolledQuery);
+      const { data: enrolled } = await enrolledQuery;
 
       return [
         {
           title: "Leads Asignados",
           value: assigned?.length || 0,
           icon: Users,
-          trend: "+12%",
         },
         {
           title: "Por Evacuar",
           value: pending?.length || 0,
           icon: CalendarCheck2,
-          trend: "-5%",
         },
         {
           title: "Citas Programadas",
           value: scheduled?.length || 0,
           icon: CalendarIcon,
-          trend: "+8%",
         },
         {
           title: "Matrículas",
           value: enrolled?.length || 0,
           icon: GraduationCap,
-          trend: "+15%",
         },
       ];
     },
+    enabled: !!currentUser
   });
 
   const { data: leads } = useQuery({
-    queryKey: ["leads"],
+    queryKey: ["leads", currentUser],
     queryFn: async () => {
-      const { data } = await supabase
+      if (!currentUser) return [];
+
+      const userIds = await getUserIdsForQueries();
+
+      let query = supabase
         .from("leads")
         .select(`
           *,
           users (nombre_completo)
         `);
+
+      // Aplicar filtros de usuario
+      if (userIds === null) {
+        // No aplicar filtro (ver todos)
+      } else if (userIds.length === 1) {
+        // Un solo usuario
+        query = query.eq('asignado_a', userIds[0]);
+      } else {
+        // Múltiples usuarios
+        query = query.in('asignado_a', userIds);
+      }
+
+      const { data } = await query.order('created_at', { ascending: false });
       return data;
     },
+    enabled: !!currentUser
   });
 
   const updateLeadStatus = useMutation({
@@ -1133,15 +1236,6 @@ const Dashboard = () => {
                   {metric.title}
                 </p>
                 <h3 className="text-2xl font-bold mt-2">{metric.value}</h3>
-                <p
-                  className={`text-sm mt-1 ${
-                    metric.trend.startsWith("+")
-                      ? "text-emerald-600"
-                      : "text-rose-600"
-                  }`}
-                >
-                  {metric.trend} vs prev. month
-                </p>
               </div>
               <metric.icon className="h-5 w-5 text-muted-foreground" />
             </div>

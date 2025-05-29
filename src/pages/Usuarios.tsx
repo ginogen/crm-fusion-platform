@@ -119,13 +119,41 @@ const canViewUser = (currentUserPosition: JerarquiaPosicion, targetUserPosition:
 // Función para verificar permisos de edición
 const canEditUsers = (userPosition?: JerarquiaPosicion) => {
   if (!userPosition) return false;
-  return getNivelJerarquico(userPosition) < getNivelJerarquico(RESTRICTED_POSITIONS.ASESOR_TRAINING as JerarquiaPosicion);
+  
+  const allowedPositions = [
+    'CEO',
+    'Director Internacional', 
+    'Director Nacional',
+    'Director de Zona',
+    'Sales Manager'
+  ];
+  
+  return allowedPositions.includes(userPosition);
 };
 
 // Función para verificar si puede crear usuarios
 const canCreateUsers = (userPosition?: JerarquiaPosicion) => {
   if (!userPosition) return false;
-  return getNivelJerarquico(userPosition) < getNivelJerarquico(RESTRICTED_POSITIONS.ASESOR_TRAINING as JerarquiaPosicion);
+  
+  const allowedPositions = [
+    'CEO',
+    'Director Internacional'
+  ];
+  
+  return allowedPositions.includes(userPosition);
+};
+
+// Función para verificar si puede modificar cargos
+const canEditPositions = (userPosition?: JerarquiaPosicion) => {
+  if (!userPosition) return false;
+  
+  const allowedPositions = [
+    'CEO',
+    'Director Internacional',
+    'Director Nacional'
+  ];
+  
+  return allowedPositions.includes(userPosition);
 };
 
 // Agregar esta interfaz
@@ -526,6 +554,17 @@ const Usuarios = () => {
       });
       return;
     }
+
+    // Verificación adicional para modificación de cargos
+    if (field === "user_position" && !canEditPositions(currentUser?.user_position)) {
+      toast({
+        variant: "destructive",
+        title: "Acceso denegado",
+        description: "No tienes permisos para modificar cargos",
+      });
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from("users")
@@ -774,7 +813,7 @@ const Usuarios = () => {
                   <TableCell>{user.email}</TableCell>
                   <TableCell>{user.nombre_completo}</TableCell>
                   <TableCell>
-                    {editingUserId === user.id && editingField === "user_position" ? (
+                    {editingUserId === user.id && editingField === "user_position" && canEditPositions(currentUser?.user_position) ? (
                       <Select
                         value={user.user_position}
                         onValueChange={(value: JerarquiaPosicion) => handleUpdateUser(user.id, "user_position", value)}
@@ -792,10 +831,12 @@ const Usuarios = () => {
                       </Select>
                     ) : (
                       <span
-                        className="cursor-pointer hover:underline"
+                        className={canEditPositions(currentUser?.user_position) ? "cursor-pointer hover:underline" : ""}
                         onClick={() => {
-                          setEditingUserId(user.id);
-                          setEditingField("user_position");
+                          if (canEditPositions(currentUser?.user_position)) {
+                            setEditingUserId(user.id);
+                            setEditingField("user_position");
+                          }
                         }}
                       >
                         {user.user_position}

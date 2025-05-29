@@ -57,16 +57,6 @@ const LeadsTable = ({
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [isSeleccionarTodosOpen, setIsSeleccionarTodosOpen] = useState(false);
 
-  const { data: users } = useQuery({
-    queryKey: ["users"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("users")
-        .select("id, nombre_completo");
-      return data || [];
-    },
-  });
-
   const { data: origenes } = useQuery({
     queryKey: ["lead-origenes"],
     queryFn: async () => {
@@ -110,6 +100,63 @@ const LeadsTable = ({
     },
   });
 
+  const { data: users } = useQuery({
+    queryKey: ["users", currentUser?.id],
+    queryFn: async () => {
+      if (!currentUser) return [];
+
+      // Si el usuario es CEO, Director Nacional o Internacional, puede ver todos los usuarios
+      if (
+        currentUser.user_position === USER_ROLES.CEO ||
+        currentUser.user_position === USER_ROLES.DIRECTOR_NACIONAL ||
+        currentUser.user_position === USER_ROLES.DIRECTOR_INTERNACIONAL
+      ) {
+        const { data } = await supabase
+          .from("users")
+          .select("id, nombre_completo, user_position")
+          .eq("is_active", true)
+          .order("nombre_completo");
+        return data || [];
+      }
+
+      // Para Asesor Training, solo puede verse a sí mismo
+      if (currentUser.user_position === USER_ROLES.ASESOR_TRAINING) {
+        return [{
+          id: currentUser.id,
+          nombre_completo: currentUser.nombre_completo,
+          user_position: currentUser.user_position
+        }];
+      }
+
+      // Para otros roles, obtener subordinados según la jerarquía
+      const { data: subordinateUsers } = await supabase
+        .from("users")
+        .select("id, nombre_completo, user_position, estructuras!inner(id)")
+        .in("user_position", ROLE_HIERARCHY[currentUser.user_position] || [])
+        .eq("estructuras.id", currentUser.estructuras?.[0]?.id)
+        .eq("is_active", true)
+        .order("nombre_completo");
+
+      // Incluir al usuario actual en la lista
+      const allUsers = [
+        {
+          id: currentUser.id,
+          nombre_completo: currentUser.nombre_completo,
+          user_position: currentUser.user_position
+        },
+        ...(subordinateUsers || [])
+      ];
+
+      // Eliminar duplicados por ID
+      const uniqueUsers = allUsers.filter((user, index, self) => 
+        index === self.findIndex(u => u.id === user.id)
+      );
+
+      return uniqueUsers;
+    },
+    enabled: !!currentUser,
+  });
+
   const { data: paises } = useQuery({
     queryKey: ["lead-paises"],
     queryFn: async () => {
@@ -129,6 +176,37 @@ const LeadsTable = ({
     console.log('Current filters:', filters);
     console.log('Current user:', currentUser);
   }, [filters, currentUser]);
+
+  // Efecto para resetear el filtro de asignado si el usuario no tiene permisos
+  useEffect(() => {
+    if (currentUser && users) {
+      // Si el usuario es Asesor Training y no está viendo "Mis Leads", resetear
+      if (currentUser.user_position === USER_ROLES.ASESOR_TRAINING && filters.asignado !== "my_leads") {
+        setFilters(prev => ({ ...prev, asignado: "my_leads" }));
+        return;
+      }
+
+      // Si el usuario no tiene permisos para ver "Todos los usuarios" y lo tiene seleccionado, resetear
+      if (
+        filters.asignado === "all" &&
+        currentUser.user_position !== USER_ROLES.CEO &&
+        currentUser.user_position !== USER_ROLES.DIRECTOR_NACIONAL &&
+        currentUser.user_position !== USER_ROLES.DIRECTOR_INTERNACIONAL
+      ) {
+        setFilters(prev => ({ ...prev, asignado: "my_leads" }));
+        return;
+      }
+
+      // Si el usuario seleccionó un usuario específico que ya no está en su lista de usuarios permitidos, resetear
+      if (
+        filters.asignado !== "my_leads" && 
+        filters.asignado !== "all" && 
+        !users.find(u => u.id === filters.asignado)
+      ) {
+        setFilters(prev => ({ ...prev, asignado: "my_leads" }));
+      }
+    }
+  }, [currentUser, users, filters.asignado]);
 
   const { data: leads, isLoading } = useQuery({
     queryKey: ["leads", filters, dateRange, currentPage, itemsPerPage, currentUser],
@@ -622,10 +700,19 @@ const LeadsTable = ({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="my_leads">Mis Leads</SelectItem>
-              <SelectItem value="all">Todos los usuarios</SelectItem>
-              {users?.map((user) => (
+              {/* Solo mostrar "Todos los usuarios" si el usuario tiene permisos para ver otros usuarios */}
+              {currentUser && (
+                currentUser.user_position === USER_ROLES.CEO ||
+                currentUser.user_position === USER_ROLES.DIRECTOR_NACIONAL ||
+                currentUser.user_position === USER_ROLES.DIRECTOR_INTERNACIONAL
+              ) && (
+                <SelectItem value="all">Todos los usuarios</SelectItem>
+              )}
+              {/* Solo mostrar otros usuarios si hay más de uno en la lista (es decir, si tiene subordinados) */}
+              {users && users.length > 1 && users.map((user) => (
                 <SelectItem key={user.id} value={user.id}>
                   {user.nombre_completo}
+                  {user.id === currentUser?.id && " (Yo)"}
                 </SelectItem>
               ))}
             </SelectContent>

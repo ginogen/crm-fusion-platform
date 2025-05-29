@@ -10,9 +10,24 @@ type NavigationItem = {
 export const NAVIGATION_ITEMS: NavigationItem[] = [
   { label: "Dashboard", icon: "LayoutDashboard", href: "/" },
   { label: "Datos", icon: "Database", href: "/datos" },
-  { label: "Campañas", icon: "Megaphone", href: "/campanas" },
-  { label: "Reasignar", icon: "UserPlus", href: "/reasignar" },
-  { label: "Informes", icon: "BarChart", href: "/informes" },
+  { 
+    label: "Campañas", 
+    icon: "Megaphone", 
+    href: "/campanas",
+    roles: ["CEO", "Director Internacional", "Director Nacional"]
+  },
+  { 
+    label: "Reasignar", 
+    icon: "UserPlus", 
+    href: "/reasignar",
+    roles: ["CEO", "Director Internacional", "Director Nacional"]
+  },
+  { 
+    label: "Informes", 
+    icon: "BarChart", 
+    href: "/informes",
+    roles: ["CEO", "Director Internacional", "Director Nacional"]
+  },
   { label: "Organización", icon: "Building", href: "/organizacion" },
   { label: "Usuarios", icon: "Users", href: "/usuarios" },
   { 
