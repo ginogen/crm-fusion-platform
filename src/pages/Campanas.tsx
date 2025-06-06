@@ -25,8 +25,9 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Facebook, Globe, Upload, ChevronDown } from "lucide-react";
+import { Facebook, Globe, Upload, ChevronDown, Edit, Check, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface BatchLead {
@@ -212,6 +213,9 @@ const Campanas = () => {
   const [evacuacionPais, setEvacuacionPais] = useState<number | null>(null);
   const [selectedBatchForUpload, setSelectedBatchForUpload] = useState<number | null>(null);
   const [isAddingLeadsModalOpen, setIsAddingLeadsModalOpen] = useState(false);
+  const [editingBatchName, setEditingBatchName] = useState<number | null>(null);
+  const [newBatchName, setNewBatchName] = useState("");
+  const [isUpdatingBatchName, setIsUpdatingBatchName] = useState(false);
 
   const { data: batches, refetch } = useQuery({
     queryKey: ["batches"],
@@ -1652,6 +1656,45 @@ const saveFormById = async (formId: string) => {
     }
   };
 
+  const handleUpdateBatchName = async (batchId: number, newName: string) => {
+    if (!newName.trim()) {
+      toast.error("El nombre del batch no puede estar vacío");
+      return;
+    }
+
+    try {
+      setIsUpdatingBatchName(true);
+      
+      const { error } = await supabase
+        .from("lead_batches")
+        .update({ name: newName.trim() })
+        .eq("id", batchId);
+
+      if (error) throw error;
+
+      toast.success("Nombre del batch actualizado correctamente");
+      setEditingBatchName(null);
+      setNewBatchName("");
+      refetch();
+
+    } catch (error) {
+      console.error('Error al actualizar nombre del batch:', error);
+      toast.error("Error al actualizar el nombre del batch");
+    } finally {
+      setIsUpdatingBatchName(false);
+    }
+  };
+
+  const startEditingBatchName = (batchId: number, currentName: string) => {
+    setEditingBatchName(batchId);
+    setNewBatchName(currentName);
+  };
+
+  const cancelEditingBatchName = () => {
+    setEditingBatchName(null);
+    setNewBatchName("");
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <h1 className="text-2xl font-bold">Campañas</h1>
@@ -2166,15 +2209,27 @@ const saveFormById = async (formId: string) => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {previewData.map((lead, index) => (
-                            <TableRow key={index}>
-                              <TableCell>{lead.nombre_completo}</TableCell>
-                              <TableCell>{lead.email}</TableCell>
-                              <TableCell>{lead.telefono}</TableCell>
-                              <TableCell>{lead.pais}</TableCell>
-                              <TableCell>{lead.filial}</TableCell>
-                            </TableRow>
-                          ))}
+                          {previewData.length === 0 ? (
+                            [...Array(3)].map((_, index) => (
+                              <TableRow key={index}>
+                                <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                                <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                                <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                                <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                                <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                              </TableRow>
+                            ))
+                          ) : (
+                            previewData.map((lead, index) => (
+                              <TableRow key={index}>
+                                <TableCell>{lead.nombre_completo}</TableCell>
+                                <TableCell>{lead.email}</TableCell>
+                                <TableCell>{lead.telefono}</TableCell>
+                                <TableCell>{lead.pais}</TableCell>
+                                <TableCell>{lead.filial}</TableCell>
+                              </TableRow>
+                            ))
+                          )}
                         </TableBody>
                       </Table>
                     </div>
@@ -2191,6 +2246,32 @@ const saveFormById = async (formId: string) => {
           </Dialog>
         </div>
 
+        {/* Skeleton loading para batches */}
+        {!batches && (
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="border rounded-lg p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <Skeleton className="h-6 w-48" />
+                    <Skeleton className="h-4 w-24" />
+                    <div className="flex gap-2">
+                      <Skeleton className="h-6 w-16" />
+                      <Skeleton className="h-6 w-20" />
+                      <Skeleton className="h-6 w-18" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-8 w-28" />
+                    <Skeleton className="h-8 w-8" />
+                    <Skeleton className="h-4 w-4" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <Accordion type="multiple" className="space-y-4">
           {batches?.map((batch: Batch) => (
             <AccordionItem
@@ -2201,7 +2282,61 @@ const saveFormById = async (formId: string) => {
               <AccordionTrigger className="hover:no-underline">
                 <div className="flex items-center justify-between w-full pr-4">
                   <div className="flex items-center gap-4">
-                    <span className="font-semibold">{batch.name}</span>
+                    {editingBatchName === batch.id ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={newBatchName}
+                          onChange={(e) => setNewBatchName(e.target.value)}
+                          className="font-semibold"
+                          disabled={isUpdatingBatchName}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleUpdateBatchName(batch.id, newBatchName);
+                            } else if (e.key === 'Escape') {
+                              cancelEditingBatchName();
+                            }
+                          }}
+                          autoFocus
+                        />
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUpdateBatchName(batch.id, newBatchName);
+                          }}
+                          className="p-1 h-8 w-8 border rounded cursor-pointer hover:bg-gray-50 flex items-center justify-center"
+                          style={{ opacity: isUpdatingBatchName ? 0.5 : 1, pointerEvents: isUpdatingBatchName ? 'none' : 'auto' }}
+                        >
+                          {isUpdatingBatchName ? (
+                            <div className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                          ) : (
+                            <Check className="h-3 w-3" />
+                          )}
+                        </div>
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            cancelEditingBatchName();
+                          }}
+                          className="p-1 h-8 w-8 border rounded cursor-pointer hover:bg-gray-50 flex items-center justify-center"
+                          style={{ opacity: isUpdatingBatchName ? 0.5 : 1, pointerEvents: isUpdatingBatchName ? 'none' : 'auto' }}
+                        >
+                          <X className="h-3 w-3" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">{batch.name}</span>
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startEditingBatchName(batch.id, batch.name);
+                          }}
+                          className="p-1 h-6 w-6 opacity-50 hover:opacity-100 cursor-pointer rounded"
+                        >
+                          <Edit className="h-3 w-3" />
+                        </div>
+                      </div>
+                    )}
                     <span className="text-sm text-muted-foreground">
                       {new Date(batch.created_at).toLocaleDateString()}
                     </span>
@@ -2218,18 +2353,17 @@ const saveFormById = async (formId: string) => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
+                    <div
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedBatchForUpload(batch.id);
                         setIsAddingLeadsModalOpen(true);
                       }}
+                      className="border border-gray-300 bg-white hover:bg-gray-50 px-3 py-1.5 rounded cursor-pointer text-sm flex items-center"
                     >
                       <Upload className="h-4 w-4 mr-2" />
                       Agregar Leads
-                    </Button>
+                    </div>
                     <div
                       className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded cursor-pointer"
                       onClick={(e) => {
@@ -2265,45 +2399,58 @@ const saveFormById = async (formId: string) => {
                   {!batch.batch_estructura_permisos?.length && (
                     <div className="bg-gray-50 p-4 rounded-md space-y-4">
                       <h4 className="font-medium">Vincular Estructuras</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label>Empresa</Label>
-                          <select
-                            className="w-full p-2 border rounded-md"
-                            value={selectedEmpresa || ""}
-                            onChange={(e) => setSelectedEmpresa(Number(e.target.value))}
-                          >
-                            <option value="">Selecciona una empresa</option>
-                            {empresas.map((empresa) => (
-                              <option key={empresa.id} value={empresa.id}>
-                                {empresa.custom_name || empresa.nombre}
-                              </option>
-                            ))}
-                          </select>
+                      {isLoadingEstructuras ? (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Empresa</Label>
+                            <Skeleton className="h-10 w-full rounded-md" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>País</Label>
+                            <Skeleton className="h-10 w-full rounded-md" />
+                          </div>
                         </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Empresa</Label>
+                            <select
+                              className="w-full p-2 border rounded-md"
+                              value={selectedEmpresa || ""}
+                              onChange={(e) => setSelectedEmpresa(Number(e.target.value))}
+                            >
+                              <option value="">Selecciona una empresa</option>
+                              {empresas.map((empresa) => (
+                                <option key={empresa.id} value={empresa.id}>
+                                  {empresa.custom_name || empresa.nombre}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
 
-                        <div className="space-y-2">
-                          <Label>País</Label>
-                          <select
-                            className="w-full p-2 border rounded-md"
-                            value={selectedPais || ""}
-                            onChange={(e) => setSelectedPais(Number(e.target.value))}
-                          >
-                            <option value="">Selecciona un país</option>
-                            {paises.map((pais) => (
-                              <option key={pais.id} value={pais.id}>
-                                {pais.custom_name || pais.nombre}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="space-y-2">
+                            <Label>País</Label>
+                            <select
+                              className="w-full p-2 border rounded-md"
+                              value={selectedPais || ""}
+                              onChange={(e) => setSelectedPais(Number(e.target.value))}
+                            >
+                              <option value="">Selecciona un país</option>
+                              {paises.map((pais) => (
+                                <option key={pais.id} value={pais.id}>
+                                  {pais.custom_name || pais.nombre}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
-                      </div>
+                      )}
                       <Button 
                         className="w-full"
-                        disabled={!selectedEmpresa || !selectedPais}
+                        disabled={!selectedEmpresa || !selectedPais || isLoadingEstructuras}
                         onClick={() => handleVincularEstructuras(batch.id, selectedEmpresa!, selectedPais!)}
                       >
-                        Vincular y Distribuir Leads
+                        {isLoadingEstructuras ? "Cargando..." : "Vincular y Distribuir Leads"}
                       </Button>
                     </div>
                   )}
@@ -2431,29 +2578,43 @@ const saveFormById = async (formId: string) => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {batch.leads.map((lead) => (
-                          <TableRow key={lead.id}>
-                            <TableCell>{lead.nombre_completo}</TableCell>
-                            <TableCell>{lead.email}</TableCell>
-                            <TableCell>{lead.telefono}</TableCell>
-                            <TableCell>
-                              <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                ${lead.estado === 'LLAMAR_DESPUES' ? 'bg-blue-100 text-blue-800' :
-                                  lead.estado === 'CITA_PROGRAMADA' ? 'bg-yellow-100 text-yellow-800' :
-                                  lead.estado === 'MATRICULA' ? 'bg-green-100 text-green-800' :
-                                  lead.estado === 'RECHAZADO' ? 'bg-red-100 text-red-800' :
-                                  lead.estado === 'SIN_LLAMAR' ? 'bg-gray-100 text-gray-800' :
-                                  'bg-gray-100 text-gray-800'
-                                }`}>
-                                {lead.estado}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {lead.user?.nombre_completo || 'No asignado'}
-                            </TableCell>
-                            <TableCell>{new Date(lead.created_at || '').toLocaleDateString()}</TableCell>
-                          </TableRow>
-                        ))}
+                        {batch.leads.length === 0 ? (
+                          // Skeleton loading para cuando los leads se están cargando
+                          [...Array(5)].map((_, index) => (
+                            <TableRow key={index}>
+                              <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                              <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                              <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                              <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
+                              <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                              <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          batch.leads.map((lead) => (
+                            <TableRow key={lead.id}>
+                              <TableCell>{lead.nombre_completo}</TableCell>
+                              <TableCell>{lead.email}</TableCell>
+                              <TableCell>{lead.telefono}</TableCell>
+                              <TableCell>
+                                <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                  ${lead.estado === 'LLAMAR_DESPUES' ? 'bg-blue-100 text-blue-800' :
+                                    lead.estado === 'CITA_PROGRAMADA' ? 'bg-yellow-100 text-yellow-800' :
+                                    lead.estado === 'MATRICULA' ? 'bg-green-100 text-green-800' :
+                                    lead.estado === 'RECHAZADO' ? 'bg-red-100 text-red-800' :
+                                    lead.estado === 'SIN_LLAMAR' ? 'bg-gray-100 text-gray-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                  {lead.estado}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {lead.user?.nombre_completo || 'No asignado'}
+                              </TableCell>
+                              <TableCell>{new Date(lead.created_at || '').toLocaleDateString()}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
                       </TableBody>
                     </Table>
                   </div>
@@ -2504,15 +2665,27 @@ const saveFormById = async (formId: string) => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {previewData.map((lead, index) => (
-                        <TableRow key={index}>
-                          <TableCell>{lead.nombre_completo}</TableCell>
-                          <TableCell>{lead.email}</TableCell>
-                          <TableCell>{lead.telefono}</TableCell>
-                          <TableCell>{lead.pais}</TableCell>
-                          <TableCell>{lead.filial}</TableCell>
-                        </TableRow>
-                      ))}
+                      {previewData.length === 0 ? (
+                        [...Array(3)].map((_, index) => (
+                          <TableRow key={index}>
+                            <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                            <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                            <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                            <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                            <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        previewData.map((lead, index) => (
+                          <TableRow key={index}>
+                            <TableCell>{lead.nombre_completo}</TableCell>
+                            <TableCell>{lead.email}</TableCell>
+                            <TableCell>{lead.telefono}</TableCell>
+                            <TableCell>{lead.pais}</TableCell>
+                            <TableCell>{lead.filial}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </div>

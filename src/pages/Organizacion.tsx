@@ -784,6 +784,25 @@ const Organizacion = () => {
   // Hook para manejo de herencia jerárquica
   const herenciaUtils = useEstructuraHerencia(estructuras || []);
 
+  // Memorizar cálculos costosos para evitar recálculos innecesarios
+  const selectedEstructuraStats = useMemo(() => {
+    if (!selectedEstructura) return null;
+    return {
+      vinculacionesHeredadas: herenciaUtils.obtenerVinculacionesHeredadas(selectedEstructura.id),
+      padresPosibles: herenciaUtils.obtenerPadresPosibles(selectedEstructura.id),
+      estadisticas: herenciaUtils.obtenerEstadisticasHerencia(selectedEstructura.id),
+    };
+  }, [selectedEstructura, herenciaUtils]);
+
+  // Memorizar estructuras vinculables para evitar filtros costosos en cada render
+  const estructurasVinculables = useMemo(() => {
+    if (!selectedEstructura || !estructuras) return [];
+    return estructuras.filter(e => 
+      e.id !== selectedEstructura.id && 
+      herenciaUtils.esVinculacionValida(e.id, selectedEstructura.id)
+    );
+  }, [selectedEstructura, estructuras, herenciaUtils]);
+
   // Comentado temporalmente para evitar el error 409
   // Solo ejecutamos actualizarVinculacionesUsuarios cuando el usuario hace cambios manuales
   // useEffect(() => {
@@ -1463,7 +1482,7 @@ const Organizacion = () => {
   useEffect(() => {
     setNodes(flowNodes);
     setEdges(flowEdges);
-  }, [flowNodes, flowEdges, setNodes, setEdges]);
+  }, [flowNodes, flowEdges]);
 
   // Manejar nuevas conexiones arrastrables
   const onConnect = useCallback(
@@ -1908,7 +1927,7 @@ const Organizacion = () => {
                 {/* Mostrar estructuras vinculadas heredadas */}
                 <div className="text-sm bg-green-50 border border-green-200 rounded-md p-2">
                   <span className="font-medium text-green-800">
-                    📋 Vinculaciones heredadas totales: {herenciaUtils.obtenerVinculacionesHeredadas(selectedEstructura.id).length} estructuras
+                    📋 Vinculaciones heredadas totales: {selectedEstructuraStats?.vinculacionesHeredadas.length || 0} estructuras
                   </span>
                   <p className="text-green-700 text-xs mt-1">
                     Esta estructura tiene acceso automático a todas las estructuras en su cadena jerárquica
@@ -1969,7 +1988,7 @@ const Organizacion = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="null">🚫 Sin estructura padre (convertir en raíz)</SelectItem>
-                  {herenciaUtils.obtenerPadresPosibles(selectedEstructura.id).map((estructura) => (
+                  {selectedEstructuraStats?.padresPosibles.map((estructura) => (
                     <SelectItem key={estructura.id} value={estructura.id.toString()}>
                       📁 {estructura.custom_name || estructura.nombre} ({estructura.tipo})
                     </SelectItem>
@@ -1977,7 +1996,7 @@ const Organizacion = () => {
                 </SelectContent>
               </Select>
               
-              {herenciaUtils.obtenerPadresPosibles(selectedEstructura.id).length === 0 && (
+              {(selectedEstructuraStats?.padresPosibles.length || 0) === 0 && (
                 <p className="text-xs text-yellow-600 mt-2">
                   ℹ️ Esta estructura no puede tener padres válidos según la jerarquía actual
                 </p>
@@ -2078,12 +2097,7 @@ const Organizacion = () => {
               )}
               {MULTI_ESTRUCTURA_POSITIONS.includes(userProfile?.user_position || '') ? (
                 <div className="mt-2 space-y-2 max-h-[200px] overflow-y-auto border rounded-md p-2">
-                  {estructuras
-                    ?.filter(e => 
-                      e.id !== selectedEstructura?.id && 
-                      selectedEstructura && 
-                      herenciaUtils.esVinculacionValida(e.id, selectedEstructura.id)
-                    ).length === 0 ? (
+                  {estructurasVinculables.length === 0 ? (
                     <div className="text-center py-4 text-muted-foreground">
                       <p className="text-sm">No hay estructuras disponibles para vincular</p>
                       <p className="text-xs mt-1">
@@ -2091,13 +2105,7 @@ const Organizacion = () => {
                       </p>
                     </div>
                   ) : (
-                    estructuras
-                      ?.filter(e => 
-                        e.id !== selectedEstructura?.id && 
-                        selectedEstructura && 
-                        herenciaUtils.esVinculacionValida(e.id, selectedEstructura.id)
-                      )
-                      .map((estructura) => (
+                    estructurasVinculables.map((estructura) => (
                       <label key={estructura.id} className="flex items-center space-x-2 hover:bg-slate-50 p-2 rounded cursor-pointer">
                         <input
                           type="checkbox"
@@ -2131,13 +2139,7 @@ const Organizacion = () => {
                     <SelectValue placeholder="Seleccionar estructura..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {estructuras
-                      ?.filter(e => 
-                        e.id !== selectedEstructura?.id && 
-                        selectedEstructura && 
-                        herenciaUtils.esVinculacionValida(e.id, selectedEstructura.id)
-                      )
-                      .map((estructura) => (
+                    {estructurasVinculables.map((estructura) => (
                         <SelectItem key={estructura.id} value={estructura.id.toString()}>
                           {estructura.custom_name || estructura.nombre} ({estructura.tipo})
                         </SelectItem>
@@ -2154,24 +2156,21 @@ const Organizacion = () => {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="font-medium text-slate-600">Estructuras Padre Disponibles:</span>
-                    <p className="text-slate-700">{herenciaUtils.obtenerPadresPosibles(selectedEstructura.id).length}</p>
+                    <p className="text-slate-700">{selectedEstructuraStats?.padresPosibles.length || 0}</p>
                   </div>
                   <div>
                     <span className="font-medium text-slate-600">Estructuras Hijo Vinculables:</span>
                     <p className="text-slate-700">
-                      {estructuras?.filter(e => 
-                        e.id !== selectedEstructura.id && 
-                        herenciaUtils.esVinculacionValida(e.id, selectedEstructura.id)
-                      ).length || 0}
+                      {estructurasVinculables.length}
                     </p>
                   </div>
                   <div>
                     <span className="font-medium text-slate-600">Hijos Directos:</span>
-                    <p className="text-slate-700">{herenciaUtils.obtenerEstadisticasHerencia(selectedEstructura.id).hijosDirectos}</p>
+                    <p className="text-slate-700">{selectedEstructuraStats?.estadisticas.hijosDirectos || 0}</p>
                   </div>
                   <div>
                     <span className="font-medium text-slate-600">Total en Red:</span>
-                    <p className="text-slate-700">{herenciaUtils.obtenerEstadisticasHerencia(selectedEstructura.id).totalVinculaciones}</p>
+                    <p className="text-slate-700">{selectedEstructuraStats?.estadisticas.totalVinculaciones || 0}</p>
                   </div>
                 </div>
                 
