@@ -69,7 +69,7 @@ interface Estructura {
   parent_id?: number | null;
 }
 
-type estructura_tipo = 'Empresa' | 'Paises' | 'Organizaciones';
+type estructura_tipo = 'Empresa' | 'Paises' | 'Filiales' | 'Filial' | 'División' | 'Organizaciones' | 'Jefaturas' | 'Sub Organización';
 
 interface BatchEstructuraPermiso {
   estructuras_id: number;
@@ -165,10 +165,11 @@ interface BatchEstructura {
   estructuras_id: number;
   estructuras: {
     id: number;
-    tipo: 'Empresa' | 'Paises' | 'Organizaciones';
+    tipo: estructura_tipo;
     nombre: string;
     custom_name: string;
     parent_id: number | null;
+    parent_estructura_id: number | null;
   };
 }
 
@@ -371,7 +372,7 @@ const Campanas = () => {
             parent_estructura_id
           )
         `)
-        .eq("lead_batch_id", batchId);
+        .eq("lead_batch_id", batchId) as { data: BatchEstructuraPermiso[] | null };
 
       console.log('Estructuras vinculadas al batch:', batchEstructuras);
 
