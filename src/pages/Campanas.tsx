@@ -397,37 +397,55 @@ const Campanas = () => {
         return;
       }
 
-      // 3. Obtener todas las estructuras relacionadas
-      const { data: estructurasRelacionadas } = await supabase
-        .from("estructuras")
-        .select("*")
-        .or(
-          `parent_estructura_id.eq.${empresaEstructura.estructuras_id},` +
-          `id.eq.${empresaEstructura.estructuras_id},` +
-          `parent_estructura_id.eq.${paisEstructura.estructuras_id},` +
-          `id.eq.${paisEstructura.estructuras_id}`
-        );
+      // 3. Función recursiva para obtener todas las estructuras de la jerarquía
+      const obtenerEstructurasRecursivas = async (estructuraId: number): Promise<number[]> => {
+        const estructurasIds = [estructuraId];
+        
+        // Obtener todas las estructuras hijas directas
+        const { data: estructurasHijas } = await supabase
+          .from("estructuras")
+          .select("id")
+          .eq("parent_id", estructuraId);
 
-      // También obtener las estructuras hijas
-      const { data: estructurasHijas } = await supabase
-        .from("estructuras")
-        .select("*")
-        .in("parent_id", [empresaEstructura.estructuras_id, paisEstructura.estructuras_id]);
+        if (estructurasHijas && estructurasHijas.length > 0) {
+          // Para cada estructura hija, obtener recursivamente sus descendientes
+          for (const hija of estructurasHijas) {
+            const descendientes = await obtenerEstructurasRecursivas(hija.id);
+            estructurasIds.push(...descendientes);
+          }
+        }
 
-      // Combinar todas las estructuras relacionadas
-      const todasLasEstructuras = [
-        ...(estructurasRelacionadas || []),
-        ...(estructurasHijas || []),
-        { id: empresaEstructura.estructuras_id },
-        { id: paisEstructura.estructuras_id }
-      ];
+        return estructurasIds;
+      };
 
-      // Eliminar duplicados
-      const estructurasIds = [...new Set(todasLasEstructuras.map(e => e.id))];
+      // 4. Obtener TODAS las estructuras de la jerarquía para empresa y país
+      console.log('Obteniendo estructuras para empresa:', empresaEstructura.estructuras_id);
+      console.log('Obteniendo estructuras para país:', paisEstructura.estructuras_id);
+
+      const estructurasEmpresa = await obtenerEstructurasRecursivas(empresaEstructura.estructuras_id);
+      const estructurasPais = await obtenerEstructurasRecursivas(paisEstructura.estructuras_id);
+
+      // Combinar todas las estructuras y eliminar duplicados
+      const todasLasEstructurasIds = [...new Set([
+        ...estructurasEmpresa,
+        ...estructurasPais
+      ])];
+
+      console.log('Estructuras de empresa obtenidas:', estructurasEmpresa);
+      console.log('Estructuras de país obtenidas:', estructurasPais);
+      console.log('TODAS las estructuras combinadas:', todasLasEstructurasIds);
+
+      // Verificar que efectivamente tengamos estructuras
+      if (todasLasEstructurasIds.length === 0) {
+        toast.error("No se encontraron estructuras en la jerarquía");
+        return;
+      }
+
+      const estructurasIds = todasLasEstructurasIds;
 
       console.log('IDs de todas las estructuras:', estructurasIds);
 
-      // 4. Obtener usuarios activos vinculados a las estructuras y verificar su estado de actividad
+      // 5. Obtener usuarios activos vinculados a las estructuras y verificar su estado de actividad
       const { data: usuarios } = await supabase
         .from("users")
         .select(`
@@ -452,7 +470,7 @@ const Campanas = () => {
         return;
       }
 
-      // 5. Obtener los leads del batch que no están asignados y SOLO tienen estado SIN_LLAMAR
+      // 6. Obtener los leads del batch que no están asignados y SOLO tienen estado SIN_LLAMAR
       const { data: batchLeads, error: leadsError } = await supabase
         .from("leads")
         .select("*")
@@ -472,7 +490,7 @@ const Campanas = () => {
         return;
       }
 
-      // 6. Distribuir los leads entre los usuarios activos (10 leads por usuario)
+      // 7. Distribuir los leads entre los usuarios activos (10 leads por usuario)
       const leadsUpdates = [];
       const LEADS_POR_USUARIO = 10;
       let leadIndex = 0;
@@ -510,7 +528,7 @@ const Campanas = () => {
 
       console.log('Actualizaciones de leads a realizar:', leadsUpdates);
 
-      // 7. Actualizar los leads en la base de datos
+      // 8. Actualizar los leads en la base de datos
       const { error: updateError } = await supabase
         .from("leads")
         .upsert(leadsUpdates);
@@ -1331,33 +1349,40 @@ const Campanas = () => {
       
       // Si se especificaron empresa y país, filtrar por estructuras
       if (empresaId && paisId) {
-        // Obtenemos las estructuras relacionadas
-        const { data: estructurasRelacionadas } = await supabase
-          .from("estructuras")
-          .select("*")
-          .or(
-            `parent_estructura_id.eq.${empresaId},` +
-            `id.eq.${empresaId},` +
-            `parent_estructura_id.eq.${paisId},` +
-            `id.eq.${paisId}`
-          );
+        // Función recursiva para obtener todas las estructuras de la jerarquía
+        const obtenerEstructurasRecursivas = async (estructuraId: number): Promise<number[]> => {
+          const estructurasIds = [estructuraId];
+          
+          // Obtener todas las estructuras hijas directas
+          const { data: estructurasHijas } = await supabase
+            .from("estructuras")
+            .select("id")
+            .eq("parent_id", estructuraId);
 
-        // También obtener las estructuras hijas
-        const { data: estructurasHijas } = await supabase
-          .from("estructuras")
-          .select("*")
-          .in("parent_id", [empresaId, paisId]);
+          if (estructurasHijas && estructurasHijas.length > 0) {
+            // Para cada estructura hija, obtener recursivamente sus descendientes
+            for (const hija of estructurasHijas) {
+              const descendientes = await obtenerEstructurasRecursivas(hija.id);
+              estructurasIds.push(...descendientes);
+            }
+          }
 
-        // Combinar todas las estructuras relacionadas
-        const todasLasEstructuras = [
-          ...(estructurasRelacionadas || []),
-          ...(estructurasHijas || []),
-          { id: empresaId },
-          { id: paisId }
-        ];
+          return estructurasIds;
+        };
 
-        // Eliminar duplicados
-        const estructurasIds = [...new Set(todasLasEstructuras.map(e => e.id))];
+        // Obtener TODAS las estructuras de la jerarquía para empresa y país
+        const estructurasEmpresa = await obtenerEstructurasRecursivas(empresaId);
+        const estructurasPais = await obtenerEstructurasRecursivas(paisId);
+
+        // Combinar todas las estructuras y eliminar duplicados
+        const estructurasIds = [...new Set([
+          ...estructurasEmpresa,
+          ...estructurasPais
+        ])];
+        
+        console.log('Estructuras para evacuación - Empresa:', estructurasEmpresa);
+        console.log('Estructuras para evacuación - País:', estructurasPais);
+        console.log('Todas las estructuras para evacuación:', estructurasIds);
         
         // Obtener usuarios de estas estructuras
         const { data: usuarios } = await supabase
