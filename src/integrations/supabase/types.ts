@@ -625,7 +625,7 @@ export type Database = {
       estructura_tipo:
         | "Empresa"
         | "Paises"
-        | "Filiales"
+        | "Zonas"
         | "Filial"
         | "División"
         | "Organizaciones"
@@ -650,7 +650,7 @@ export type Database = {
         | "Sales Manager"
         | "Gerente Divisional"
         | "Gerente"
-        | "Team Manager"
+        | "Jefe de Grupo"
         | "Full Executive"
         | "Asesor Training"
       user_role: "user" | "admin" | "superuser"

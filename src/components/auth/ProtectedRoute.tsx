@@ -17,7 +17,7 @@ const JERARQUIA_POSICIONES = [
   'Sales Manager',
   'Gerente Divisional',
   'Gerente',
-  'Team Manager',
+  'Jefe de Grupo',
   'Full Executive',
   'Asesor Training'
 ] as const;

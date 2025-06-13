@@ -30,7 +30,7 @@ id,tipo_estructura,user_position,can_create,created_at
 29,Jefaturas,Sales Manager,true,2025-01-23 13:06:10.05485+00
 30,Jefaturas,Gerente Divisional,true,2025-01-23 13:06:10.05485+00
 31,Jefaturas,Gerente,true,2025-01-23 13:06:10.05485+00
-32,Jefaturas,Team Manager,true,2025-01-23 13:06:10.05485+00
+32,Jefaturas,Jefe de Grupo,true,2025-01-23 13:06:10.05485+00
 33,Sub Organización,CEO,true,2025-01-23 13:06:10.05485+00
 34,Sub Organización,Director Internacional,true,2025-01-23 13:06:10.05485+00
 35,Sub Organización,Director Nacional,true,2025-01-23 13:06:10.05485+00
@@ -38,5 +38,5 @@ id,tipo_estructura,user_position,can_create,created_at
 37,Sub Organización,Sales Manager,true,2025-01-23 13:06:10.05485+00
 38,Sub Organización,Gerente Divisional,true,2025-01-23 13:06:10.05485+00
 39,Sub Organización,Gerente,true,2025-01-23 13:06:10.05485+00
-40,Sub Organización,Team Manager,true,2025-01-23 13:06:10.05485+00
+40,Sub Organización,Jefe de Grupo,true,2025-01-23 13:06:10.05485+00
 41,Sub Organización,Full Executive,true,2025-01-23 13:06:10.05485+00

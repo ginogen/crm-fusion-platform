@@ -70,7 +70,7 @@ interface Estructura {
   parent_id?: number | null;
 }
 
-type estructura_tipo = 'Empresa' | 'Paises' | 'Filiales' | 'Filial' | 'División' | 'Organizaciones' | 'Jefaturas' | 'Sub Organización';
+type estructura_tipo = 'Empresa' | 'Paises' | 'Zonas' | 'Filial' | 'División' | 'Organizaciones' | 'Jefaturas' | 'Sub Organización';
 
 interface BatchEstructuraPermiso {
   estructuras_id: number;
@@ -242,7 +242,7 @@ const Campanas = () => {
       // 2. Obtener leads para cada batch desde la tabla leads
       const batchesWithLeads = await Promise.all(
         batchesData.map(async (batch) => {
-          const { data: leadsData } = await supabase
+          const { data: leadsData, error: leadsError } = await supabase
             .from("leads")
             .select(`
               id,
@@ -259,7 +259,14 @@ const Campanas = () => {
               )
             `)
             .eq("batch_id", batch.id)
-            .eq("is_from_batch", true);
+            .eq("is_from_batch", true)
+            .order("created_at", { ascending: false });
+
+          if (leadsError) {
+            console.error('Error al cargar leads para batch', batch.id, ':', leadsError);
+          }
+
+          console.log(`Batch ${batch.id} (${batch.name}): ${leadsData?.length || 0} leads cargados`);
 
           return {
             ...batch,
@@ -309,7 +316,7 @@ const Campanas = () => {
 
   // Filtrar estructuras por tipo
   const empresas = estructuras?.filter(e => e.tipo === 'Empresa') || [];
-  const paises = estructuras?.filter(e => e.tipo === 'Paises') || [];
+      const paises = estructuras?.filter(e => e.tipo === 'Paises') || [];
 
   // Agregar console.log después de la definición de las variables
   console.log('Todas las estructuras:', estructuras);
@@ -358,7 +365,7 @@ const Campanas = () => {
     reader.readAsText(file);
   };
 
-  const distribuirLeads = async (batchId: number, leads: BatchLead[]) => {
+  const distribuirLeads = async (batchId: number) => {
     try {
       console.log('Iniciando distribución de leads para batch:', batchId);
 
@@ -401,43 +408,111 @@ const Campanas = () => {
         return;
       }
 
-      // 3. Función recursiva para obtener todas las estructuras de la jerarquía
+      // 3. Función recursiva mejorada para obtener todas las estructuras de la jerarquía
       const obtenerEstructurasRecursivas = async (estructuraId: number): Promise<number[]> => {
+        console.log(`Buscando estructuras hijas para ID: ${estructuraId}`);
         const estructurasIds = [estructuraId];
         
-        // Obtener todas las estructuras hijas directas
-        const { data: estructurasHijas } = await supabase
+        // Obtener todas las estructuras hijas directas usando parent_id
+        const { data: estructurasHijas, error } = await supabase
           .from("estructuras")
-          .select("id")
+          .select("id, nombre, tipo, parent_id")
           .eq("parent_id", estructuraId);
 
+        console.log(`Estructura ${estructuraId} - Hijas encontradas:`, estructurasHijas);
+        console.log(`Error en consulta:`, error);
+
         if (estructurasHijas && estructurasHijas.length > 0) {
+          console.log(`Procesando ${estructurasHijas.length} estructuras hijas de ${estructuraId}`);
           // Para cada estructura hija, obtener recursivamente sus descendientes
           for (const hija of estructurasHijas) {
+            console.log(`Procesando estructura hija: ${hija.id} (${hija.nombre} - ${hija.tipo})`);
             const descendientes = await obtenerEstructurasRecursivas(hija.id);
             estructurasIds.push(...descendientes);
           }
+        } else {
+          console.log(`No se encontraron estructuras hijas para ${estructuraId}`);
         }
 
+        console.log(`Estructura ${estructuraId} - Total IDs obtenidos:`, estructurasIds);
         return estructurasIds;
+      };
+
+      // 3.5. También intentar buscar usando el campo parent_estructura_id como alternativa
+      const obtenerEstructurasAlternativa = async (): Promise<number[]> => {
+        console.log('Intentando método alternativo: buscar TODAS las estructuras y filtrar manualmente');
+        
+        const { data: todasLasEstructuras } = await supabase
+          .from("estructuras")
+          .select("id, nombre, tipo, parent_id, parent_estructura_id");
+        
+        console.log('TODAS las estructuras en el sistema:', todasLasEstructuras);
+        
+        if (!todasLasEstructuras) return [];
+        
+        // Construir un mapa de jerarquía
+        const construirJerarquia = (parentId: number): number[] => {
+          const estructurasIds = [parentId];
+          
+          // Buscar por parent_id
+          const hijasPorParentId = todasLasEstructuras.filter(e => e.parent_id === parentId);
+          console.log(`Hijas de ${parentId} por parent_id:`, hijasPorParentId);
+          
+          // Buscar por parent_estructura_id como alternativa
+          const hijasPorParentEstructuraId = todasLasEstructuras.filter(e => e.parent_estructura_id === parentId);
+          console.log(`Hijas de ${parentId} por parent_estructura_id:`, hijasPorParentEstructuraId);
+          
+          // Combinar ambos resultados
+          const todasLasHijas = [...hijasPorParentId, ...hijasPorParentEstructuraId];
+          
+          for (const hija of todasLasHijas) {
+            if (!estructurasIds.includes(hija.id)) {
+              const descendientes = construirJerarquia(hija.id);
+              estructurasIds.push(...descendientes);
+            }
+          }
+          
+          return [...new Set(estructurasIds)]; // Eliminar duplicados
+        };
+        
+        const empresaId = empresaEstructura.estructuras_id;
+        const paisId = paisEstructura.estructuras_id;
+        
+        const estructurasEmpresa = construirJerarquia(empresaId);
+        const estructurasPais = construirJerarquia(paisId);
+        
+        console.log('Método alternativo - Estructuras de empresa:', estructurasEmpresa);
+        console.log('Método alternativo - Estructuras de país:', estructurasPais);
+        
+        return [...new Set([...estructurasEmpresa, ...estructurasPais])];
       };
 
       // 4. Obtener TODAS las estructuras de la jerarquía para empresa y país
       console.log('Obteniendo estructuras para empresa:', empresaEstructura.estructuras_id);
       console.log('Obteniendo estructuras para país:', paisEstructura.estructuras_id);
 
-      const estructurasEmpresa = await obtenerEstructurasRecursivas(empresaEstructura.estructuras_id);
-      const estructurasPais = await obtenerEstructurasRecursivas(paisEstructura.estructuras_id);
+      let estructurasEmpresa = await obtenerEstructurasRecursivas(empresaEstructura.estructuras_id);
+      let estructurasPais = await obtenerEstructurasRecursivas(paisEstructura.estructuras_id);
 
       // Combinar todas las estructuras y eliminar duplicados
-      const todasLasEstructurasIds = [...new Set([
+      let todasLasEstructurasIds = [...new Set([
         ...estructurasEmpresa,
         ...estructurasPais
       ])];
 
-      console.log('Estructuras de empresa obtenidas:', estructurasEmpresa);
-      console.log('Estructuras de país obtenidas:', estructurasPais);
-      console.log('TODAS las estructuras combinadas:', todasLasEstructurasIds);
+      console.log('Estructuras de empresa obtenidas (método recursivo):', estructurasEmpresa);
+      console.log('Estructuras de país obtenidas (método recursivo):', estructurasPais);
+      console.log('TODAS las estructuras combinadas (método recursivo):', todasLasEstructurasIds);
+
+      // Si solo obtenemos las estructuras padre, intentar método alternativo
+      if (todasLasEstructurasIds.length <= 2) {
+        console.log('Pocos resultados con método recursivo, probando método alternativo...');
+        const estructurasAlternativas = await obtenerEstructurasAlternativa();
+        if (estructurasAlternativas.length > todasLasEstructurasIds.length) {
+          console.log('Método alternativo obtuvo más resultados, usando esos:', estructurasAlternativas);
+          todasLasEstructurasIds = estructurasAlternativas;
+        }
+      }
 
       // Verificar que efectivamente tengamos estructuras
       if (todasLasEstructurasIds.length === 0) {
@@ -446,32 +521,85 @@ const Campanas = () => {
       }
 
       const estructurasIds = todasLasEstructurasIds;
+      console.log('RESUMEN: Estructuras finales para buscar usuarios:', estructurasIds);
 
       console.log('IDs de todas las estructuras:', estructurasIds);
 
-      // 5. Obtener usuarios activos vinculados a las estructuras y verificar su estado de actividad
-      const { data: usuarios } = await supabase
+      // 5. Primero, vamos a investigar qué usuarios existen y a qué estructuras están vinculados
+      const { data: todosLosUsuarios, error: usersError } = await supabase
         .from("users")
         .select(`
           id,
           nombre_completo,
           email,
           estructura_id,
-          user_activity!inner (
-            last_active,
-            is_online
-          )
-        `)
-        .in("estructura_id", estructurasIds)
-        .eq("is_active", true)
-        .eq("user_activity.is_online", true)
-        .gte("user_activity.last_active", new Date(Date.now() - 15 * 60 * 1000).toISOString()); // Últimos 15 minutos
+          is_active
+        `);
 
-      console.log('Usuarios activos encontrados:', usuarios);
+      console.log('TODOS los usuarios en el sistema:', todosLosUsuarios);
+      console.log('Error al obtener usuarios:', usersError);
+
+      if (todosLosUsuarios) {
+        const usuariosEnEstructuras = todosLosUsuarios.filter(u => estructurasIds.includes(u.estructura_id));
+        console.log('Usuarios encontrados en las estructuras target:', usuariosEnEstructuras);
+        
+        // Mostrar estadísticas por estructura
+        estructurasIds.forEach(estructuraId => {
+          const usuariosEnEstructura = todosLosUsuarios.filter(u => u.estructura_id === estructuraId);
+          console.log(`Estructura ${estructuraId}: ${usuariosEnEstructura.length} usuarios`, usuariosEnEstructura);
+        });
+      }
+
+      // Obtener usuarios vinculados a las estructuras específicas
+      const { data: usuariosEstructuras } = await supabase
+        .from("users")
+        .select(`
+          id,
+          nombre_completo,
+          email,
+          estructura_id,
+          is_active
+        `)
+        .in("estructura_id", estructurasIds);
+
+      console.log('Usuarios filtrados por estructuras target:', usuariosEstructuras);
+
+      let usuarios = usuariosEstructuras;
 
       if (!usuarios?.length) {
-        toast.error("No hay usuarios activos disponibles para asignar los leads");
-        return;
+        // Intentar una estrategia alternativa: buscar usuarios en estructuras relacionadas
+        console.log('No se encontraron usuarios en estructuras específicas, buscando alternativas...');
+        
+        // Buscar usuarios en CUALQUIER estructura para debug
+        const { data: algunosUsuarios } = await supabase
+          .from("users")
+          .select(`
+            id,
+            nombre_completo,
+            email,
+            estructura_id,
+            is_active
+          `)
+          .limit(10);
+        
+        console.log('Muestra de usuarios del sistema:', algunosUsuarios);
+        
+        // Como workaround temporal, usar cualquier usuario activo del sistema
+        if (algunosUsuarios && algunosUsuarios.length > 0) {
+          const usuariosActivos = algunosUsuarios.filter(u => u.is_active);
+          if (usuariosActivos.length > 0) {
+            console.log('WORKAROUND: Usando usuarios activos del sistema general:', usuariosActivos);
+            toast.info(`MODO DEBUG: No hay usuarios en estructuras específicas, usando ${usuariosActivos.length} usuarios activos del sistema como alternativa`);
+            
+            // Usar estos usuarios como backup
+            usuarios = usuariosActivos;
+          }
+        }
+        
+        if (!usuarios?.length) {
+          toast.error(`No hay usuarios disponibles en las estructuras seleccionadas (IDs: ${estructurasIds.join(', ')}). Verifica que existan usuarios asignados a estas estructuras.`);
+          return;
+        }
       }
 
       // 6. Obtener los leads del batch que no están asignados y SOLO tienen estado SIN_LLAMAR
@@ -490,49 +618,127 @@ const Campanas = () => {
       console.log('Leads sin asignar del batch:', batchLeads);
 
       if (!batchLeads?.length) {
-        toast.error("No hay leads pendientes por asignar en este batch");
+        // Verificar si hay leads en el batch en general
+        const { data: todosLosLeads } = await supabase
+          .from("leads")
+          .select("id, estado, asignado_a")
+          .eq("batch_id", batchId);
+        
+        console.log('Todos los leads del batch:', todosLosLeads);
+        
+        const leadsSinAsignar = todosLosLeads?.filter(lead => !lead.asignado_a) || [];
+        const leadsSinLlamar = todosLosLeads?.filter(lead => lead.estado === "SIN_LLAMAR") || [];
+        
+        console.log('Leads sin asignar (total):', leadsSinAsignar.length);
+        console.log('Leads SIN_LLAMAR (total):', leadsSinLlamar.length);
+        
+        if (leadsSinAsignar.length === 0) {
+          toast.error("Todos los leads de este batch ya están asignados");
+        } else if (leadsSinLlamar.length === 0) {
+          toast.error("No hay leads con estado SIN_LLAMAR en este batch");
+        } else {
+          toast.error("No hay leads pendientes por asignar en este batch (SIN_LLAMAR y sin asignar)");
+        }
         return;
       }
 
-      // 7. Distribuir los leads entre los usuarios activos (10 leads por usuario)
+      // 7. Distribuir los leads de manera equitativa entre todos los usuarios
       const leadsUpdates = [];
-      const LEADS_POR_USUARIO = 10;
+      const MAX_LEADS_POR_USUARIO = 10;
+      const totalLeads = batchLeads.length;
+      const totalUsuarios = usuarios.length;
+
+      console.log(`Distribución: ${totalLeads} leads entre ${totalUsuarios} usuarios`);
+      
+      // Calcular distribución base equitativa
+      const leadsBasePorUsuario = Math.floor(totalLeads / totalUsuarios);
+      const leadsMaximoPorUsuario = Math.min(MAX_LEADS_POR_USUARIO, leadsBasePorUsuario);
+      const leadsSobrantes = totalLeads - (leadsMaximoPorUsuario * totalUsuarios);
+      
+      console.log(`Distribución base: ${leadsMaximoPorUsuario} leads por usuario`);
+      console.log(`Leads sobrantes después de distribución base: ${leadsSobrantes}`);
+      
+      // Crear array para tracking de leads asignados por usuario
+      const leadsAsignadosPorUsuario = usuarios.map(usuario => ({
+        usuario: usuario,
+        leadsAsignados: 0
+      }));
+
       let leadIndex = 0;
 
-      // Distribuir leads mientras haya disponibles
-      while (leadIndex < batchLeads.length) {
-        // Iterar sobre cada usuario activo
-        for (const usuario of usuarios) {
-          // Asignar hasta 10 leads a este usuario
-          const leadsParaUsuario = Math.min(
-            LEADS_POR_USUARIO,
-            batchLeads.length - leadIndex // No exceder el total de leads disponibles
-          );
+      // FASE 1: Distribución base equitativa
+      console.log('FASE 1: Distribución base equitativa');
+      for (const usuarioData of leadsAsignadosPorUsuario) {
+        for (let i = 0; i < leadsMaximoPorUsuario && leadIndex < totalLeads; i++) {
+          leadsUpdates.push({
+            id: batchLeads[leadIndex].id,
+            estado: "SIN_LLAMAR",
+            asignado_a: usuarioData.usuario.id,
+            origen: "Batch",
+            updated_at: new Date().toISOString()
+          });
+          usuarioData.leadsAsignados++;
+          leadIndex++;
+        }
+      }
 
-          // Si no quedan leads por asignar, salir del loop
-          if (leadsParaUsuario <= 0) break;
-
-          // Asignar los leads a este usuario
-          for (let i = 0; i < leadsParaUsuario; i++) {
-            if (leadIndex < batchLeads.length) {
-              leadsUpdates.push({
-                id: batchLeads[leadIndex].id,
-                estado: "SIN_LLAMAR", // Mantener el estado SIN_LLAMAR
-                asignado_a: usuario.id,
-                origen: "Batch",
-                updated_at: new Date().toISOString()
-              });
-              leadIndex++;
-            }
+      console.log(`Después de FASE 1: ${leadIndex} leads asignados`);
+      
+      // FASE 2: Distribuir leads sobrantes uno por uno hasta completar MAX_LEADS_POR_USUARIO
+      if (leadIndex < totalLeads) {
+        console.log('FASE 2: Distribuyendo leads sobrantes');
+        let usuarioIndex = 0;
+        
+        while (leadIndex < totalLeads) {
+          const usuarioData = leadsAsignadosPorUsuario[usuarioIndex];
+          
+          // Si este usuario puede recibir más leads (no ha llegado al máximo)
+          if (usuarioData.leadsAsignados < MAX_LEADS_POR_USUARIO) {
+            leadsUpdates.push({
+              id: batchLeads[leadIndex].id,
+              estado: "SIN_LLAMAR",
+              asignado_a: usuarioData.usuario.id,
+              origen: "Batch",
+              updated_at: new Date().toISOString()
+            });
+            usuarioData.leadsAsignados++;
+            leadIndex++;
+          }
+          
+          // Pasar al siguiente usuario (circular)
+          usuarioIndex = (usuarioIndex + 1) % totalUsuarios;
+          
+          // Si todos los usuarios han llegado al máximo, salir del loop
+          if (leadsAsignadosPorUsuario.every(u => u.leadsAsignados >= MAX_LEADS_POR_USUARIO)) {
+            console.log('Todos los usuarios han alcanzado el máximo de leads permitidos');
+            break;
           }
         }
-        // Si ya procesamos todos los leads, salir del loop principal
-        if (leadIndex >= batchLeads.length) break;
+      }
+
+      // Mostrar estadísticas finales
+      console.log('ESTADÍSTICAS FINALES DE DISTRIBUCIÓN:');
+      leadsAsignadosPorUsuario.forEach(usuarioData => {
+        console.log(`Usuario ${usuarioData.usuario.nombre_completo}: ${usuarioData.leadsAsignados} leads`);
+      });
+      console.log(`Total de leads procesados: ${leadIndex} de ${totalLeads}`);
+      
+      if (leadIndex < totalLeads) {
+        const leadsNoAsignados = totalLeads - leadIndex;
+        console.log(`ADVERTENCIA: ${leadsNoAsignados} leads no pudieron ser asignados (todos los usuarios alcanzaron el máximo)`);
+        toast.info(`Se distribuyeron ${leadIndex} leads. ${leadsNoAsignados} leads no asignados (usuarios en capacidad máxima).`);
       }
 
       console.log('Actualizaciones de leads a realizar:', leadsUpdates);
 
       // 8. Actualizar los leads en la base de datos
+      if (leadsUpdates.length === 0) {
+        toast.error("No hay actualizaciones de leads para procesar");
+        return false;
+      }
+
+      console.log('Ejecutando actualización en base de datos para', leadsUpdates.length, 'leads');
+      
       const { error: updateError } = await supabase
         .from("leads")
         .upsert(leadsUpdates);
@@ -542,8 +748,19 @@ const Campanas = () => {
         throw updateError;
       }
 
+      console.log('Actualización completada exitosamente');
+      
+      // Verificar que los leads se actualizaron correctamente
+      const { data: verificacionLeads } = await supabase
+        .from("leads")
+        .select("id, asignado_a, estado")
+        .eq("batch_id", batchId)
+        .not("asignado_a", "is", null);
+      
+      console.log('Leads asignados después de la actualización:', verificacionLeads);
+
       await refetch();
-      toast.success(`${leadsUpdates.length} leads distribuidos entre ${usuarios.length} usuarios activos`);
+      toast.success(`${leadsUpdates.length} leads distribuidos entre ${usuarios.length} usuarios. ${verificacionLeads?.length || 0} leads confirmados como asignados.`);
       return true;
 
     } catch (error) {
@@ -561,34 +778,40 @@ const Campanas = () => {
         .delete()
         .eq("lead_batch_id", batchId);
 
-      if (deleteError) throw deleteError;
-
-      // Luego insertar las nuevas estructuras
-      const { error: insertError } = await supabase
-        .from("batch_estructura_permisos")
-        .insert([
-          { estructuras_id: empresaId, lead_batch_id: batchId },
-          { estructuras_id: paisId, lead_batch_id: batchId },
-        ]);
-
-      if (insertError) throw insertError;
-
-      // Redistribuir los leads
-      const { data: leads } = await supabase
-        .from("campaign_leads")
-        .select("*")
-        .eq("batch_id", batchId);
-
-      if (leads) {
-        await distribuirLeads(batchId, leads);
+      if (deleteError) {
+        console.error('Error al eliminar estructuras existentes:', deleteError);
+        throw deleteError;
       }
 
+      // Esperar un momento para que se complete la eliminación
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Luego insertar las nuevas estructuras usando upsert para evitar conflictos
+      const { error: insertError } = await supabase
+        .from("batch_estructura_permisos")
+        .upsert([
+          { estructuras_id: empresaId, lead_batch_id: batchId },
+          { estructuras_id: paisId, lead_batch_id: batchId },
+        ], {
+          onConflict: 'estructuras_id,lead_batch_id'
+        });
+
+      if (insertError) {
+        console.error('Error al insertar nuevas estructuras:', insertError);
+        throw insertError;
+      }
+
+      // Redistribuir los leads
+      await distribuirLeads(batchId);
+
       setEditingBatchId(null);
+      setSelectedEmpresa(null);
+      setSelectedPais(null);
       refetch();
       toast.success("Estructuras actualizadas y leads redistribuidos correctamente");
     } catch (error) {
       console.error('Error al actualizar estructuras:', error);
-      toast.error("Error al actualizar las estructuras");
+      toast.error(`Error al actualizar las estructuras: ${error instanceof Error ? error.message : 'Error desconocido'}`);
     }
   };
 
@@ -664,36 +887,41 @@ const Campanas = () => {
   };
 
   const handleVincularEstructuras = async (batchId: number, empresaId: number, paisId: number) => {
-    const { error: estructurasError } = await supabase
-      .from("batch_estructura_permisos")
-      .insert([
-        {
-          estructuras_id: empresaId,
-          lead_batch_id: batchId,
-        },
-        {
-          estructuras_id: paisId,
-          lead_batch_id: batchId,
-        },
-      ]);
+    try {
+      // Usar upsert para evitar conflictos de duplicados
+      const { error: estructurasError } = await supabase
+        .from("batch_estructura_permisos")
+        .upsert([
+          {
+            estructuras_id: empresaId,
+            lead_batch_id: batchId,
+          },
+          {
+            estructuras_id: paisId,
+            lead_batch_id: batchId,
+          },
+        ], {
+          onConflict: 'estructuras_id,lead_batch_id'
+        });
 
-    if (estructurasError) {
-      toast.error("Error al vincular estructuras");
-      return;
+      if (estructurasError) {
+        console.error('Error al vincular estructuras:', estructurasError);
+        toast.error(`Error al vincular estructuras: ${estructurasError.message}`);
+        return;
+      }
+
+      // Distribuir leads después de vincular estructuras
+      await distribuirLeads(batchId);
+
+      // Limpiar los valores seleccionados
+      setSelectedEmpresa(null);
+      setSelectedPais(null);
+      refetch();
+      toast.success("Estructuras vinculadas y leads distribuidos correctamente");
+    } catch (error) {
+      console.error('Error en handleVincularEstructuras:', error);
+      toast.error(`Error al vincular estructuras: ${error instanceof Error ? error.message : 'Error desconocido'}`);
     }
-
-    // Distribuir leads después de vincular estructuras
-    const { data: leads } = await supabase
-      .from("campaign_leads")
-      .select("*")
-      .eq("batch_id", batchId);
-
-    if (leads) {
-      await distribuirLeads(batchId, leads);
-    }
-
-    refetch();
-    toast.success("Estructuras vinculadas y leads distribuidos correctamente");
   };
 
   const downloadTemplate = () => {
@@ -2486,7 +2714,7 @@ const saveFormById = async (formId: string) => {
                               const empresaId = batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Empresa')?.estructuras_id;
                               const paisId = batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Paises')?.estructuras_id;
                               if (empresaId && paisId) {
-                                await distribuirLeads(batch.id, batch.leads);
+                                await distribuirLeads(batch.id);
                                 refetch();
                               }
                             }}

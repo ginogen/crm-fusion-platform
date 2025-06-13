@@ -23,6 +23,7 @@ import { Calendar as CalendarIcon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { addDays } from "date-fns";
+import { getAllSubordinatesRecursively } from "@/lib/hierarchy-utils";
 
 interface LeadsTableProps {
   onEdit?: (lead: any) => void;
@@ -256,22 +257,18 @@ const LeadsTable = ({
           baseQuery = baseQuery.eq('asignado_a', currentUser.id);
           console.log('Filtered for ASESOR_TRAINING with ID:', currentUser.id);
         } else {
-          // Para otros roles, necesitamos obtener los usuarios subordinados
-          const { data: subordinateUsers } = await supabase
-            .from("users")
-            .select("id, user_position, estructuras!inner(id)")
-            .in("user_position", ROLE_HIERARCHY[currentUser.user_position] || [])
-            .eq("estructuras.id", currentUser.estructuras?.[0]?.id);
-
-          console.log('Found subordinate users:', subordinateUsers);
-
-          const subordinateIds = subordinateUsers?.map(u => u.id) || [];
-          if (subordinateIds.length > 0) {
-            baseQuery = baseQuery.in('asignado_a', [currentUser.id, ...subordinateIds]);
+          // Para otros roles, usar la nueva función recursiva para obtener todos los subordinados
+          console.log('Getting all subordinates recursively for user:', currentUser.id);
+          const allSubordinateIds = await getAllSubordinatesRecursively(currentUser.id, currentUser.user_position);
+          
+          console.log('Found all subordinate IDs:', allSubordinateIds);
+          
+          if (allSubordinateIds.length > 0) {
+            baseQuery = baseQuery.in('asignado_a', [currentUser.id, ...allSubordinateIds]);
           } else {
             baseQuery = baseQuery.eq('asignado_a', currentUser.id);
           }
-          console.log('Filtered for user IDs:', [currentUser.id, ...subordinateIds]);
+          console.log('Filtered for user IDs:', [currentUser.id, ...allSubordinateIds]);
         }
       }
 
@@ -473,6 +470,22 @@ const LeadsTable = ({
         baseQuery = baseQuery.eq('asignado_a', currentUser.id);
       } else if (filters.asignado !== "all") {
         baseQuery = baseQuery.eq('asignado_a', filters.asignado);
+      } else if (currentUser.user_position !== USER_ROLES.CEO && 
+          currentUser.user_position !== USER_ROLES.DIRECTOR_NACIONAL && 
+          currentUser.user_position !== USER_ROLES.DIRECTOR_INTERNACIONAL) {
+        
+        if (currentUser.user_position === USER_ROLES.ASESOR_TRAINING) {
+          baseQuery = baseQuery.eq('asignado_a', currentUser.id);
+        } else {
+          // Usar la misma lógica recursiva que en la consulta principal
+          const allSubordinateIds = await getAllSubordinatesRecursively(currentUser.id, currentUser.user_position);
+          
+          if (allSubordinateIds.length > 0) {
+            baseQuery = baseQuery.in('asignado_a', [currentUser.id, ...allSubordinateIds]);
+          } else {
+            baseQuery = baseQuery.eq('asignado_a', currentUser.id);
+          }
+        }
       }
 
       if (filters.nombre) {
@@ -533,15 +546,11 @@ const LeadsTable = ({
         if (currentUser.user_position === USER_ROLES.ASESOR_TRAINING) {
           baseQuery = baseQuery.eq('asignado_a', currentUser.id);
         } else {
-          const { data: subordinateUsers } = await supabase
-            .from("users")
-            .select("id, user_position, estructuras!inner(id)")
-            .in("user_position", ROLE_HIERARCHY[currentUser.user_position] || [])
-            .eq("estructuras.id", currentUser.estructuras?.[0]?.id);
-
-          const subordinateIds = subordinateUsers?.map(u => u.id) || [];
-          if (subordinateIds.length > 0) {
-            baseQuery = baseQuery.in('asignado_a', [currentUser.id, ...subordinateIds]);
+          // Usar la misma lógica recursiva que en la consulta principal
+          const allSubordinateIds = await getAllSubordinatesRecursively(currentUser.id, currentUser.user_position);
+          
+          if (allSubordinateIds.length > 0) {
+            baseQuery = baseQuery.in('asignado_a', [currentUser.id, ...allSubordinateIds]);
           } else {
             baseQuery = baseQuery.eq('asignado_a', currentUser.id);
           }

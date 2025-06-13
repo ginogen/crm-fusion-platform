@@ -11,6 +11,6 @@ id,email,nombre_completo,hashed_password,role,estructura_id,is_active,created_at
 8e315c0b-3ba6-4169-84a7-fc4faedaac89,lgs@admin.com,lgs_admin,lgs_admin!,superuser,2,false,2025-02-13 13:51:32.79,,CEO,
 a5061dce-7663-482e-9ab1-d6ef078de9b7,m.nunez@letsgospeak.cl,Mabel Nuñez,,superuser,2,true,2025-02-14 13:09:03.154,,CEO,
 a8ed14f1-9b47-4d11-a896-d55ae1d873c4,test@test,test,,superuser,3,true,2025-02-20 20:15:23.242,,Sales Manager,4ce04130-d2b9-4003-9ee7-0f2d3e6c204c
-cd9993c7-5df1-449f-8d17-4d875b0757cf,m.rebolledo@letsgospeak.cL,Millaray Rebolledo,,usuario,13,true,,,Team Manager,fc4d04fe-3f0f-46d1-8ecf-d70d865859bd
+cd9993c7-5df1-449f-8d17-4d875b0757cf,m.rebolledo@letsgospeak.cL,Millaray Rebolledo,,usuario,13,true,,,Jefe de Grupo,fc4d04fe-3f0f-46d1-8ecf-d70d865859bd
 d0b2cc22-9c5c-473e-9043-bace8d86235d,ginoprueba@gmail.com,Gino,,usuario,11,false,,,Asesor Training,
 fc4d04fe-3f0f-46d1-8ecf-d70d865859bd,c.rodriguez@letsgospeak.cl,Claudia Rodriguez,,usuario,13,true,,,Sales Manager,88ca30a6-5a93-44c2-94d6-579dc393405e

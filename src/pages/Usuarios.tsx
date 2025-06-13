@@ -27,7 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Plus, Search, Ban, Edit, RefreshCw, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { supabaseAdmin } from "@/integrations/supabase/admin-client";
-import { ROLES, STRUCTURE_TYPES, STRUCTURE_TYPES_MAPPING } from "@/lib/constants";
+import { ROLES, STRUCTURE_TYPES, STRUCTURE_TYPES_MAPPING, MULTI_ESTRUCTURA_POSITIONS } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -40,6 +40,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { getAllSubordinatesRecursively } from "@/lib/hierarchy-utils";
 
 // Definir el tipo para las posiciones
 type JerarquiaPosicion = typeof JERARQUIA_POSICIONES[number];
@@ -72,7 +73,7 @@ const JERARQUIA_POSICIONES = [
   'Sales Manager',
   'Gerente Divisional',
   'Gerente',
-  'Team Manager',
+  'Jefe de Grupo',
   'Full Executive',
   'Asesor Training'
 ] as const;
@@ -94,7 +95,7 @@ const obtenerSupervisoresPotenciales = (usuarios: UserData[], posicionSelecciona
 const RESTRICTED_POSITIONS = {
   ASESOR_TRAINING: 'Asesor Training',
   FULL_EXECUTIVE: 'Full Executive',
-  TEAM_MANAGER: 'Team Manager',
+  TEAM_MANAGER: 'Jefe de Grupo',
   GERENTE: 'Gerente',
   GERENTE_DIVISIONAL: 'Gerente Divisional',
   SALES_MANAGER: 'Sales Manager',
@@ -162,9 +163,6 @@ interface UserEstructura {
   estructura_id: number;
 }
 
-// Agregar esta constante
-const MULTI_ESTRUCTURA_POSITIONS = ['Director de Zona', 'Director Internacional', 'CEO'];
-
 // Actualizar la interfaz del estado newUser
 interface NewUserState {
   id?: string;
@@ -178,6 +176,11 @@ interface NewUserState {
   supervisor_id: string;
   estructura_ids: string[];
 }
+
+// Función helper para verificar si un usuario tiene múltiples estructuras
+const hasMultiEstructura = (userPosition: string): boolean => {
+  return MULTI_ESTRUCTURA_POSITIONS.includes(userPosition as any);
+};
 
 const Usuarios = () => {
   const { toast } = useToast();
@@ -237,7 +240,7 @@ const Usuarios = () => {
 
       // Si no es CEO, filtrar usuarios según jerarquía y vinculación
       if (currentUser.user_position !== RESTRICTED_POSITIONS.CEO) {
-        const subordinados = await getSubordinados(currentUser.id);
+        const subordinados = await getAllSubordinatesRecursively(currentUser.id, currentUser.user_position);
         query = query.in('id', [currentUser.id, ...subordinados]);
       }
 
@@ -257,7 +260,7 @@ const Usuarios = () => {
 
       // Obtener las estructuras para usuarios con múltiples estructuras
       const usersWithStructures = await Promise.all(usersData.map(async (user) => {
-        if (MULTI_ESTRUCTURA_POSITIONS.includes(user.user_position)) {
+        if (hasMultiEstructura(user.user_position)) {
           // Obtener las estructuras relacionadas
           const { data: userEstructuras, error: estructurasError } = await supabase
             .from("user_estructuras")
@@ -311,29 +314,12 @@ const Usuarios = () => {
       'Sales Manager',
       'Gerente Divisional',
       'Gerente',
-      'Team Manager',
+      'Jefe de Grupo',
       'Full Executive',
       'Asesor Training'
     ];
 
     return !restrictedPositions.includes(userPosition || '');
-  };
-
-  // Función auxiliar para obtener subordinados recursivamente
-  const getSubordinados = async (userId: string): Promise<string[]> => {
-    const { data: directos } = await supabase
-      .from("users")
-      .select("id")
-      .eq("supervisor_id", userId);
-
-    if (!directos || directos.length === 0) return [];
-
-    const subordinadosDirectos = directos.map(u => u.id);
-    const subordinadosIndirectos = await Promise.all(
-      subordinadosDirectos.map(id => getSubordinados(id))
-    );
-
-    return [...subordinadosDirectos, ...subordinadosIndirectos.flat()];
   };
 
   // Usar supabaseAdmin solo para operaciones administrativas de auth
@@ -362,7 +348,7 @@ const Usuarios = () => {
             nombre_completo: newUser.nombre_completo,
             role: newUser.role,
             user_position: newUser.user_position,
-            estructura_id: MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position) 
+            estructura_id: hasMultiEstructura(newUser.user_position) 
               ? null 
               : parseInt(newUser.estructura_id),
             supervisor_id: supervisorId, // Usar el valor corregido
@@ -372,7 +358,7 @@ const Usuarios = () => {
         if (userError) throw userError;
 
         // Si es un rol con múltiples estructuras, actualizar las relaciones
-        if (MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position)) {
+        if (hasMultiEstructura(newUser.user_position)) {
           // Primero eliminar relaciones existentes
           const { error: deleteError } = await supabase
             .from("user_estructuras")
@@ -417,7 +403,7 @@ const Usuarios = () => {
         }
 
         // Validación específica para CEO y roles multi-estructura
-        if (MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position) && newUser.estructura_ids.length === 0) {
+        if (hasMultiEstructura(newUser.user_position) && newUser.estructura_ids.length === 0) {
           toast({
             variant: "destructive",
             title: "Error al crear usuario",
@@ -472,7 +458,7 @@ const Usuarios = () => {
           }
 
           // Si es un rol multi-estructura, crear las relaciones
-          if (MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position) && newUser.estructura_ids.length > 0) {
+          if (hasMultiEstructura(newUser.user_position) && newUser.estructura_ids.length > 0) {
             const estructurasToInsert = newUser.estructura_ids.map(estructuraId => ({
               user_id: userId,
               estructura_id: parseInt(estructuraId)
@@ -617,7 +603,7 @@ const Usuarios = () => {
     const estructura = estructuras?.find(e => e.id === user.estructura_id);
     
     // Obtener todas las estructuras del usuario si es multi-estructura
-    const estructuraIds = MULTI_ESTRUCTURA_POSITIONS.includes(user.user_position)
+    const estructuraIds = hasMultiEstructura(user.user_position)
       ? user.estructuras?.map(e => e.id.toString()) || []
       : [];
 
@@ -681,7 +667,7 @@ const Usuarios = () => {
     // Modificar la lógica para estructuras
     let matchesEstructura = true;
     if (estructuraFilter) {
-      if (MULTI_ESTRUCTURA_POSITIONS.includes(user.user_position)) {
+      if (hasMultiEstructura(user.user_position)) {
         // Para usuarios con múltiples estructuras
         matchesEstructura = user.estructuras?.some(e => 
           (e.custom_name || e.nombre)?.toLowerCase().includes(estructuraFilter.toLowerCase())
@@ -844,7 +830,7 @@ const Usuarios = () => {
                     )}
                   </TableCell>
                   <TableCell>
-                    {MULTI_ESTRUCTURA_POSITIONS.includes(user.user_position) ? (
+                    {hasMultiEstructura(user.user_position) ? (
                       // Para usuarios con múltiples estructuras
                       <span>
                         {user.estructuras?.map(e => e.custom_name || e.nombre).join(', ')}
@@ -1089,8 +1075,8 @@ const Usuarios = () => {
             </div>
             {newUser.tipo_estructura && (
               <div className="space-y-2">
-                <Label>Estructura{MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position) ? 's' : ''}</Label>
-                {MULTI_ESTRUCTURA_POSITIONS.includes(newUser.user_position) ? (
+                <Label>Estructura{hasMultiEstructura(newUser.user_position) ? 's' : ''}</Label>
+                {hasMultiEstructura(newUser.user_position) ? (
                   // Selección múltiple para roles multi-estructura
                   <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-2">
                     {estructuras

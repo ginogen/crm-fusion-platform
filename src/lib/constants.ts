@@ -79,7 +79,7 @@ export const ROLES = [
   "Sales Manager",
   "Gerente Divisional",
   "Gerente",
-  "Team Manager",
+  "Jefe de Grupo",
   "Full Executive",
   "Asesor Training",
 ] as const;
@@ -122,6 +122,14 @@ export const STRUCTURE_TYPES_MAPPING = {
 } as const;
 
 export const STRUCTURE_TYPES = Object.keys(STRUCTURE_TYPES_MAPPING) as (keyof typeof STRUCTURE_TYPES_MAPPING)[];
+
+export const MULTI_ESTRUCTURA_POSITIONS = [
+  'CEO', 
+  'Director Internacional', 
+  'Director Nacional',
+  'Director de Zona',
+  'Sales Manager'
+] as const;
 
 export const GESTION_TIPOS = {
   CITA: 'CITA',

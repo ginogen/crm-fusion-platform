@@ -6,6 +6,7 @@ import { useEstructuraHerencia } from "@/hooks/useEstructuraHerencia";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -33,7 +34,8 @@ import {
   Users,
   Building2,
   ChevronRight,
-  Network
+  Network,
+  Link2 // <-- Agrego el ícono de enlace
 } from "lucide-react";
 import {
   AlertDialog,
@@ -63,6 +65,45 @@ import ReactFlow, {
   addEdge,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { MULTI_ESTRUCTURA_POSITIONS } from "@/lib/constants";
+
+// Función helper para verificar si un usuario tiene múltiples estructuras
+const hasMultiEstructura = (userPosition: string): boolean => {
+  return MULTI_ESTRUCTURA_POSITIONS.some(position => position === userPosition);
+};
+
+// Después de la función hasMultiEstructura, agrego las nuevas funciones:
+// Posiciones que pueden hacer vinculación múltiple para estructuras superiores
+const POSICIONES_MULTI_VINCULACION = ['CEO', 'Director Internacional', 'Director Nacional'];
+
+// Función para determinar si se debe mostrar selección múltiple
+const puedeVincularMultiple = (userPosition: string, estructuraPadre?: Estructura | null): boolean => {
+  console.log('🔍 Evaluando puedeVincularMultiple:', {
+    userPosition,
+    estructuraPadre: estructuraPadre?.tipo,
+    estructuraPadreNombre: estructuraPadre?.custom_name || estructuraPadre?.nombre
+  });
+  
+  // Si el usuario tiene permisos especiales de multi-estructura
+  if (hasMultiEstructura(userPosition)) {
+    console.log('✅ Usuario tiene permisos de multi-estructura');
+    return true;
+  }
+  
+  // Si el usuario tiene posición directiva y la estructura padre es de nivel superior
+  if (POSICIONES_MULTI_VINCULACION.includes(userPosition) && estructuraPadre) {
+    const esEstructuraSuperior = ['Empresa', 'Paises', 'Zonas'].includes(estructuraPadre.tipo);
+    console.log('🎯 Evaluando posición directiva:', {
+      posicionIncluida: POSICIONES_MULTI_VINCULACION.includes(userPosition),
+      estructuraSuperior: esEstructuraSuperior,
+      tipoEstructura: estructuraPadre.tipo
+    });
+    return esEstructuraSuperior;
+  }
+  
+  console.log('❌ No cumple condiciones para selección múltiple');
+  return false;
+};
 
 // Componente personalizado para nodos del diagrama organizacional
 const EstructuraNode = ({ data }: { data: any }) => {
@@ -73,10 +114,10 @@ const EstructuraNode = ({ data }: { data: any }) => {
     const colors: Record<string, string> = {
       'Empresa': 'bg-purple-500 border-purple-600 text-white',
       'Paises': 'bg-blue-500 border-blue-600 text-white',
+      'Zonas': 'bg-green-500 border-green-600 text-white',
+      'Filial': 'bg-emerald-500 border-emerald-600 text-white',
       'División': 'bg-orange-500 border-orange-600 text-white',
       'Organizaciones': 'bg-cyan-500 border-cyan-600 text-white',
-      'Filiales': 'bg-green-500 border-green-600 text-white',
-      'Filial': 'bg-emerald-500 border-emerald-600 text-white',
       'Jefaturas': 'bg-yellow-500 border-yellow-600 text-white',
       'Sub Organización': 'bg-gray-500 border-gray-600 text-white'
     };
@@ -207,24 +248,35 @@ const CadenaJerarquica = ({ estructuraId, estructuras }: { estructuraId: number,
  * 
  * Nivel 0: Empresa          - Entidad corporativa principal (raíz)
  * Nivel 1: Países           - Divisiones geográficas por país
- * Nivel 2: División         - Divisiones operativas dentro de cada país
- * Nivel 3: Organizaciones   - Unidades organizacionales
- * Nivel 4: Filiales         - Grupos de filiales
- * Nivel 5: Filial           - Filiales individuales
- * Nivel 6: Jefaturas        - Jefaturas dentro de las filiales
- * Nivel 7: Sub Organización - Sub-organizaciones más específicas
+ * Nivel 2: Zonas            - Zonas geográficas o administrativas
+ * Nivel 3: Filial           - Filiales individuales
+ * Nivel 4: División         - Divisiones operativas
+ * Nivel 5: Organizacion     - Unidades organizacionales
+ * Nivel 6: Jefatura         - Jefaturas dentro de las organizaciones
+ * Nivel 7: Sub Organizacion - Sub-organizaciones más específicas
  */
 
 const TIPOS_ESTRUCTURA = [
   'Empresa',          // Nivel 0 - Empresa (raíz)
   'Paises',           // Nivel 1 - Países
-  'División',         // Nivel 2 - Divisiones por país
-  'Organizaciones',   // Nivel 3 - Organizaciones
-  'Filiales',         // Nivel 4 - Filiales (grupo)
-  'Filial',           // Nivel 5 - Filial individual
-  'Jefaturas',        // Nivel 6 - Jefaturas dentro de filiales
-  'Sub Organización'  // Nivel 7 - Sub-organizaciones (más específicas)
+  'Zonas',            // Nivel 2 - Zonas (anteriormente Filiales)
+  'Filial',           // Nivel 3 - Filial individual
+  'División',         // Nivel 4 - Divisiones operativas
+  'Organizaciones',   // Nivel 5 - Organizaciones
+  'Jefaturas',        // Nivel 6 - Jefaturas
+  'Sub Organización'  // Nivel 7 - Sub-organizaciones
 ] as const;
+
+const TIPOS_ESTRUCTURA_LABELS: Record<string, string> = {
+  'Empresa': 'Empresa',
+  'Paises': 'Países',
+  'Zonas': 'Zonas',
+  'Filial': 'Filial',
+  'División': 'División',
+  'Organizaciones': 'Organización',
+  'Jefaturas': 'Jefatura',
+  'Sub Organización': 'Sub Organización'
+};
 
 interface Estructura {
   id: number;
@@ -280,7 +332,7 @@ const EstructuraVinculada = ({ estructura, usuarios, isOpen, onToggle, estructur
               <div className="space-y-3">
                 {usuarios.map((usuario) => {
                   const supervisor = usuarios.find(u => u.id === usuario.supervisor_id);
-                  const esMultiEstructura = MULTI_ESTRUCTURA_POSITIONS.includes(usuario.user_position);
+                  const esMultiEstructura = hasMultiEstructura(usuario.user_position);
                   
                   return (
                     <div key={usuario.id} className="p-3 bg-slate-50 rounded-md">
@@ -327,13 +379,6 @@ const EstructuraVinculada = ({ estructura, usuarios, isOpen, onToggle, estructur
   );
 };
 
-const MULTI_ESTRUCTURA_POSITIONS = [
-  'CEO', 
-  'Director Internacional', 
-  'Director de Zona',
-  // 'Director Nacional' // Descomentar si quieres incluirlo
-];
-
 interface EstructuraTreeNodeProps {
   estructura: Estructura;
   usuarios: UserProfile[];
@@ -341,6 +386,7 @@ interface EstructuraTreeNodeProps {
   onEdit: (estructura: Estructura) => void;
   onDelete: (estructura: Estructura) => void;
   onShowUsuarios: (estructura: Estructura) => void;
+  onVincular: (estructura: Estructura) => void;
   allEstructuras: Estructura[];
   usuariosPorEstructura: Record<number, UserProfile[]>;
 }
@@ -352,6 +398,7 @@ const EstructuraTreeNode = ({
   onEdit, 
   onDelete, 
   onShowUsuarios,
+  onVincular,
   allEstructuras,
   usuariosPorEstructura 
 }: EstructuraTreeNodeProps) => {
@@ -385,12 +432,12 @@ const EstructuraTreeNode = ({
     const colors: Record<string, string> = {
       'Empresa': 'bg-purple-100 text-purple-800 border-purple-200',        // Nivel 0 - Púrpura (más alto)
       'Paises': 'bg-blue-100 text-blue-800 border-blue-200',              // Nivel 1 - Azul
-      'División': 'bg-orange-100 text-orange-800 border-orange-200',       // Nivel 2 - Naranja
-      'Organizaciones': 'bg-cyan-100 text-cyan-800 border-cyan-200',       // Nivel 3 - Cian
-      'Filiales': 'bg-green-100 text-green-800 border-green-200',          // Nivel 4 - Verde (grupo)
-      'Filial': 'bg-emerald-100 text-emerald-800 border-emerald-200',      // Nivel 5 - Verde esmeralda (individual)
-      'Jefaturas': 'bg-yellow-100 text-yellow-800 border-yellow-200',      // Nivel 6 - Amarillo
-      'Sub Organización': 'bg-gray-100 text-gray-800 border-gray-200'      // Nivel 7 - Gris (más específico)
+      'Zonas': 'bg-green-100 text-green-800 border-green-200',            // Nivel 2 - Verde
+      'Filial': 'bg-emerald-100 text-emerald-800 border-emerald-200',     // Nivel 3 - Verde esmeralda
+      'División': 'bg-orange-100 text-orange-800 border-orange-200',       // Nivel 4 - Naranja
+      'Organizaciones': 'bg-cyan-100 text-cyan-800 border-cyan-200',      // Nivel 5 - Cian
+      'Jefaturas': 'bg-yellow-100 text-yellow-800 border-yellow-200',     // Nivel 6 - Amarillo
+      'Sub Organización': 'bg-gray-100 text-gray-800 border-gray-200'     // Nivel 7 - Gris (más específico)
     };
     return colors[tipo] || 'bg-gray-100 text-gray-800 border-gray-200';
   };
@@ -461,10 +508,19 @@ const EstructuraTreeNode = ({
             size="sm"
             onClick={() => onEdit(estructura)}
             className="h-8 w-8 p-0"
+            title="Editar estructura"
           >
             <Building2 className="h-4 w-4" />
           </Button>
-          
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onVincular(estructura)}
+            className="h-8 w-8 p-0"
+            title="Gestionar vinculación"
+          >
+            <Link2 className="h-4 w-4" />
+          </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
@@ -515,6 +571,7 @@ const EstructuraTreeNode = ({
               onEdit={onEdit}
               onDelete={onDelete}
               onShowUsuarios={onShowUsuarios}
+              onVincular={onVincular}
               allEstructuras={allEstructuras}
               usuariosPorEstructura={usuariosPorEstructura}
             />
@@ -525,23 +582,24 @@ const EstructuraTreeNode = ({
   );
 };
 
-const EstructuraCard = ({ estructura, usuarios, onEdit, onDelete, onShowUsuarios }: {
+const EstructuraCard = ({ estructura, usuarios, onEdit, onDelete, onShowUsuarios, onVincular }: {
   estructura: Estructura;
   usuarios: UserProfile[];
   onEdit: (estructura: Estructura) => void;
   onDelete: (estructura: Estructura) => void;
   onShowUsuarios: (estructura: Estructura) => void;
+  onVincular: (estructura: Estructura) => void;
 }) => {
   const getTipoColor = (tipo: string) => {
     const colors: Record<string, string> = {
       'Empresa': 'bg-purple-100 text-purple-800 border-purple-200',        // Nivel 0 - Púrpura (más alto)
       'Paises': 'bg-blue-100 text-blue-800 border-blue-200',              // Nivel 1 - Azul
-      'División': 'bg-orange-100 text-orange-800 border-orange-200',       // Nivel 2 - Naranja
-      'Organizaciones': 'bg-cyan-100 text-cyan-800 border-cyan-200',       // Nivel 3 - Cian
-      'Filiales': 'bg-green-100 text-green-800 border-green-200',          // Nivel 4 - Verde (grupo)
-      'Filial': 'bg-emerald-100 text-emerald-800 border-emerald-200',      // Nivel 5 - Verde esmeralda (individual)
-      'Jefaturas': 'bg-yellow-100 text-yellow-800 border-yellow-200',      // Nivel 6 - Amarillo
-      'Sub Organización': 'bg-gray-100 text-gray-800 border-gray-200'      // Nivel 7 - Gris (más específico)
+      'Zonas': 'bg-green-100 text-green-800 border-green-200',            // Nivel 2 - Verde
+      'Filial': 'bg-emerald-100 text-emerald-800 border-emerald-200',     // Nivel 3 - Verde esmeralda
+      'División': 'bg-orange-100 text-orange-800 border-orange-200',       // Nivel 4 - Naranja
+      'Organizaciones': 'bg-cyan-100 text-cyan-800 border-cyan-200',      // Nivel 5 - Cian
+      'Jefaturas': 'bg-yellow-100 text-yellow-800 border-yellow-200',     // Nivel 6 - Amarillo
+      'Sub Organización': 'bg-gray-100 text-gray-800 border-gray-200'     // Nivel 7 - Gris (más específico)
     };
     return colors[tipo] || 'bg-gray-100 text-gray-800 border-gray-200';
   };
@@ -550,7 +608,12 @@ const EstructuraCard = ({ estructura, usuarios, onEdit, onDelete, onShowUsuarios
     <div className="relative p-4 bg-white rounded-lg border hover:shadow-md transition-shadow group">
       <div className="cursor-pointer" onClick={() => onEdit(estructura)}>
         <div className="flex items-center justify-between mb-2">
-          <h4 className="font-medium text-sm">
+          <h4 className="font-medium text-sm truncate cursor-pointer hover:underline"
+            onClick={(e) => {
+              e.stopPropagation();
+              onVincular(estructura);
+            }}
+          >
             {estructura.custom_name || estructura.nombre}
           </h4>
           <Badge variant="outline" className={`text-xs ${getTipoColor(estructura.tipo)}`}>
@@ -588,42 +651,69 @@ const EstructuraCard = ({ estructura, usuarios, onEdit, onDelete, onShowUsuarios
         </div>
       </div>
       
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8"
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción eliminará la estructura "{estructura.custom_name || estructura.nombre}" y no se puede deshacer.
-              {estructura.hijos && estructura.hijos.length > 0 && (
-                <span className="block mt-2 text-destructive font-medium">
-                  Advertencia: Esta estructura tiene {estructura.hijos.length} estructura(s) vinculada(s).
-                </span>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                onDelete(estructura);
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+      <div className="flex items-center space-x-2 absolute bottom-2 right-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit(estructura);
+          }}
+          className="h-8 w-8"
+          title="Editar estructura"
+        >
+          <Building2 className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={(e) => {
+            e.stopPropagation();
+            onVincular(estructura);
+          }}
+          className="h-8 w-8"
+          title="Gestionar vinculación"
+        >
+          <Link2 className="h-4 w-4" />
+        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive hover:text-destructive"
+              title="Eliminar estructura"
             >
-              Eliminar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta acción eliminará la estructura "{estructura.custom_name || estructura.nombre}" y no se puede deshacer.
+                {estructura.hijos && estructura.hijos.length > 0 && (
+                  <span className="block mt-2 text-destructive font-medium">
+                    Advertencia: Esta estructura tiene {estructura.hijos.length} estructura(s) vinculada(s).
+                  </span>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  onDelete(estructura);
+                }}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Eliminar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </div>
   );
 };
@@ -633,8 +723,10 @@ const Organizacion = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isVinculacionModalOpen, setIsVinculacionModalOpen] = useState(false);
   const [isUsuariosModalOpen, setIsUsuariosModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedEstructura, setSelectedEstructura] = useState<Estructura | null>(null);
   const [selectedEstructuraUsuarios, setSelectedEstructuraUsuarios] = useState<Estructura | null>(null);
+  const [editingEstructura, setEditingEstructura] = useState<Estructura | null>(null);
   const [estructurasSeleccionadas, setEstructurasSeleccionadas] = useState<number[]>([]);
   const [filterTipo, setFilterTipo] = useState<string>("");
   const [filterNombre, setFilterNombre] = useState("");
@@ -644,6 +736,10 @@ const Organizacion = () => {
     tipo: "",
     nombre: "",
     parent_estructura_id: null as number | null,
+  });
+  const [editForm, setEditForm] = useState({
+    nombre: "",
+    custom_name: ""
   });
 
   // Estados para el diagrama interactivo
@@ -1039,41 +1135,65 @@ const Organizacion = () => {
     }
 
     try {
-      // Validar que las vinculaciones sean jerárquicamente válidas
-      const vinculacionesInvalidas: string[] = [];
+      const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización'];
+      const nivelSeleccionada = TIPOS_ESTRUCTURA.indexOf(selectedEstructura.tipo);
       
-      for (const estructuraId of estructurasSeleccionadas) {
-        const esValida = herenciaUtils.esVinculacionValida(estructuraId, selectedEstructura.id);
-        if (!esValida) {
-          const estructura = estructuras?.find(e => e.id === estructuraId);
-          vinculacionesInvalidas.push(
-            `${estructura?.tipo || 'Estructura'} "${estructura?.custom_name || estructura?.nombre}"`
-          );
-        }
-      }
-
-      if (vinculacionesInvalidas.length > 0) {
-        toast.error(
-          `Vinculaciones inválidas: ${vinculacionesInvalidas.join(', ')}. ` +
-          `La estructura padre debe ser de mayor jerarquía.`
-        );
-        return;
-      }
-
-      // Actualizar vinculaciones directas
-      const updates = estructurasSeleccionadas.map(id => {
+      // Separar estructuras por tipo de vinculación
+      const estructurasParaPadre: number[] = [];
+      const estructurasParaHijos: number[] = [];
+      
+      estructurasSeleccionadas.forEach(id => {
         const estructura = estructuras?.find(e => e.id === id);
-        if (!estructura) {
-          throw new Error(`Estructura ${id} no encontrada`);
+        if (!estructura) return;
+        
+        const nivelEstructura = TIPOS_ESTRUCTURA.indexOf(estructura.tipo);
+        
+        if (nivelEstructura < nivelSeleccionada) {
+          // Es padre (mayor jerarquía)
+          estructurasParaPadre.push(id);
+        } else if (nivelEstructura > nivelSeleccionada) {
+          // Es hijo (menor jerarquía)
+          estructurasParaHijos.push(id);
+        }
+      });
+
+      const updates: any[] = [];
+      
+      // Manejar vinculación como padre
+      if (estructurasParaPadre.length > 0) {
+        if (estructurasParaPadre.length > 1) {
+          toast.error("Solo puedes vincular UNA estructura padre a la vez");
+          return;
         }
         
-        return {
-          id,
-          parent_estructura_id: selectedEstructura.id,
-          nombre: estructura.nombre,
-          tipo: estructura.tipo
-        };
-      });
+        // Cambiar el padre de la estructura seleccionada
+        updates.push({
+          id: selectedEstructura.id,
+          parent_estructura_id: estructurasParaPadre[0],
+          nombre: selectedEstructura.nombre,
+          tipo: selectedEstructura.tipo
+        });
+      }
+      
+      // Manejar vinculación como hijos
+      if (estructurasParaHijos.length > 0) {
+        estructurasParaHijos.forEach(id => {
+          const estructura = estructuras?.find(e => e.id === id);
+          if (estructura) {
+            updates.push({
+              id,
+              parent_estructura_id: selectedEstructura.id,
+              nombre: estructura.nombre,
+              tipo: estructura.tipo
+            });
+          }
+        });
+      }
+
+      if (updates.length === 0) {
+        toast.error("No hay vinculaciones válidas para procesar");
+        return;
+      }
 
       const { error } = await supabase
         .from("estructuras")
@@ -1088,16 +1208,24 @@ const Organizacion = () => {
       // Actualizar las vinculaciones heredadas para los usuarios
       await actualizarVinculacionesUsuarios();
 
-      // Mostrar información sobre la herencia aplicada
-      const estructurasVinculadas = estructurasSeleccionadas.map(id => {
-        const estructura = estructuras?.find(e => e.id === id);
-        return estructura?.custom_name || estructura?.nombre || `ID: ${id}`;
-      });
+      // Mostrar información sobre la vinculación
+      let mensaje = "✅ Vinculaciones realizadas exitosamente:\n";
+      
+      if (estructurasParaPadre.length > 0) {
+        const padreNombre = estructuras?.find(e => e.id === estructurasParaPadre[0])?.custom_name || 
+                           estructuras?.find(e => e.id === estructurasParaPadre[0])?.nombre;
+        mensaje += `• ${selectedEstructura.custom_name || selectedEstructura.nombre} ahora es hijo de ${padreNombre}\n`;
+      }
+      
+      if (estructurasParaHijos.length > 0) {
+        const hijosNombres = estructurasParaHijos.map(id => {
+          const estructura = estructuras?.find(e => e.id === id);
+          return estructura?.custom_name || estructura?.nombre || `ID: ${id}`;
+        });
+        mensaje += `• ${hijosNombres.join(', ')} ahora son hijos de ${selectedEstructura.custom_name || selectedEstructura.nombre}`;
+      }
 
-      toast.success(
-        `✅ Estructuras vinculadas exitosamente: ${estructurasVinculadas.join(', ')}. ` +
-        `Se han aplicado las vinculaciones en cascada automáticamente.`
-      );
+      toast.success(mensaje);
       
       setIsVinculacionModalOpen(false);
       setEstructurasSeleccionadas([]);
@@ -1330,8 +1458,48 @@ const Organizacion = () => {
   };
 
   const handleEditEstructura = (estructura: Estructura) => {
-    setSelectedEstructura(estructura);
-    setIsVinculacionModalOpen(true);
+    setEditingEstructura(estructura);
+    setEditForm({
+      nombre: estructura.nombre,
+      custom_name: estructura.custom_name || ""
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateEstructura = async () => {
+    if (!editingEstructura) return;
+
+    if (!editForm.nombre.trim()) {
+      toast.error("El nombre es requerido");
+      return;
+    }
+
+    try {
+      const updateData: any = {
+        nombre: editForm.nombre.trim(),
+        custom_name: editForm.custom_name.trim() || null
+      };
+
+      const { error } = await supabase
+        .from("estructuras")
+        .update(updateData)
+        .eq("id", editingEstructura.id);
+
+      if (error) {
+        console.error("Error updating estructura:", error);
+        toast.error("Error al actualizar la estructura");
+        return;
+      }
+
+      toast.success("Estructura actualizada exitosamente");
+      setIsEditModalOpen(false);
+      setEditingEstructura(null);
+      setEditForm({ nombre: "", custom_name: "" });
+      refetch();
+    } catch (error) {
+      console.error("Error updating estructura:", error);
+      toast.error("Error al actualizar la estructura");
+    }
   };
 
   const handleDeleteEstructuraFromCard = async (estructura: Estructura) => {
@@ -1673,7 +1841,7 @@ const Organizacion = () => {
                           )
                         ).map((tipo) => (
                           <SelectItem key={tipo} value={tipo}>
-                            {tipo}
+                            {TIPOS_ESTRUCTURA_LABELS[tipo]}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -1713,7 +1881,7 @@ const Organizacion = () => {
                 <SelectItem value="all">Todos</SelectItem>
                 {TIPOS_ESTRUCTURA.map((tipo) => (
                   <SelectItem key={tipo} value={tipo}>
-                    {tipo}
+                    {TIPOS_ESTRUCTURA_LABELS[tipo]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1736,7 +1904,7 @@ const Organizacion = () => {
           <div className="space-y-2">
             <div className="flex items-center space-x-2 text-sm text-muted-foreground mb-4">
               <TreePine className="h-4 w-4" />
-              <span>Vista jerárquica - Estructuras organizadas desde Empresa → Países → Divisiones → Organizaciones → Filiales → Jefaturas</span>
+              <span>Vista jerárquica - Estructuras organizadas desde Empresa → Paises → Zonas → Filial → División → Organizacion → Jefatura</span>
             </div>
             
             {estructurasRaiz.length > 0 ? (
@@ -1750,6 +1918,10 @@ const Organizacion = () => {
                     onEdit={handleEditEstructura}
                     onDelete={handleDeleteEstructuraFromCard}
                     onShowUsuarios={handleShowUsuarios}
+                    onVincular={(estructura) => {
+                      setSelectedEstructura(estructura);
+                      setIsVinculacionModalOpen(true);
+                    }}
                     allEstructuras={estructurasFiltradas || []}
                     usuariosPorEstructura={usuariosPorEstructura || {}}
                   />
@@ -1781,6 +1953,10 @@ const Organizacion = () => {
                             onEdit={handleEditEstructura}
                             onDelete={handleDeleteEstructuraFromCard}
                             onShowUsuarios={handleShowUsuarios}
+                            onVincular={(estructura) => {
+                              setSelectedEstructura(estructura);
+                              setIsVinculacionModalOpen(true);
+                            }}
                             allEstructuras={estructurasFiltradas || []}
                             usuariosPorEstructura={usuariosPorEstructura || {}}
                           />
@@ -1832,6 +2008,10 @@ const Organizacion = () => {
                         onEdit={handleEditEstructura}
                         onDelete={handleDeleteEstructuraFromCard}
                         onShowUsuarios={handleShowUsuarios}
+                        onVincular={(estructura) => {
+                          setSelectedEstructura(estructura);
+                          setIsVinculacionModalOpen(true);
+                        }}
                       />
                     ))}
                   </div>
@@ -1911,11 +2091,16 @@ const Organizacion = () => {
       </div>
 
       <Dialog open={isVinculacionModalOpen} onOpenChange={setIsVinculacionModalOpen}>
-        <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
+        <DialogContent className="max-w-5xl h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
-              Estructura: {selectedEstructura?.custom_name || selectedEstructura?.nombre} ({selectedEstructura?.tipo})
+              Gestión de Estructura: {selectedEstructura?.custom_name || selectedEstructura?.nombre}
             </DialogTitle>
+            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+              <Badge variant="outline">{selectedEstructura?.tipo}</Badge>
+              <span>•</span>
+              <span>{estructurasVinculables.length} estructura(s) disponible(s) para vincular</span>
+            </div>
             {/* Agregar la cadena jerárquica */}
             {selectedEstructura && (
               <div className="space-y-2">
@@ -1937,72 +2122,237 @@ const Organizacion = () => {
             )}
           </DialogHeader>
           
-          {/* Agregar sección informativa sobre herencia */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-            <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0">
-                <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+          {/* SECCIÓN PRINCIPAL DE VINCULACIÓN */}
+          <div className="bg-gradient-to-r from-blue-50 to-green-50 border border-slate-300 rounded-lg p-4 mb-4">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+              <div className="flex items-center space-x-1">
+                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
               </div>
-              <div className="text-sm text-blue-700">
-                <p className="font-medium mb-2">💡 Sistema de Vinculaciones Heredadas</p>
-                <p className="mb-2">
-                  Al vincular una estructura, automáticamente hereda todas las vinculaciones de su estructura padre en cascada.
-                </p>
-                <p className="mb-2">
-                  <strong>Ejemplo:</strong> Si vinculas una Sub Organización a una Jefatura, automáticamente quedará vinculada a toda la cadena:
-                </p>
-                <div className="text-xs bg-white/50 p-2 rounded border font-mono">
-                  Sub Organización → Jefatura → Filial → Organizaciones → División → País → Empresa
+              <span>Gestión de Vinculaciones</span>
+            </h3>
+            
+            {/* Lógica unificada - PADRES E HIJOS */}
+            {(() => {
+              const tiposQuePermitienMultiples = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División'];
+              const puedeVincularMultiples = selectedEstructura && tiposQuePermitienMultiples.includes(selectedEstructura.tipo);
+              
+              // OBTENER TODAS LAS ESTRUCTURAS VINCULABLES (PADRES E HIJOS)
+              const todasLasEstructurasVinculables = estructuras?.filter(estructura => {
+                // No incluir la estructura actual
+                if (estructura.id === selectedEstructura?.id) return false;
+                
+                // No incluir estructuras que ya están vinculadas como hijos
+                if (estructura.parent_estructura_id === selectedEstructura?.id) return false;
+                
+                // No incluir la estructura padre actual (ya está vinculada)
+                if (selectedEstructura?.parent_estructura_id === estructura.id) return false;
+                
+                return true;
+              }) || [];
+              
+              // Separar por categorías para mejor organización
+              const estructurasPadres = todasLasEstructurasVinculables.filter(estructura => {
+                const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización'];
+                const nivelEstructura = TIPOS_ESTRUCTURA.indexOf(estructura.tipo);
+                const nivelSeleccionada = TIPOS_ESTRUCTURA.indexOf(selectedEstructura?.tipo || '');
+                return nivelEstructura < nivelSeleccionada; // Menor índice = mayor jerarquía
+              });
+              
+              const estructurasHijos = todasLasEstructurasVinculables.filter(estructura => {
+                const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización'];
+                const nivelEstructura = TIPOS_ESTRUCTURA.indexOf(estructura.tipo);
+                const nivelSeleccionada = TIPOS_ESTRUCTURA.indexOf(selectedEstructura?.tipo || '');
+                return nivelEstructura > nivelSeleccionada; // Mayor índice = menor jerarquía
+              });
+              
+              console.log('🔍 LÓGICA UNIFICADA:', {
+                tipoEstructura: selectedEstructura?.tipo,
+                puedeVincularMultiples,
+                totalDisponibles: todasLasEstructurasVinculables.length,
+                padresPosibles: estructurasPadres.length,
+                hijosPosibles: estructurasHijos.length,
+                tiposPermitidos: tiposQuePermitienMultiples
+              });
+              
+              return { 
+                puedeVincularMultiples, 
+                todasLasEstructurasVinculables,
+                estructurasPadres,
+                estructurasHijos
+              };
+            })().puedeVincularMultiples ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm font-medium text-green-800 bg-green-100 px-2 py-1 rounded">
+                    ✅ {selectedEstructura?.tipo} - Vinculación bidireccional ACTIVA
+                  </div>
+                  <Badge variant="secondary" className="text-xs">
+                    {estructurasSeleccionadas.length} seleccionada(s)
+                  </Badge>
                 </div>
-                <p className="mt-2 text-xs">
-                  ✅ Los usuarios vinculados automáticamente tendrán acceso a toda la cadena jerárquica
-                </p>
+                
+                {(() => {
+                  const data = (() => {
+                    const tiposQuePermitienMultiples = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División'];
+                    const puedeVincularMultiples = selectedEstructura && tiposQuePermitienMultiples.includes(selectedEstructura.tipo);
+                    
+                    const todasLasEstructurasVinculables = estructuras?.filter(estructura => {
+                      if (estructura.id === selectedEstructura?.id) return false;
+                      if (estructura.parent_estructura_id === selectedEstructura?.id) return false;
+                      if (selectedEstructura?.parent_estructura_id === estructura.id) return false;
+                      return true;
+                    }) || [];
+                    
+                    const estructurasPadres = todasLasEstructurasVinculables.filter(estructura => {
+                      const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización'];
+                      const nivelEstructura = TIPOS_ESTRUCTURA.indexOf(estructura.tipo);
+                      const nivelSeleccionada = TIPOS_ESTRUCTURA.indexOf(selectedEstructura?.tipo || '');
+                      return nivelEstructura < nivelSeleccionada;
+                    });
+                    
+                    const estructurasHijos = todasLasEstructurasVinculables.filter(estructura => {
+                      const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización'];
+                      const nivelEstructura = TIPOS_ESTRUCTURA.indexOf(estructura.tipo);
+                      const nivelSeleccionada = TIPOS_ESTRUCTURA.indexOf(selectedEstructura?.tipo || '');
+                      return nivelEstructura > nivelSeleccionada;
+                    });
+                    
+                    return { todasLasEstructurasVinculables, estructurasPadres, estructurasHijos };
+                  })();
+                  
+                  if (data.todasLasEstructurasVinculables.length === 0) {
+                    return (
+                      <div className="text-center py-6 text-muted-foreground bg-white rounded p-4">
+                        <div className="mb-2">📭</div>
+                        <p className="text-sm">No hay estructuras disponibles para vincular</p>
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <div className="space-y-4 max-h-[300px] overflow-y-auto bg-white rounded p-3">
+                      <p className="text-sm font-bold text-green-800 mb-2">
+                        ✅ Selecciona múltiples estructuras ({data.todasLasEstructurasVinculables.length} disponibles):
+                      </p>
+                      
+                      {/* Estructuras padres (mayor jerarquía) */}
+                      {data.estructurasPadres.length > 0 && (
+                        <div className="mb-4">
+                          <h4 className="text-xs font-bold text-blue-700 mb-2 uppercase">
+                            📈 Vincular como PADRE ({data.estructurasPadres.length}):
+                          </h4>
+                          <div className="space-y-1">
+                            {data.estructurasPadres.map((estructura) => (
+                              <label key={estructura.id} className="flex items-center space-x-3 hover:bg-blue-50 p-2 rounded cursor-pointer border border-blue-200">
+                                <input
+                                  type="checkbox"
+                                  checked={estructurasSeleccionadas.includes(estructura.id)}
+                                  onChange={(e) => {
+                                    const id = estructura.id;
+                                    setEstructurasSeleccionadas(prev => 
+                                      e.target.checked
+                                        ? [...prev, id]
+                                        : prev.filter(x => x !== id)
+                                    );
+                                  }}
+                                  className="form-checkbox h-4 w-4 text-blue-600 rounded"
+                                />
+                                <div className="flex-1">
+                                  <div className="font-medium text-sm">
+                                    {estructura.custom_name || estructura.nombre}
+                                  </div>
+                                  <div className="text-xs text-blue-600">
+                                    {estructura.tipo}
+                                  </div>
+                                </div>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Estructuras hijos (menor jerarquía) */}
+                      {data.estructurasHijos.length > 0 && (
+                        <div>
+                          <h4 className="text-xs font-bold text-green-700 mb-2 uppercase">
+                            📉 Vincular como HIJOS ({data.estructurasHijos.length}):
+                          </h4>
+                          <div className="space-y-1">
+                            {data.estructurasHijos.map((estructura) => (
+                              <label key={estructura.id} className="flex items-center space-x-3 hover:bg-green-50 p-2 rounded cursor-pointer border border-green-200">
+                                <input
+                                  type="checkbox"
+                                  checked={estructurasSeleccionadas.includes(estructura.id)}
+                                  onChange={(e) => {
+                                    const id = estructura.id;
+                                    setEstructurasSeleccionadas(prev => 
+                                      e.target.checked
+                                        ? [...prev, id]
+                                        : prev.filter(x => x !== id)
+                                    );
+                                  }}
+                                  className="form-checkbox h-4 w-4 text-green-600 rounded"
+                                />
+                                <div className="flex-1">
+                                  <div className="font-medium text-sm">
+                                    {estructura.custom_name || estructura.nombre}
+                                  </div>
+                                  <div className="text-xs text-green-600">
+                                    {estructura.tipo}
+                                  </div>
+                                </div>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="text-sm text-yellow-700 mb-2 bg-yellow-100 px-2 py-1 rounded">
+                  ⚠️ {selectedEstructura?.tipo} - Selección única
+                </div>
+                <Select
+                  value={estructurasSeleccionadas[0]?.toString() || ""}
+                  onValueChange={(value) => {
+                    const id = parseInt(value);
+                    setEstructurasSeleccionadas([id]);
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Seleccionar estructura para vincular..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {estructurasVinculables.map((estructura) => (
+                      <SelectItem key={estructura.id} value={estructura.id.toString()}>
+                        {estructura.custom_name || estructura.nombre} ({estructura.tipo})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           
-          {/* Sección para cambiar padre de la estructura actual - SIEMPRE VISIBLE */}
-          {selectedEstructura && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-              <h4 className="font-medium text-yellow-800 mb-2">🔄 Cambiar Estructura Padre</h4>
-              <p className="text-sm text-yellow-700 mb-3">
-                Actualmente vinculada a: <strong>{
-                  selectedEstructura.parent_estructura_id 
-                    ? (estructuras?.find(e => e.id === selectedEstructura.parent_estructura_id)?.custom_name || 
-                       estructuras?.find(e => e.id === selectedEstructura.parent_estructura_id)?.nombre || 'Estructura padre')
-                    : 'Sin estructura padre (es raíz)'
-                }</strong>
-              </p>
-              
-              <Select
-                value={selectedEstructura.parent_estructura_id?.toString() || "null"}
-                onValueChange={(value) => {
-                  const newParentId = value === "null" ? null : parseInt(value);
-                  if (newParentId !== selectedEstructura.parent_estructura_id) {
-                    handleCambiarPadre(selectedEstructura.id, newParentId);
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Seleccionar nueva estructura padre..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="null">🚫 Sin estructura padre (convertir en raíz)</SelectItem>
-                  {selectedEstructuraStats?.padresPosibles.map((estructura) => (
-                    <SelectItem key={estructura.id} value={estructura.id.toString()}>
-                      📁 {estructura.custom_name || estructura.nombre} ({estructura.tipo})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              
-              {(selectedEstructuraStats?.padresPosibles.length || 0) === 0 && (
-                <p className="text-xs text-yellow-600 mt-2">
-                  ℹ️ Esta estructura no puede tener padres válidos según la jerarquía actual
-                </p>
-              )}
+          {/* Información sobre herencia */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+            <div className="flex items-center space-x-2 mb-2">
+              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+              <span className="font-medium text-blue-800 text-sm">Sistema de Herencia Automática</span>
             </div>
-          )}
+            <p className="text-sm text-blue-700">
+              Las estructuras vinculadas heredan automáticamente todas las conexiones de su estructura padre, 
+              creando una cadena jerárquica completa para el control de acceso.
+            </p>
+          </div>
+          
+
+          
+
 
           <div className="space-y-4 flex-1 overflow-y-auto pr-2">
 
@@ -2084,69 +2434,108 @@ const Organizacion = () => {
                 <div className="text-sm text-green-700 mb-3">
                   <p>Puedes vincular estructuras de <strong>menor jerarquía</strong> a {selectedEstructura.tipo}:</p>
                   <div className="text-xs mt-1 bg-white/50 p-2 rounded border">
-                    {selectedEstructura.tipo === 'Empresa' && '→ Países, División, Organizaciones, Filiales, Filial, Jefaturas, Sub Organización'}
-                    {selectedEstructura.tipo === 'Paises' && '→ División, Organizaciones, Filiales, Filial, Jefaturas, Sub Organización'}
-                    {selectedEstructura.tipo === 'División' && '→ Organizaciones, Filiales, Filial, Jefaturas, Sub Organización'}
-                    {selectedEstructura.tipo === 'Organizaciones' && '→ Filiales, Filial, Jefaturas, Sub Organización'}
-                    {selectedEstructura.tipo === 'Filiales' && '→ Filial, Jefaturas, Sub Organización'}
-                    {selectedEstructura.tipo === 'Filial' && '→ Jefaturas, Sub Organización'}
+                    {selectedEstructura.tipo === 'Empresa' && '→ Paises, Zonas, Filial, División, Organizaciones, Jefaturas, Sub Organización'}
+                    {selectedEstructura.tipo === 'Paises' && '→ Zonas, Filial, División, Organizaciones, Jefaturas, Sub Organización'}
+                    {selectedEstructura.tipo === 'Zonas' && '→ Filial, División, Organizaciones, Jefaturas, Sub Organización'}
+                    {selectedEstructura.tipo === 'Filial' && '→ División, Organizaciones, Jefaturas, Sub Organización'}
+                    {selectedEstructura.tipo === 'División' && '→ Organizaciones, Jefaturas, Sub Organización'}
+                    {selectedEstructura.tipo === 'Organizaciones' && '→ Jefaturas, Sub Organización'}
                     {selectedEstructura.tipo === 'Jefaturas' && '→ Sub Organización'}
                     {selectedEstructura.tipo === 'Sub Organización' && 'ℹ️ No puede tener estructuras hijas (nivel más bajo)'}
                   </div>
                 </div>
               )}
-              {MULTI_ESTRUCTURA_POSITIONS.includes(userProfile?.user_position || '') ? (
-                <div className="mt-2 space-y-2 max-h-[200px] overflow-y-auto border rounded-md p-2">
-                  {estructurasVinculables.length === 0 ? (
-                    <div className="text-center py-4 text-muted-foreground">
-                      <p className="text-sm">No hay estructuras disponibles para vincular</p>
-                      <p className="text-xs mt-1">
-                        Solo se muestran estructuras de menor jerarquía que pueden ser vinculadas correctamente
-                      </p>
+              
+              {/* Sección de vinculación - BASADO EN TIPO DE ESTRUCTURA */}
+              <div className="mt-2 space-y-2 border rounded-md p-3">
+                {/* MÚLTIPLES VINCULACIONES SEGÚN TIPO DE ESTRUCTURA */}
+                {(() => {
+                  // Estructuras que pueden tener múltiples hijos del mismo tipo
+                  const tiposQuePermitienMultiples = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División'];
+                  const puedeVincularMultiples = selectedEstructura && tiposQuePermitienMultiples.includes(selectedEstructura.tipo);
+                  
+                  console.log('🔍 LÓGICA DE ESTRUCTURA:', {
+                    tipoEstructura: selectedEstructura?.tipo,
+                    puedeVincularMultiples,
+                    estructurasDisponibles: estructurasVinculables.length
+                  });
+                  
+                  return puedeVincularMultiples;
+                })() ? (
+                                      <div className="space-y-2">
+                     <div className="flex items-center justify-between mb-3">
+                       <div className="text-sm font-medium text-green-800 bg-green-100 px-2 py-1 rounded">
+                         ✅ {selectedEstructura?.tipo} - Selección múltiple habilitada
+                       </div>
+                      <Badge variant="secondary" className="text-xs">
+                        {estructurasSeleccionadas.length} seleccionada(s)
+                      </Badge>
                     </div>
-                  ) : (
-                    estructurasVinculables.map((estructura) => (
-                      <label key={estructura.id} className="flex items-center space-x-2 hover:bg-slate-50 p-2 rounded cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={estructurasSeleccionadas.includes(estructura.id)}
-                          onChange={(e) => {
-                            const id = estructura.id;
-                            setEstructurasSeleccionadas(prev => 
-                              e.target.checked
-                                ? [...prev, id]
-                                : prev.filter(x => x !== id)
-                            );
-                          }}
-                          className="form-checkbox h-4 w-4"
-                        />
-                        <span>
-                          {estructura.custom_name || estructura.nombre} ({estructura.tipo})
-                        </span>
-                      </label>
-                    ))
-                  )}
-                </div>
-              ) : (
-                <Select
-                  value={estructurasSeleccionadas[0]?.toString()}
-                  onValueChange={(value) => {
-                    const id = parseInt(value);
-                    setEstructurasSeleccionadas([id]);
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar estructura..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {estructurasVinculables.map((estructura) => (
-                        <SelectItem key={estructura.id} value={estructura.id.toString()}>
-                          {estructura.custom_name || estructura.nombre} ({estructura.tipo})
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              )}
+                    
+                    {estructurasVinculables.length === 0 ? (
+                      <div className="text-center py-6 text-muted-foreground">
+                        <div className="mb-2">📭</div>
+                        <p className="text-sm">No hay estructuras disponibles para vincular</p>
+                        <p className="text-xs mt-1">
+                          Solo se muestran estructuras de menor jerarquía que pueden ser vinculadas correctamente
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                        {estructurasVinculables.map((estructura) => (
+                          <label key={estructura.id} className="flex items-center space-x-3 hover:bg-green-100 p-3 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-green-300">
+                            <input
+                              type="checkbox"
+                              checked={estructurasSeleccionadas.includes(estructura.id)}
+                              onChange={(e) => {
+                                const id = estructura.id;
+                                setEstructurasSeleccionadas(prev => 
+                                  e.target.checked
+                                    ? [...prev, id]
+                                    : prev.filter(x => x !== id)
+                                );
+                              }}
+                              className="form-checkbox h-4 w-4 text-green-600 rounded"
+                            />
+                            <div className="flex-1">
+                              <div className="font-medium text-sm">
+                                {estructura.custom_name || estructura.nombre}
+                              </div>
+                              <div className="text-xs text-green-600">
+                                {estructura.tipo}
+                              </div>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                                 ) : (
+                   <div className="space-y-2">
+                     <div className="text-sm text-yellow-700 mb-2 bg-yellow-100 px-2 py-1 rounded">
+                       ⚠️ {selectedEstructura?.tipo} - Selección única
+                     </div>
+                    <Select
+                      value={estructurasSeleccionadas[0]?.toString() || ""}
+                      onValueChange={(value) => {
+                        const id = parseInt(value);
+                        setEstructurasSeleccionadas([id]);
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Seleccionar estructura para vincular..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {estructurasVinculables.map((estructura) => (
+                          <SelectItem key={estructura.id} value={estructura.id.toString()}>
+                            {estructura.custom_name || estructura.nombre} ({estructura.tipo})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Sección de estadísticas detalladas */}
@@ -2178,10 +2567,10 @@ const Organizacion = () => {
                 <div className="mt-3 pt-3 border-t border-slate-300">
                   <span className="font-medium text-slate-600 text-sm">Tipos disponibles para vincular como hijos:</span>
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {['Empresa', 'Paises', 'División', 'Organizaciones', 'Filiales', 'Filial', 'Jefaturas', 'Sub Organización']
+                    {['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización']
                       .filter(tipo => {
                         // Solo mostrar tipos que son jerárquicamente válidos
-                        const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'División', 'Organizaciones', 'Filiales', 'Filial', 'Jefaturas', 'Sub Organización'];
+                        const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización'];
                         const selectedNivel = TIPOS_ESTRUCTURA.indexOf(selectedEstructura.tipo);
                         const tipoNivel = TIPOS_ESTRUCTURA.indexOf(tipo);
                         return tipoNivel > selectedNivel;
@@ -2192,9 +2581,9 @@ const Organizacion = () => {
                         </Badge>
                       ))
                     }
-                    {['Empresa', 'Paises', 'División', 'Organizaciones', 'Filiales', 'Filial', 'Jefaturas', 'Sub Organización']
+                    {['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización']
                       .filter(tipo => {
-                        const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'División', 'Organizaciones', 'Filiales', 'Filial', 'Jefaturas', 'Sub Organización'];
+                        const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización'];
                         const selectedNivel = TIPOS_ESTRUCTURA.indexOf(selectedEstructura.tipo);
                         const tipoNivel = TIPOS_ESTRUCTURA.indexOf(tipo);
                         return tipoNivel > selectedNivel;
@@ -2281,7 +2670,7 @@ const Organizacion = () => {
               <div className="space-y-3">
                 {usuariosPorEstructura[selectedEstructuraUsuarios.id].map((usuario) => {
                   const supervisor = usuariosPorEstructura[selectedEstructuraUsuarios.id]?.find(u => u.id === usuario.supervisor_id);
-                  const esMultiEstructura = MULTI_ESTRUCTURA_POSITIONS.includes(usuario.user_position);
+                  const esMultiEstructura = hasMultiEstructura(usuario.user_position);
                   
                   return (
                     <div key={usuario.id} className="p-4 bg-slate-50 rounded-lg border">
@@ -2346,6 +2735,90 @@ const Organizacion = () => {
           <div className="flex justify-end pt-4 border-t">
             <Button variant="outline" onClick={() => setIsUsuariosModalOpen(false)}>
               Cerrar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal para editar estructura */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Estructura</DialogTitle>
+            <DialogDescription>
+              Modifica el nombre de la estructura "{editingEstructura?.custom_name || editingEstructura?.nombre}"
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Tipo de Estructura</Label>
+              <Input
+                value={editingEstructura?.tipo || ""}
+                disabled
+                className="bg-muted"
+              />
+              <p className="text-xs text-muted-foreground">
+                El tipo de estructura no se puede modificar
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-nombre">Nombre Base *</Label>
+              <Input
+                id="edit-nombre"
+                placeholder="Nombre base de la estructura"
+                value={editForm.nombre}
+                onChange={(e) => 
+                  setEditForm(prev => ({ ...prev, nombre: e.target.value }))
+                }
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Este es el nombre base que se usa internamente
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-custom-name">Nombre Personalizado</Label>
+              <Input
+                id="edit-custom-name"
+                placeholder="Nombre personalizado (opcional)"
+                value={editForm.custom_name}
+                onChange={(e) => 
+                  setEditForm(prev => ({ ...prev, custom_name: e.target.value }))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Si se proporciona, este nombre se mostrará en lugar del nombre base
+              </p>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <h4 className="font-medium text-blue-800 mb-1">Vista previa:</h4>
+              <p className="text-sm text-blue-700">
+                Se mostrará como: <strong>
+                  {editForm.custom_name.trim() || editForm.nombre.trim() || "Sin nombre"}
+                </strong>
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex justify-end space-x-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsEditModalOpen(false);
+                setEditingEstructura(null);
+                setEditForm({ nombre: "", custom_name: "" });
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleUpdateEstructura}
+              disabled={!editForm.nombre.trim()}
+            >
+              Actualizar
             </Button>
           </div>
         </DialogContent>

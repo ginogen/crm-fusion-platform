@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/accordion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { MULTI_ESTRUCTURA_POSITIONS } from "@/lib/constants";
 
 interface UserTimeRecord {
   id: string;
@@ -80,8 +81,6 @@ interface UserData {
   in_appointment?: boolean;
   current_appointment?: UserTimeRecord | null;
 }
-
-const MULTI_ESTRUCTURA_POSITIONS = ['Director de Zona', 'Director Internacional', 'CEO'];
 
 const TimeControl = () => {
   const [emailFilter, setEmailFilter] = useState("");
