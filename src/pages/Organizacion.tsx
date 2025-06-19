@@ -278,6 +278,22 @@ const TIPOS_ESTRUCTURA_LABELS: Record<string, string> = {
   'Sub Organización': 'Sub Organización'
 };
 
+// Función para validar vinculaciones permitidas (incluye excepción Organizaciones ↔ Filial)
+const esVinculacionValida = (tipoHijo: typeof TIPOS_ESTRUCTURA[number], tipoPadre: typeof TIPOS_ESTRUCTURA[number]): boolean => {
+  const nivelHijo = TIPOS_ESTRUCTURA.indexOf(tipoHijo);
+  const nivelPadre = TIPOS_ESTRUCTURA.indexOf(tipoPadre);
+  
+  // Jerarquía inmediata normal (nivel exactamente superior)
+  const esJerarquiaInmediata = nivelPadre === (nivelHijo - 1);
+  
+  // EXCEPCIÓN: Organizaciones ↔ Filial pueden vincularse directamente
+  const esExcepcionOrganizacionesFilial = 
+    (tipoHijo === 'Organizaciones' && tipoPadre === 'Filial') ||
+    (tipoHijo === 'Filial' && tipoPadre === 'Organizaciones');
+  
+  return esJerarquiaInmediata || esExcepcionOrganizacionesFilial;
+};
+
 interface Estructura {
   id: number;
   tipo: typeof TIPOS_ESTRUCTURA[number];
@@ -891,13 +907,24 @@ const Organizacion = () => {
   }, [selectedEstructura, herenciaUtils]);
 
   // Memorizar estructuras vinculables para evitar filtros costosos en cada render
+  // INCLUYE JERARQUÍA INMEDIATA + EXCEPCIÓN Organizaciones ↔ Filial
   const estructurasVinculables = useMemo(() => {
     if (!selectedEstructura || !estructuras) return [];
-    return estructuras.filter(e => 
-      e.id !== selectedEstructura.id && 
-      herenciaUtils.esVinculacionValida(e.id, selectedEstructura.id)
-    );
-  }, [selectedEstructura, estructuras, herenciaUtils]);
+    
+    return estructuras.filter(e => {
+      // No incluir la estructura actual
+      if (e.id === selectedEstructura.id) return false;
+      
+      // No incluir estructuras que ya están vinculadas directamente
+      if (e.parent_estructura_id === selectedEstructura.id) return false;
+      if (selectedEstructura.parent_estructura_id === e.id) return false;
+      
+      // Verificar si la vinculación es válida (jerarquía inmediata + excepción)
+      // Probar ambas direcciones: e como hijo de selectedEstructura, y e como padre de selectedEstructura
+      return esVinculacionValida(e.tipo, selectedEstructura.tipo) || 
+             esVinculacionValida(selectedEstructura.tipo, e.tipo);
+    });
+  }, [selectedEstructura, estructuras]);
 
   // Comentado temporalmente para evitar el error 409
   // Solo ejecutamos actualizarVinculacionesUsuarios cuando el usuario hace cambios manuales
@@ -1128,11 +1155,17 @@ const Organizacion = () => {
     }
   };
 
+  const [isVinculando, setIsVinculando] = useState(false);
+
   const handleVincularEstructuras = async () => {
     if (!selectedEstructura || estructurasSeleccionadas.length === 0) {
       toast.error("Por favor seleccione al menos una estructura para vincular");
       return;
     }
+
+    // Iniciar estado de carga
+    setIsVinculando(true);
+    const loadingToast = toast.loading("🔗 Vinculando estructuras, por favor espera...");
 
     try {
       const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización'];
@@ -1146,13 +1179,12 @@ const Organizacion = () => {
         const estructura = estructuras?.find(e => e.id === id);
         if (!estructura) return;
         
-        const nivelEstructura = TIPOS_ESTRUCTURA.indexOf(estructura.tipo);
-        
-        if (nivelEstructura < nivelSeleccionada) {
-          // Es padre (mayor jerarquía)
+        // Usar la nueva función de validación que incluye la excepción
+        if (esVinculacionValida(selectedEstructura.tipo, estructura.tipo)) {
+          // selectedEstructura puede ser hijo de estructura
           estructurasParaPadre.push(id);
-        } else if (nivelEstructura > nivelSeleccionada) {
-          // Es hijo (menor jerarquía)
+        } else if (esVinculacionValida(estructura.tipo, selectedEstructura.tipo)) {
+          // estructura puede ser hijo de selectedEstructura
           estructurasParaHijos.push(id);
         }
       });
@@ -1162,7 +1194,9 @@ const Organizacion = () => {
       // Manejar vinculación como padre
       if (estructurasParaPadre.length > 0) {
         if (estructurasParaPadre.length > 1) {
+          toast.dismiss(loadingToast);
           toast.error("Solo puedes vincular UNA estructura padre a la vez");
+          setIsVinculando(false);
           return;
         }
         
@@ -1191,9 +1225,15 @@ const Organizacion = () => {
       }
 
       if (updates.length === 0) {
+        toast.dismiss(loadingToast);
         toast.error("No hay vinculaciones válidas para procesar");
+        setIsVinculando(false);
         return;
       }
+
+      // Actualizar toast con progreso
+      toast.dismiss(loadingToast);
+      const updateToast = toast.loading("📝 Actualizando estructuras en la base de datos...");
 
       const { error } = await supabase
         .from("estructuras")
@@ -1201,12 +1241,20 @@ const Organizacion = () => {
 
       if (error) {
         console.error("Error vinculando estructuras:", error);
+        toast.dismiss(updateToast);
         toast.error("Error al vincular las estructuras");
+        setIsVinculando(false);
         return;
       }
 
+      // Actualizar toast para herencia
+      toast.dismiss(updateToast);
+      const herenciaToast = toast.loading("🔄 Aplicando herencia automática a usuarios...");
+
       // Actualizar las vinculaciones heredadas para los usuarios
       await actualizarVinculacionesUsuarios();
+
+      toast.dismiss(herenciaToast);
 
       // Mostrar información sobre la vinculación
       let mensaje = "✅ Vinculaciones realizadas exitosamente:\n";
@@ -1234,6 +1282,8 @@ const Organizacion = () => {
     } catch (error) {
       console.error("Error en vinculación:", error);
       toast.error("Error al procesar las vinculaciones");
+    } finally {
+      setIsVinculando(false);
     }
   };
 
@@ -1660,16 +1710,19 @@ const Organizacion = () => {
       
       if (!sourceId || !targetId) return;
 
-      // Usar la validación jerárquica del hook
-      const esValida = herenciaUtils.esVinculacionValida(targetId, sourceId);
+      // Validar vinculación válida (jerarquía inmediata + excepción Organizaciones ↔ Filial)
+      const sourceEstructura = estructuras?.find(e => e.id === sourceId);
+      const targetEstructura = estructuras?.find(e => e.id === targetId);
+      
+      if (!sourceEstructura || !targetEstructura) return;
+      
+      // source = padre, target = hijo
+      const esValida = esVinculacionValida(targetEstructura.tipo, sourceEstructura.tipo);
       
       if (!esValida) {
-        const sourceEstructura = estructuras?.find(e => e.id === sourceId);
-        const targetEstructura = estructuras?.find(e => e.id === targetId);
-        
         toast.error(
-          `❌ Conexión inválida: No se puede conectar ${sourceEstructura?.tipo || 'estructura'} con ${targetEstructura?.tipo || 'estructura'}. ` +
-          `La conexión debe ser de mayor a menor jerarquía organizacional.`
+          `❌ Conexión inválida: No se puede conectar ${sourceEstructura.tipo} con ${targetEstructura.tipo}. ` +
+          `Solo se permiten conexiones entre niveles jerárquicos inmediatos o la excepción Organizaciones ↔ Filial.`
         );
         return;
       }
@@ -1692,21 +1745,22 @@ const Organizacion = () => {
         },
       }, eds));
     },
-    [estructuras, setEdges, herenciaUtils]
+    [estructuras, setEdges]
   );
 
   // Función para vincular estructura directamente desde el diagrama
   const handleVincularEstructuraDirecta = async (estructuraId: number, parentId: number) => {
     const estructura = estructuras?.find(e => e.id === estructuraId);
-    if (!estructura) return;
+    const estructuraPadre = estructuras?.find(e => e.id === parentId);
+    if (!estructura || !estructuraPadre) return;
 
-    // Validar que la vinculación sea jerárquicamente válida
-    const esValida = herenciaUtils.esVinculacionValida(estructuraId, parentId);
+    // Validar que la vinculación sea válida (jerarquía inmediata + excepción Organizaciones ↔ Filial)
+    const esValida = esVinculacionValida(estructura.tipo, estructuraPadre.tipo);
+    
     if (!esValida) {
-      const estructuraPadre = estructuras?.find(e => e.id === parentId);
       toast.error(
-        `❌ Vinculación inválida: No se puede conectar ${estructura.tipo} con ${estructuraPadre?.tipo}. ` +
-        `La conexión debe ser de mayor a menor jerarquía.`
+        `❌ Vinculación inválida: No se puede conectar ${estructura.tipo} con ${estructuraPadre.tipo}. ` +
+        `Solo se permiten conexiones entre niveles jerárquicos inmediatos o la excepción Organizaciones ↔ Filial.`
       );
       return;
     }
@@ -1904,7 +1958,7 @@ const Organizacion = () => {
           <div className="space-y-2">
             <div className="flex items-center space-x-2 text-sm text-muted-foreground mb-4">
               <TreePine className="h-4 w-4" />
-              <span>Vista jerárquica - Estructuras organizadas desde Empresa → Paises → Zonas → Filial → División → Organizacion → Jefatura</span>
+              <span>Vista jerárquica - Estructuras organizadas desde Empresa → Paises → Zonas → Filial → División → Organizacion → Jefatura (⭐ Excepción: Organizaciones ↔ Filial)</span>
             </div>
             
             {estructurasRaiz.length > 0 ? (
@@ -2090,7 +2144,18 @@ const Organizacion = () => {
         )}
       </div>
 
-      <Dialog open={isVinculacionModalOpen} onOpenChange={setIsVinculacionModalOpen}>
+      <Dialog 
+        open={isVinculacionModalOpen} 
+        onOpenChange={(open) => {
+          // No permitir cerrar el modal mientras se está vinculando
+          if (!isVinculando) {
+            setIsVinculacionModalOpen(open);
+            if (!open) {
+              setEstructurasSeleccionadas([]);
+            }
+          }
+        }}
+      >
         <DialogContent className="max-w-5xl h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
@@ -2151,19 +2216,15 @@ const Organizacion = () => {
                 return true;
               }) || [];
               
-              // Separar por categorías para mejor organización
+              // Separar por categorías - JERARQUÍA INMEDIATA + EXCEPCIÓN Organizaciones ↔ Filial
               const estructurasPadres = todasLasEstructurasVinculables.filter(estructura => {
-                const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización'];
-                const nivelEstructura = TIPOS_ESTRUCTURA.indexOf(estructura.tipo);
-                const nivelSeleccionada = TIPOS_ESTRUCTURA.indexOf(selectedEstructura?.tipo || '');
-                return nivelEstructura < nivelSeleccionada; // Menor índice = mayor jerarquía
+                // estructura puede ser padre de selectedEstructura
+                return selectedEstructura && esVinculacionValida(selectedEstructura.tipo, estructura.tipo);
               });
               
               const estructurasHijos = todasLasEstructurasVinculables.filter(estructura => {
-                const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización'];
-                const nivelEstructura = TIPOS_ESTRUCTURA.indexOf(estructura.tipo);
-                const nivelSeleccionada = TIPOS_ESTRUCTURA.indexOf(selectedEstructura?.tipo || '');
-                return nivelEstructura > nivelSeleccionada; // Mayor índice = menor jerarquía
+                // estructura puede ser hijo de selectedEstructura
+                return selectedEstructura && esVinculacionValida(estructura.tipo, selectedEstructura.tipo);
               });
               
               console.log('🔍 LÓGICA UNIFICADA:', {
@@ -2212,10 +2273,8 @@ const Organizacion = () => {
                     });
                     
                     const estructurasHijos = todasLasEstructurasVinculables.filter(estructura => {
-                      const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización'];
-                      const nivelEstructura = TIPOS_ESTRUCTURA.indexOf(estructura.tipo);
-                      const nivelSeleccionada = TIPOS_ESTRUCTURA.indexOf(selectedEstructura?.tipo || '');
-                      return nivelEstructura > nivelSeleccionada;
+                      // estructura puede ser hijo de selectedEstructura (incluye excepción)
+                      return selectedEstructura && esVinculacionValida(estructura.tipo, selectedEstructura.tipo);
                     });
                     
                     return { todasLasEstructurasVinculables, estructurasPadres, estructurasHijos };
@@ -2432,16 +2491,16 @@ const Organizacion = () => {
               <h4 className="font-medium text-green-800 mb-2">➕ Vincular Nuevas Estructuras Como Hijos</h4>
               {selectedEstructura && (
                 <div className="text-sm text-green-700 mb-3">
-                  <p>Puedes vincular estructuras de <strong>menor jerarquía</strong> a {selectedEstructura.tipo}:</p>
+                  <p>Puedes vincular estructuras de <strong>jerarquía inmediata</strong> a {selectedEstructura.tipo}:</p>
                   <div className="text-xs mt-1 bg-white/50 p-2 rounded border">
-                    {selectedEstructura.tipo === 'Empresa' && '→ Paises, Zonas, Filial, División, Organizaciones, Jefaturas, Sub Organización'}
-                    {selectedEstructura.tipo === 'Paises' && '→ Zonas, Filial, División, Organizaciones, Jefaturas, Sub Organización'}
-                    {selectedEstructura.tipo === 'Zonas' && '→ Filial, División, Organizaciones, Jefaturas, Sub Organización'}
-                    {selectedEstructura.tipo === 'Filial' && '→ División, Organizaciones, Jefaturas, Sub Organización'}
-                    {selectedEstructura.tipo === 'División' && '→ Organizaciones, Jefaturas, Sub Organización'}
-                    {selectedEstructura.tipo === 'Organizaciones' && '→ Jefaturas, Sub Organización'}
-                    {selectedEstructura.tipo === 'Jefaturas' && '→ Sub Organización'}
-                    {selectedEstructura.tipo === 'Sub Organización' && 'ℹ️ No puede tener estructuras hijas (nivel más bajo)'}
+                    {selectedEstructura.tipo === 'Empresa' && '🔽 Como hijo: Paises'}
+                    {selectedEstructura.tipo === 'Paises' && '🔼 Como padre: Empresa | 🔽 Como hijo: Zonas'}
+                    {selectedEstructura.tipo === 'Zonas' && '🔼 Como padre: Paises | 🔽 Como hijo: Filial'}
+                    {selectedEstructura.tipo === 'Filial' && '🔼 Como padre: Zonas | 🔽 Como hijo: División | ⭐ Excepción: Organizaciones'}
+                    {selectedEstructura.tipo === 'División' && '🔼 Como padre: Filial | 🔽 Como hijo: Organizaciones'}
+                    {selectedEstructura.tipo === 'Organizaciones' && '🔼 Como padre: División | 🔽 Como hijo: Jefaturas | ⭐ Excepción: Filial'}
+                    {selectedEstructura.tipo === 'Jefaturas' && '🔼 Como padre: Organizaciones | 🔽 Como hijo: Sub Organización'}
+                    {selectedEstructura.tipo === 'Sub Organización' && '🔼 Como padre: Jefaturas (nivel más bajo, sin hijos)'}
                   </div>
                 </div>
               )}
@@ -2565,34 +2624,54 @@ const Organizacion = () => {
                 
                 {/* Mostrar qué tipos de estructura pueden ser vinculados */}
                 <div className="mt-3 pt-3 border-t border-slate-300">
-                  <span className="font-medium text-slate-600 text-sm">Tipos disponibles para vincular como hijos:</span>
+                  <span className="font-medium text-slate-600 text-sm">Tipos de jerarquía inmediata disponibles:</span>
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización']
-                      .filter(tipo => {
-                        // Solo mostrar tipos que son jerárquicamente válidos
-                        const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización'];
-                        const selectedNivel = TIPOS_ESTRUCTURA.indexOf(selectedEstructura.tipo);
-                        const tipoNivel = TIPOS_ESTRUCTURA.indexOf(tipo);
-                        return tipoNivel > selectedNivel;
-                      })
-                      .map(tipo => (
-                        <Badge key={tipo} variant="outline" className="text-xs">
-                          {tipo}
-                        </Badge>
-                      ))
-                    }
-                    {['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización']
-                      .filter(tipo => {
-                        const TIPOS_ESTRUCTURA = ['Empresa', 'Paises', 'Zonas', 'Filial', 'División', 'Organizaciones', 'Jefaturas', 'Sub Organización'];
-                        const selectedNivel = TIPOS_ESTRUCTURA.indexOf(selectedEstructura.tipo);
-                        const tipoNivel = TIPOS_ESTRUCTURA.indexOf(tipo);
-                        return tipoNivel > selectedNivel;
-                      }).length === 0 && (
+                    {(() => {
+                      const selectedNivel = TIPOS_ESTRUCTURA.indexOf(selectedEstructura.tipo);
+                      const tiposDisponibles = [];
+                      
+                      // Obtener todos los tipos disponibles usando la nueva función de validación
+                      TIPOS_ESTRUCTURA.forEach(tipo => {
+                        if (tipo === selectedEstructura.tipo) return; // No incluir a sí mismo
+                        
+                        // Verificar si puede ser padre
+                        if (esVinculacionValida(selectedEstructura.tipo, tipo)) {
+                          tiposDisponibles.push({ tipo, categoria: 'padre' });
+                        }
+                        // Verificar si puede ser hijo
+                        else if (esVinculacionValida(tipo, selectedEstructura.tipo)) {
+                          tiposDisponibles.push({ tipo, categoria: 'hijo' });
+                        }
+                      });
+                      
+                      return tiposDisponibles.length > 0 ? (
+                        tiposDisponibles.map(({ tipo, categoria }) => {
+                          const esExcepcion = 
+                            (selectedEstructura.tipo === 'Organizaciones' && tipo === 'Filial') ||
+                            (selectedEstructura.tipo === 'Filial' && tipo === 'Organizaciones');
+                          
+                          return (
+                            <Badge 
+                              key={tipo} 
+                              variant="outline" 
+                              className={`text-xs ${
+                                esExcepcion 
+                                  ? 'bg-yellow-50 text-yellow-700 border-yellow-200' 
+                                  : categoria === 'padre' 
+                                    ? 'bg-blue-50 text-blue-700 border-blue-200' 
+                                    : 'bg-green-50 text-green-700 border-green-200'
+                              }`}
+                            >
+                              {esExcepcion ? '⭐' : categoria === 'padre' ? '🔼' : '🔽'} {tipo}
+                            </Badge>
+                          );
+                        })
+                      ) : (
                         <span className="text-xs text-slate-500 italic">
-                          Esta estructura está en el nivel más bajo de la jerarquía
+                          No hay tipos de jerarquía inmediata disponibles
                         </span>
-                      )
-                    }
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -2633,17 +2712,30 @@ const Organizacion = () => {
             </div>
             
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => {
-                setIsVinculacionModalOpen(false);
-                setEstructurasSeleccionadas([]);
-              }}>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setIsVinculacionModalOpen(false);
+                  setEstructurasSeleccionadas([]);
+                }}
+                disabled={isVinculando}
+              >
                 Cancelar
               </Button>
               <Button 
                 onClick={handleVincularEstructuras}
-                disabled={estructurasSeleccionadas.length === 0}
+                disabled={estructurasSeleccionadas.length === 0 || isVinculando}
               >
-                Vincular {estructurasSeleccionadas.length > 0 ? `(${estructurasSeleccionadas.length})` : ''}
+                {isVinculando ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Vinculando...
+                  </>
+                ) : (
+                  <>
+                    Vincular {estructurasSeleccionadas.length > 0 ? `(${estructurasSeleccionadas.length})` : ''}
+                  </>
+                )}
               </Button>
             </div>
           </div>
