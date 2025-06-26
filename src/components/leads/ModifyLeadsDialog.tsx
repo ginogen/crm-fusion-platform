@@ -3,10 +3,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { LEAD_STATUSES, LEAD_STATUS_LABELS } from "@/lib/constants";
+import { LEAD_STATUSES, LEAD_STATUS_LABELS, USER_ROLES } from "@/lib/constants";
 import type { LeadEstado } from "@/lib/types";
 import { SearchableSelect, type OptionType } from "@/components/ui/searchable-select";
 import { useState } from "react";
+import { getAllSubordinatesRecursively } from "@/lib/hierarchy-utils";
 
 interface ModifyLeadsDialogProps {
   isOpen: boolean;
@@ -19,20 +20,76 @@ const ModifyLeadsDialog = ({ isOpen, onClose, selectedLeads }: ModifyLeadsDialog
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [selectedEstado, setSelectedEstado] = useState<string>("");
   
-  const { data: users, isLoading, error } = useQuery({
-    queryKey: ["users"],
+  // Obtener el usuario actual
+  const { data: currentUser } = useQuery({
+    queryKey: ["current-user-modify"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("users")
-        .select("id, email, nombre_completo")
-        .order('nombre_completo');
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No user found");
       
-      if (error) {
-        console.error("Error fetching users:", error);
-        throw error;
-      }
-      return data || [];
+      const { data: userData } = await supabase
+        .from("users")
+        .select("id, email, nombre_completo, user_position")
+        .eq("id", user.id)
+        .single();
+      
+      return userData;
     },
+  });
+
+  const { data: users, isLoading, error } = useQuery({
+    queryKey: ["users-for-modify", currentUser?.id],
+    queryFn: async () => {
+      if (!currentUser) return [];
+
+      // Si el usuario es CEO, Director Nacional o Internacional, puede asignar a todos los usuarios
+      if (
+        currentUser.user_position === USER_ROLES.CEO ||
+        currentUser.user_position === USER_ROLES.DIRECTOR_NACIONAL ||
+        currentUser.user_position === USER_ROLES.DIRECTOR_INTERNACIONAL
+      ) {
+        const { data } = await supabase
+          .from("users")
+          .select("id, email, nombre_completo, user_position")
+          .eq("is_active", true)
+          .order('nombre_completo');
+        return data || [];
+      }
+
+      // Para Asesor Training, solo puede asignarse a sí mismo
+      if (currentUser.user_position === USER_ROLES.ASESOR_TRAINING) {
+        return [{
+          id: currentUser.id,
+          email: currentUser.email,
+          nombre_completo: currentUser.nombre_completo,
+          user_position: currentUser.user_position
+        }];
+      }
+
+      // Para otros roles, obtener subordinados usando la función recursiva
+      const allSubordinateIds = await getAllSubordinatesRecursively(currentUser.id);
+      
+      if (allSubordinateIds.length === 0) {
+        // Si no tiene subordinados, solo puede asignarse a sí mismo
+        return [{
+          id: currentUser.id,
+          email: currentUser.email,
+          nombre_completo: currentUser.nombre_completo,
+          user_position: currentUser.user_position
+        }];
+      }
+
+      // Obtener los datos de todos los usuarios subordinados + el usuario actual
+      const { data: subordinateUsers } = await supabase
+        .from("users")
+        .select("id, email, nombre_completo, user_position")
+        .in("id", [currentUser.id, ...allSubordinateIds])
+        .eq("is_active", true)
+        .order('nombre_completo');
+
+      return subordinateUsers || [];
+    },
+    enabled: !!currentUser,
   });
 
   const userOptions: OptionType[] = users?.map(user => ({
@@ -113,12 +170,23 @@ const ModifyLeadsDialog = ({ isOpen, onClose, selectedLeads }: ModifyLeadsDialog
               placeholder={
                 isLoading ? "Cargando usuarios..." : 
                 error ? "Error al cargar usuarios" :
+                users?.length === 0 ? "No hay usuarios subordinados disponibles" :
                 "Seleccionar usuario..."
               }
-              emptyMessage="No hay usuarios disponibles"
+              emptyMessage="No hay usuarios subordinados disponibles"
               disabled={isLoading || !!error}
               name="userId"
             />
+            {currentUser && users && users.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {currentUser.user_position === USER_ROLES.CEO || 
+                 currentUser.user_position === USER_ROLES.DIRECTOR_NACIONAL ||
+                 currentUser.user_position === USER_ROLES.DIRECTOR_INTERNACIONAL
+                  ? `Puedes asignar a cualquier usuario (${users.length} disponibles)`
+                  : `Solo puedes asignar a tus subordinados (${users.length} disponibles)`
+                }
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">

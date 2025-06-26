@@ -174,6 +174,22 @@ interface BatchEstructura {
   };
 }
 
+
+
+// Función para dividir arrays en lotes
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
+
+// Límites y configuraciones para cargas masivas
+const MAX_LEADS_PER_UPLOAD = 10000;
+const MAX_FILE_SIZE_MB = 50;
+const LARGE_BATCH_THRESHOLD = 5000;
+
 const Campanas = () => {
   const queryClient = useQueryClient();
   const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
@@ -216,6 +232,11 @@ const Campanas = () => {
   const [editingBatchName, setEditingBatchName] = useState<number | null>(null);
   const [newBatchName, setNewBatchName] = useState("");
   const [isUpdatingBatchName, setIsUpdatingBatchName] = useState(false);
+  
+  // Estados para manejo de cargas masivas
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [cancelUpload, setCancelUpload] = useState(false);
 
   const { data: batches, refetch } = useQuery({
     queryKey: ["batches"],
@@ -327,6 +348,15 @@ const Campanas = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Validaciones para archivos grandes
+    const fileSizeMB = file.size / (1024 * 1024);
+    
+    if (fileSizeMB > MAX_FILE_SIZE_MB) {
+      toast.error(`El archivo es demasiado grande. Máximo ${MAX_FILE_SIZE_MB}MB permitido. Tamaño actual: ${fileSizeMB.toFixed(2)}MB`);
+      event.target.value = ''; // Limpiar el input
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
@@ -357,9 +387,22 @@ const Campanas = () => {
         };
       }).filter(lead => lead.nombre_completo && lead.telefono); // Removida la validación de email
 
+      // Validar cantidad de leads
+      if (parsedData.length > MAX_LEADS_PER_UPLOAD) {
+        toast.error(`Máximo ${MAX_LEADS_PER_UPLOAD.toLocaleString()} leads por carga. Tu archivo contiene ${parsedData.length.toLocaleString()} leads. Por favor, divide el archivo en partes más pequeñas.`);
+        event.target.value = ''; // Limpiar el input
+        return;
+      }
+
       setCsvData(parsedData);
       setPreviewData(parsedData.slice(0, 5));
-      toast.success(`${parsedData.length} leads encontrados en el archivo`);
+      
+      // Mostrar mensaje apropiado según el tamaño
+      if (parsedData.length > LARGE_BATCH_THRESHOLD) {
+        toast.success(`${parsedData.length.toLocaleString()} leads encontrados. Este es un archivo grande, la carga tomará varios minutos.`);
+      } else {
+        toast.success(`${parsedData.length.toLocaleString()} leads encontrados en el archivo`);
+      }
     };
 
     reader.readAsText(file);
@@ -827,6 +870,10 @@ const Campanas = () => {
     }
 
     try {
+      setIsUploading(true);
+      setUploadProgress(0);
+      setCancelUpload(false);
+
       // 1. Crear nuevo batch
       const { data: batchData, error: batchError } = await supabase
         .from("lead_batches")
@@ -864,16 +911,55 @@ const Campanas = () => {
         throw new Error("No hay leads válidos para cargar");
       }
 
-      // 3. Insertar leads directamente en la tabla leads
-      const { error: leadsError } = await supabase
-        .from("leads")
-        .insert(leadsToInsert);
+      // 3. NUEVA LÓGICA: Dividir en lotes e insertar por partes
+      const isLargeFile = leadsToInsert.length > LARGE_BATCH_THRESHOLD;
+      const BATCH_SIZE = isLargeFile ? 250 : 500; // Lotes más pequeños para archivos grandes
+      const DELAY_MS = isLargeFile ? 300 : 100; // Pausas más largas para archivos grandes
+      
+      const chunks = chunkArray(leadsToInsert, BATCH_SIZE);
+      let insertedCount = 0;
+      
+      console.log(`Iniciando carga: ${leadsToInsert.length} leads en ${chunks.length} lotes de ${BATCH_SIZE}`);
+      
+      // 4. Insertar lote por lote
+      for (let i = 0; i < chunks.length; i++) {
+        // Verificar si el usuario canceló
+        if (cancelUpload) {
+          toast.error("Carga cancelada por el usuario");
+          return;
+        }
 
-      if (leadsError) {
-        throw new Error("Error al cargar los leads");
+        const chunk = chunks[i];
+        
+        try {
+          const { error: leadsError } = await supabase
+            .from("leads")
+            .insert(chunk);
+
+          if (leadsError) {
+            console.error(`Error en lote ${i + 1}:`, leadsError);
+            throw new Error(`Error al cargar el lote ${i + 1}: ${leadsError.message}`);
+          }
+          
+          insertedCount += chunk.length;
+          
+          // Actualizar progreso
+          const progress = Math.round((insertedCount / leadsToInsert.length) * 100);
+          setUploadProgress(progress);
+          
+          console.log(`Lote ${i + 1}/${chunks.length} completado. Progreso: ${progress}% (${insertedCount}/${leadsToInsert.length})`);
+          
+          // Pausa entre lotes para no sobrecargar la DB
+          if (i < chunks.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+          }
+        } catch (chunkError) {
+          console.error(`Error específico en lote ${i + 1}:`, chunkError);
+          throw chunkError;
+        }
       }
 
-      toast.success(`Batch "${batchName}" creado con ${leadsToInsert.length} leads`);
+      toast.success(`Batch "${batchName}" creado exitosamente con ${insertedCount.toLocaleString()} leads (procesados en ${chunks.length} lotes)`);
       setBatchName("");
       setCsvData([]);
       setPreviewData([]);
@@ -883,6 +969,10 @@ const Campanas = () => {
     } catch (error) {
       console.error('Error en handleBatchUpload:', error);
       toast.error((error as Error).message || "Error al procesar la carga del batch");
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+      setCancelUpload(false);
     }
   };
 
@@ -1840,6 +1930,10 @@ const saveFormById = async (formId: string) => {
     }
 
     try {
+      setIsUploading(true);
+      setUploadProgress(0);
+      setCancelUpload(false);
+
       // Preparar los leads para la tabla leads
       const leadsToInsert = csvData
         .filter(lead => lead.nombre_completo) // Solo validar nombre_completo
@@ -1863,16 +1957,55 @@ const saveFormById = async (formId: string) => {
         throw new Error("No hay leads válidos para cargar");
       }
 
-      // Insertar leads directamente en la tabla leads
-      const { error: leadsError } = await supabase
-        .from("leads")
-        .insert(leadsToInsert);
+      // NUEVA LÓGICA: Dividir en lotes e insertar por partes
+      const isLargeFile = leadsToInsert.length > LARGE_BATCH_THRESHOLD;
+      const BATCH_SIZE = isLargeFile ? 250 : 500; // Lotes más pequeños para archivos grandes
+      const DELAY_MS = isLargeFile ? 300 : 100; // Pausas más largas para archivos grandes
+      
+      const chunks = chunkArray(leadsToInsert, BATCH_SIZE);
+      let insertedCount = 0;
+      
+      console.log(`Agregando leads al batch ${batchId}: ${leadsToInsert.length} leads en ${chunks.length} lotes de ${BATCH_SIZE}`);
+      
+      // Insertar lote por lote
+      for (let i = 0; i < chunks.length; i++) {
+        // Verificar si el usuario canceló
+        if (cancelUpload) {
+          toast.error("Carga cancelada por el usuario");
+          return;
+        }
 
-      if (leadsError) {
-        throw new Error("Error al cargar los leads");
+        const chunk = chunks[i];
+        
+        try {
+          const { error: leadsError } = await supabase
+            .from("leads")
+            .insert(chunk);
+
+          if (leadsError) {
+            console.error(`Error en lote ${i + 1}:`, leadsError);
+            throw new Error(`Error al cargar el lote ${i + 1}: ${leadsError.message}`);
+          }
+          
+          insertedCount += chunk.length;
+          
+          // Actualizar progreso
+          const progress = Math.round((insertedCount / leadsToInsert.length) * 100);
+          setUploadProgress(progress);
+          
+          console.log(`Lote ${i + 1}/${chunks.length} completado. Progreso: ${progress}% (${insertedCount}/${leadsToInsert.length})`);
+          
+          // Pausa entre lotes para no sobrecargar la DB
+          if (i < chunks.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+          }
+        } catch (chunkError) {
+          console.error(`Error específico en lote ${i + 1}:`, chunkError);
+          throw chunkError;
+        }
       }
 
-      toast.success(`${leadsToInsert.length} leads agregados al batch`);
+      toast.success(`${insertedCount.toLocaleString()} leads agregados al batch exitosamente (procesados en ${chunks.length} lotes)`);
       setCsvData([]);
       setPreviewData([]);
       setIsAddingLeadsModalOpen(false);
@@ -1881,6 +2014,10 @@ const saveFormById = async (formId: string) => {
     } catch (error) {
       console.error('Error en handleAddLeadsToBatch:', error);
       toast.error((error as Error).message || "Error al procesar la carga de leads");
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+      setCancelUpload(false);
     }
   };
 
@@ -2462,9 +2599,58 @@ const saveFormById = async (formId: string) => {
                       </Table>
                     </div>
 
-                    <div className="flex justify-end">
-                      <Button onClick={handleBatchUpload}>
-                        Cargar {csvData.length} Leads
+                    {/* Indicador de progreso para cargas grandes */}
+                    {isUploading && (
+                      <div className="space-y-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-blue-900">
+                            Cargando leads... {uploadProgress}%
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCancelUpload(true)}
+                            className="text-red-600 border-red-300 hover:bg-red-50"
+                          >
+                            Cancelar
+                          </Button>
+                        </div>
+                        <div className="w-full bg-blue-200 rounded-full h-2">
+                          <div 
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                            style={{ width: `${uploadProgress}%` }}
+                          ></div>
+                        </div>
+                        <p className="text-xs text-blue-700">
+                          {csvData.length > LARGE_BATCH_THRESHOLD 
+                            ? "Este es un archivo grande. La carga puede tardar varios minutos."
+                            : "Procesando leads en lotes para optimizar el rendimiento."
+                          }
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setIsBatchUploadModalOpen(false);
+                          setCsvData([]);
+                          setPreviewData([]);
+                          setCancelUpload(false);
+                        }}
+                        disabled={isUploading}
+                      >
+                        {isUploading ? "Cargando..." : "Cancelar"}
+                      </Button>
+                      <Button 
+                        onClick={handleBatchUpload}
+                        disabled={isUploading || csvData.length === 0}
+                      >
+                        {isUploading 
+                          ? `Procesando... ${uploadProgress}%` 
+                          : `Cargar ${csvData.length.toLocaleString()} Leads`
+                        }
                       </Button>
                     </div>
                   </div>
@@ -2918,6 +3104,37 @@ const saveFormById = async (formId: string) => {
                   </Table>
                 </div>
 
+                {/* Indicador de progreso para cargas grandes */}
+                {isUploading && (
+                  <div className="space-y-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-blue-900">
+                        Agregando leads... {uploadProgress}%
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCancelUpload(true)}
+                        className="text-red-600 border-red-300 hover:bg-red-50"
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                    <div className="w-full bg-blue-200 rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                        style={{ width: `${uploadProgress}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-blue-700">
+                      {csvData.length > LARGE_BATCH_THRESHOLD 
+                        ? "Este es un archivo grande. La carga puede tardar varios minutos."
+                        : "Procesando leads en lotes para optimizar el rendimiento."
+                      }
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex justify-end gap-2">
                   <Button
                     variant="outline"
@@ -2925,14 +3142,20 @@ const saveFormById = async (formId: string) => {
                       setIsAddingLeadsModalOpen(false);
                       setCsvData([]);
                       setPreviewData([]);
+                      setCancelUpload(false);
                     }}
+                    disabled={isUploading}
                   >
-                    Cancelar
+                    {isUploading ? "Cargando..." : "Cancelar"}
                   </Button>
                   <Button 
                     onClick={() => selectedBatchForUpload && handleAddLeadsToBatch(selectedBatchForUpload)}
+                    disabled={isUploading || csvData.length === 0}
                   >
-                    Agregar {csvData.length} Leads
+                    {isUploading 
+                      ? `Procesando... ${uploadProgress}%` 
+                      : `Agregar ${csvData.length.toLocaleString()} Leads`
+                    }
                   </Button>
                 </div>
               </div>

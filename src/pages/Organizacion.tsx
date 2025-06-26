@@ -278,7 +278,7 @@ const TIPOS_ESTRUCTURA_LABELS: Record<string, string> = {
   'Sub Organización': 'Sub Organización'
 };
 
-// Función para validar vinculaciones permitidas (incluye excepción Organizaciones ↔ Filial)
+// Función para validar vinculaciones permitidas (incluye excepciones especiales)
 const esVinculacionValida = (tipoHijo: typeof TIPOS_ESTRUCTURA[number], tipoPadre: typeof TIPOS_ESTRUCTURA[number]): boolean => {
   const nivelHijo = TIPOS_ESTRUCTURA.indexOf(tipoHijo);
   const nivelPadre = TIPOS_ESTRUCTURA.indexOf(tipoPadre);
@@ -286,12 +286,17 @@ const esVinculacionValida = (tipoHijo: typeof TIPOS_ESTRUCTURA[number], tipoPadr
   // Jerarquía inmediata normal (nivel exactamente superior)
   const esJerarquiaInmediata = nivelPadre === (nivelHijo - 1);
   
-  // EXCEPCIÓN: Organizaciones ↔ Filial pueden vincularse directamente
+  // EXCEPCIÓN 1: Organizaciones ↔ Filial pueden vincularse directamente
   const esExcepcionOrganizacionesFilial = 
     (tipoHijo === 'Organizaciones' && tipoPadre === 'Filial') ||
     (tipoHijo === 'Filial' && tipoPadre === 'Organizaciones');
   
-  return esJerarquiaInmediata || esExcepcionOrganizacionesFilial;
+  // EXCEPCIÓN 2: Sub Organización ↔ Organizaciones pueden vincularse directamente
+  const esExcepcionSubOrganizacionOrganizaciones = 
+    (tipoHijo === 'Sub Organización' && tipoPadre === 'Organizaciones') ||
+    (tipoHijo === 'Organizaciones' && tipoPadre === 'Sub Organización');
+  
+  return esJerarquiaInmediata || esExcepcionOrganizacionesFilial || esExcepcionSubOrganizacionOrganizaciones;
 };
 
 interface Estructura {
@@ -1710,7 +1715,7 @@ const Organizacion = () => {
       
       if (!sourceId || !targetId) return;
 
-      // Validar vinculación válida (jerarquía inmediata + excepción Organizaciones ↔ Filial)
+      // Validar vinculación válida (jerarquía inmediata + excepciones especiales)
       const sourceEstructura = estructuras?.find(e => e.id === sourceId);
       const targetEstructura = estructuras?.find(e => e.id === targetId);
       
@@ -1722,7 +1727,7 @@ const Organizacion = () => {
       if (!esValida) {
         toast.error(
           `❌ Conexión inválida: No se puede conectar ${sourceEstructura.tipo} con ${targetEstructura.tipo}. ` +
-          `Solo se permiten conexiones entre niveles jerárquicos inmediatos o la excepción Organizaciones ↔ Filial.`
+          `Solo se permiten conexiones entre niveles jerárquicos inmediatos o las excepciones: Organizaciones ↔ Filial, Sub Organización ↔ Organizaciones.`
         );
         return;
       }
@@ -1754,13 +1759,13 @@ const Organizacion = () => {
     const estructuraPadre = estructuras?.find(e => e.id === parentId);
     if (!estructura || !estructuraPadre) return;
 
-    // Validar que la vinculación sea válida (jerarquía inmediata + excepción Organizaciones ↔ Filial)
+    // Validar que la vinculación sea válida (jerarquía inmediata + excepciones especiales)
     const esValida = esVinculacionValida(estructura.tipo, estructuraPadre.tipo);
     
     if (!esValida) {
       toast.error(
         `❌ Vinculación inválida: No se puede conectar ${estructura.tipo} con ${estructuraPadre.tipo}. ` +
-        `Solo se permiten conexiones entre niveles jerárquicos inmediatos o la excepción Organizaciones ↔ Filial.`
+        `Solo se permiten conexiones entre niveles jerárquicos inmediatos o las excepciones: Organizaciones ↔ Filial, Sub Organización ↔ Organizaciones.`
       );
       return;
     }
@@ -1958,7 +1963,7 @@ const Organizacion = () => {
           <div className="space-y-2">
             <div className="flex items-center space-x-2 text-sm text-muted-foreground mb-4">
               <TreePine className="h-4 w-4" />
-              <span>Vista jerárquica - Estructuras organizadas desde Empresa → Paises → Zonas → Filial → División → Organizacion → Jefatura (⭐ Excepción: Organizaciones ↔ Filial)</span>
+              <span>Vista jerárquica - Estructuras organizadas desde Empresa → Paises → Zonas → Filial → División → Organizacion → Jefatura → Sub Organización (⭐ Excepciones: Organizaciones ↔ Filial, Sub Organización ↔ Organizaciones)</span>
             </div>
             
             {estructurasRaiz.length > 0 ? (
@@ -2498,9 +2503,9 @@ const Organizacion = () => {
                     {selectedEstructura.tipo === 'Zonas' && '🔼 Como padre: Paises | 🔽 Como hijo: Filial'}
                     {selectedEstructura.tipo === 'Filial' && '🔼 Como padre: Zonas | 🔽 Como hijo: División | ⭐ Excepción: Organizaciones'}
                     {selectedEstructura.tipo === 'División' && '🔼 Como padre: Filial | 🔽 Como hijo: Organizaciones'}
-                    {selectedEstructura.tipo === 'Organizaciones' && '🔼 Como padre: División | 🔽 Como hijo: Jefaturas | ⭐ Excepción: Filial'}
+                    {selectedEstructura.tipo === 'Organizaciones' && '🔼 Como padre: División | 🔽 Como hijo: Jefaturas | ⭐ Excepciones: Filial, Sub Organización'}
                     {selectedEstructura.tipo === 'Jefaturas' && '🔼 Como padre: Organizaciones | 🔽 Como hijo: Sub Organización'}
-                    {selectedEstructura.tipo === 'Sub Organización' && '🔼 Como padre: Jefaturas (nivel más bajo, sin hijos)'}
+                    {selectedEstructura.tipo === 'Sub Organización' && '🔼 Como padre: Jefaturas | ⭐ Excepción: Organizaciones'}
                   </div>
                 </div>
               )}
@@ -2648,7 +2653,9 @@ const Organizacion = () => {
                         tiposDisponibles.map(({ tipo, categoria }) => {
                           const esExcepcion = 
                             (selectedEstructura.tipo === 'Organizaciones' && tipo === 'Filial') ||
-                            (selectedEstructura.tipo === 'Filial' && tipo === 'Organizaciones');
+                            (selectedEstructura.tipo === 'Filial' && tipo === 'Organizaciones') ||
+                            (selectedEstructura.tipo === 'Sub Organización' && tipo === 'Organizaciones') ||
+                            (selectedEstructura.tipo === 'Organizaciones' && tipo === 'Sub Organización');
                           
                           return (
                             <Badge 

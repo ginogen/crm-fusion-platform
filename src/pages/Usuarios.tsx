@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Ban, Edit, RefreshCw, Eye, EyeOff } from "lucide-react";
+import { Plus, Search, Ban, Edit, RefreshCw, Eye, EyeOff, RotateCcw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { supabaseAdmin } from "@/integrations/supabase/admin-client";
 import { ROLES, STRUCTURE_TYPES, STRUCTURE_TYPES_MAPPING, MULTI_ESTRUCTURA_POSITIONS } from "@/lib/constants";
@@ -41,6 +41,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { getAllSubordinatesRecursively } from "@/lib/hierarchy-utils";
+import { useEstructuraHerencia } from "@/hooks/useEstructuraHerencia";
 
 // Definir el tipo para las posiciones
 type JerarquiaPosicion = typeof JERARQUIA_POSICIONES[number];
@@ -62,7 +63,8 @@ interface Estructura {
   id: number;
   tipo: string;
   nombre: string;
-  custom_name?: string;
+  custom_name: string | null;
+  parent_estructura_id: number | null;
 }
 
 const JERARQUIA_POSICIONES = [
@@ -78,11 +80,11 @@ const JERARQUIA_POSICIONES = [
   'Asesor Training'
 ] as const;
 
-const obtenerSupervisoresPotenciales = (usuarios: UserData[], posicionSeleccionada: JerarquiaPosicion) => {
+const obtenerSupervisoresPotenciales = (allUsers: any[], posicionSeleccionada: JerarquiaPosicion) => {
   const posicionIndex = JERARQUIA_POSICIONES.indexOf(posicionSeleccionada);
   if (posicionIndex <= 0) return []; // CEO no tiene supervisor
 
-  return usuarios.filter(usuario => {
+  return allUsers.filter(usuario => {
     const supervisorIndex = JERARQUIA_POSICIONES.indexOf(usuario.user_position);
     return supervisorIndex < posicionIndex;
   }).sort((a, b) => {
@@ -121,12 +123,15 @@ const canViewUser = (currentUserPosition: JerarquiaPosicion, targetUserPosition:
 const canEditUsers = (userPosition?: JerarquiaPosicion) => {
   if (!userPosition) return false;
   
+  // Permitir desde Gerente hacia arriba
   const allowedPositions = [
     'CEO',
     'Director Internacional', 
     'Director Nacional',
     'Director de Zona',
-    'Sales Manager'
+    'Sales Manager',
+    'Gerente Divisional',
+    'Gerente'
   ];
   
   return allowedPositions.includes(userPosition);
@@ -136,9 +141,16 @@ const canEditUsers = (userPosition?: JerarquiaPosicion) => {
 const canCreateUsers = (userPosition?: JerarquiaPosicion) => {
   if (!userPosition) return false;
   
+  // Permitir desde Jefe de Grupo hacia arriba
   const allowedPositions = [
     'CEO',
-    'Director Internacional'
+    'Director Internacional',
+    'Director Nacional', 
+    'Director de Zona',
+    'Sales Manager',
+    'Gerente Divisional',
+    'Gerente',
+    'Jefe de Grupo'
   ];
   
   return allowedPositions.includes(userPosition);
@@ -148,13 +160,54 @@ const canCreateUsers = (userPosition?: JerarquiaPosicion) => {
 const canEditPositions = (userPosition?: JerarquiaPosicion) => {
   if (!userPosition) return false;
   
+  // Desde SALES MANAGER hacia arriba pueden editar cargos
   const allowedPositions = [
     'CEO',
     'Director Internacional',
-    'Director Nacional'
+    'Director Nacional',
+    'Director de Zona',
+    'Sales Manager'
   ];
   
   return allowedPositions.includes(userPosition);
+};
+
+// Nueva función para obtener cargos que se pueden editar según la posición del usuario
+const getCargosEditablesParaEdicion = (userPosition: JerarquiaPosicion): JerarquiaPosicion[] => {
+  // CEO, Director Internacional y Director Nacional pueden editar todos los cargos
+  if (['CEO', 'Director Internacional', 'Director Nacional'].includes(userPosition)) {
+    return [...JERARQUIA_POSICIONES];
+  }
+  
+  // SALES MANAGER puede editar todos EXCEPTO CEO, Director Internacional y Director Nacional
+  if (userPosition === 'Sales Manager') {
+    return JERARQUIA_POSICIONES.filter(cargo => 
+      !['CEO', 'Director Internacional', 'Director Nacional'].includes(cargo)
+    );
+  }
+  
+  // Director de Zona puede editar cargos de menor jerarquía
+  if (userPosition === 'Director de Zona') {
+    const posicionIndex = JERARQUIA_POSICIONES.indexOf(userPosition);
+    return JERARQUIA_POSICIONES.filter((_, index) => index > posicionIndex);
+  }
+  
+  // Para otras posiciones, solo pueden editar cargos de menor jerarquía
+  const posicionIndex = JERARQUIA_POSICIONES.indexOf(userPosition);
+  return JERARQUIA_POSICIONES.filter((_, index) => index > posicionIndex);
+};
+
+// Nueva función para obtener cargos que puede crear según jerarquía
+const getCargosDisponiblesParaCrear = (userPosition: JerarquiaPosicion): JerarquiaPosicion[] => {
+  const posicionIndex = JERARQUIA_POSICIONES.indexOf(userPosition);
+  
+  // CEO y Director Internacional pueden crear todos los cargos
+  if (userPosition === 'CEO' || userPosition === 'Director Internacional') {
+    return [...JERARQUIA_POSICIONES];
+  }
+  
+  // Para otros roles, solo pueden crear cargos de menor jerarquía (mayor índice)
+  return JERARQUIA_POSICIONES.filter((_, index) => index > posicionIndex);
 };
 
 // Agregar esta interfaz
@@ -182,6 +235,19 @@ const hasMultiEstructura = (userPosition: string): boolean => {
   return MULTI_ESTRUCTURA_POSITIONS.includes(userPosition as any);
 };
 
+// Nueva función para verificar si puede editar roles
+const canEditRoles = (userPosition?: JerarquiaPosicion) => {
+  if (!userPosition) return false;
+  
+  // Solo CEO y Director Internacional pueden editar roles
+  const allowedPositions = [
+    'CEO',
+    'Director Internacional'
+  ];
+  
+  return allowedPositions.includes(userPosition);
+};
+
 const Usuarios = () => {
   const { toast } = useToast();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -202,7 +268,7 @@ const Usuarios = () => {
     email: "",
     nombre_completo: "",
     password: "",
-    role: "",
+    role: "usuario", // Rol por defecto
     user_position: "",
     tipo_estructura: "",
     estructura_id: "",
@@ -233,15 +299,63 @@ const Usuarios = () => {
     queryFn: async () => {
       if (!currentUser?.user_position) return [];
 
+      // Función para obtener subordinados recursivamente basándose en supervisor_id
+      const getSubordinatesRecursivelyBySupervisor = async (supervisorId: string): Promise<string[]> => {
+        const allSubordinates: string[] = [];
+        const processedSupervisors = new Set<string>();
+
+        const processSubordinates = async (currentSupervisorId: string) => {
+          if (processedSupervisors.has(currentSupervisorId)) return;
+          processedSupervisors.add(currentSupervisorId);
+
+          // Obtener subordinados directos de este supervisor
+          const { data: directSubordinates, error } = await supabase
+            .from("users")
+            .select("id, supervisor_id")
+            .eq("supervisor_id", currentSupervisorId)
+            .eq("is_active", true);
+
+          if (error) {
+            console.error('Error obteniendo subordinados:', error);
+            return;
+          }
+
+          if (directSubordinates && directSubordinates.length > 0) {
+            // Agregar subordinados directos a la lista
+            for (const subordinate of directSubordinates) {
+              if (!allSubordinates.includes(subordinate.id)) {
+                allSubordinates.push(subordinate.id);
+              }
+              
+              // Procesar recursivamente los subordinados de este subordinado
+              await processSubordinates(subordinate.id);
+            }
+          }
+        };
+
+        await processSubordinates(supervisorId);
+        return allSubordinates;
+      };
+
       // Primero obtener los usuarios
       let query = supabase
         .from("users")
         .select("*");
 
-      // Si no es CEO, filtrar usuarios según jerarquía y vinculación
-      if (currentUser.user_position !== RESTRICTED_POSITIONS.CEO) {
-        const subordinados = await getAllSubordinatesRecursively(currentUser.id, currentUser.user_position);
-        query = query.in('id', [currentUser.id, ...subordinados]);
+      // Si no es CEO, Director Internacional o Director Nacional, filtrar usuarios según supervisión directa
+      if (!['CEO', 'Director Internacional', 'Director Nacional'].includes(currentUser.user_position)) {
+        const subordinados = await getSubordinatesRecursivelyBySupervisor(currentUser.id);
+        
+        console.log(`🔍 Usuario ${currentUser.email} (${currentUser.user_position})`);
+        console.log(`📋 Subordinados encontrados:`, subordinados);
+        
+        // Solo mostrar al usuario actual y sus subordinados directos/indirectos
+        if (subordinados.length > 0) {
+          query = query.in('id', [currentUser.id, ...subordinados]);
+        } else {
+          // Si no tiene subordinados, solo mostrar su propio usuario
+          query = query.eq('id', currentUser.id);
+        }
       }
 
       // Aplicar filtro de activos/inactivos
@@ -258,38 +372,54 @@ const Usuarios = () => {
 
       console.log('Datos crudos de usuarios:', usersData);
 
-      // Obtener las estructuras para usuarios con múltiples estructuras
+      // Obtener las estructuras heredadas para TODOS los usuarios (incluye Sales Manager)
       const usersWithStructures = await Promise.all(usersData.map(async (user) => {
-        if (hasMultiEstructura(user.user_position)) {
-          // Obtener las estructuras relacionadas
-          const { data: userEstructuras, error: estructurasError } = await supabase
-            .from("user_estructuras")
-            .select(`
-              estructura:estructuras(*)
-            `)
-            .eq('user_id', user.id);
+        // Obtener las estructuras relacionadas de user_estructuras (herencia automática)
+        const { data: userEstructuras, error: estructurasError } = await supabase
+          .from("user_estructuras")
+          .select(`
+            estructura:estructuras(*)
+          `)
+          .eq('user_id', user.id);
 
-          console.log(`Estructuras para usuario ${user.email}:`, userEstructuras);
+        console.log(`Estructuras heredadas para usuario ${user.email}:`, userEstructuras);
 
-          if (estructurasError) {
-            console.error('Error fetching estructuras for user:', estructurasError);
-            return user;
-          }
-
-          const userWithStructures = {
-            ...user,
-            estructuras: userEstructuras?.map(ue => ue.estructura) || []
-          };
-
-          console.log('Usuario procesado con estructuras:', userWithStructures);
-          return userWithStructures;
+        if (estructurasError) {
+          console.error('Error fetching estructuras for user:', estructurasError);
+          return user;
         }
-        return user;
+
+        const userWithStructures = {
+          ...user,
+          estructuras: userEstructuras?.map(ue => ue.estructura) || []
+        };
+
+        console.log('Usuario procesado con estructuras heredadas:', userWithStructures);
+        return userWithStructures;
       }));
 
       console.log('Todos los usuarios procesados:', usersWithStructures);
 
       return usersWithStructures as (UserData & { estructuras: Estructura })[];
+    },
+    enabled: !!currentUser?.id
+  });
+
+  // Query separado para obtener información de supervisores sin filtros jerárquicos
+  const { data: allSupervisors } = useQuery({
+    queryKey: ["supervisors"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("users")
+        .select("id, nombre_completo, user_position")
+        .eq("is_active", true);
+
+      if (error) {
+        console.error('Error fetching supervisors:', error);
+        throw error;
+      }
+
+      return data;
     },
     enabled: !!currentUser?.id
   });
@@ -300,13 +430,16 @@ const Usuarios = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("estructuras")
-        .select("*")
+        .select("id, tipo, nombre, custom_name, parent_estructura_id")
         .order("nombre", { ascending: true });
 
       if (error) throw error;
       return data as Estructura[];
     },
   });
+
+  // Agregar el hook de herencia
+  const herenciaUtils = useEstructuraHerencia(estructuras || []);
 
   // Agregar función helper para verificar si puede eliminar usuarios
   const canDeleteUsers = (userPosition?: string) => {
@@ -326,6 +459,30 @@ const Usuarios = () => {
   const handleSaveUser = async () => {
     try {
       if (isEditing) {
+        // Validar permisos de edición de cargo en el modal
+        if (currentUser?.user_position && canEditPositions(currentUser.user_position)) {
+          const cargosPermitidos = getCargosEditablesParaEdicion(currentUser.user_position);
+          if (newUser.user_position && !cargosPermitidos.includes(newUser.user_position as JerarquiaPosicion)) {
+            toast({
+              variant: "destructive",
+              title: "Cargo no permitido",
+              description: `Como ${currentUser.user_position}, no puedes asignar el cargo de ${newUser.user_position}`,
+            });
+            return;
+          }
+        } else if (currentUser?.user_position && !canEditPositions(currentUser.user_position)) {
+          // Si no tiene permisos para editar cargos, verificar que no esté intentando cambiar el cargo
+          const originalUser = users?.find(u => u.id === newUser.id);
+          if (originalUser && originalUser.user_position !== newUser.user_position) {
+            toast({
+              variant: "destructive",
+              title: "Acceso denegado",
+              description: "No tienes permisos para modificar cargos",
+            });
+            return;
+          }
+        }
+
         if (isChangingPassword && newUser.password) {
           const { error: passwordError } = await supabaseAdmin.auth.admin.updateUserById(
             newUser.id,
@@ -367,16 +524,33 @@ const Usuarios = () => {
 
           if (deleteError) throw deleteError;
 
-          // Insertar nuevas relaciones solo si hay estructuras seleccionadas
+          // Aplicar herencia automática para las estructuras seleccionadas
           if (newUser.estructura_ids.length > 0) {
+            const todasLasVinculaciones = new Set<number>();
+            
+            newUser.estructura_ids.forEach(estructuraId => {
+              // Solo aplicar herencia si tenemos estructuras cargadas
+              if (estructuras && estructuras.length > 0) {
+                const vinculacionesHeredadas = herenciaUtils.obtenerVinculacionesHeredadas(parseInt(estructuraId));
+                vinculacionesHeredadas.forEach(id => todasLasVinculaciones.add(id));
+              } else {
+                // Fallback: solo agregar la estructura seleccionada
+                todasLasVinculaciones.add(parseInt(estructuraId));
+              }
+            });
+
+            const estructurasToInsert = Array.from(todasLasVinculaciones).map(estructuraId => ({
+              user_id: newUser.id,
+              estructura_id: estructuraId
+            }));
+
+            console.log('🔄 Aplicando herencia automática en edición:');
+            console.log('📍 Estructuras seleccionadas:', newUser.estructura_ids);
+            console.log('🌳 Vinculaciones heredadas calculadas:', Array.from(todasLasVinculaciones));
+
             const { error: estructurasError } = await supabase
               .from("user_estructuras")
-              .insert(
-                newUser.estructura_ids.map(estructuraId => ({
-                  user_id: newUser.id,
-                  estructura_id: parseInt(estructuraId)
-                }))
-              );
+              .insert(estructurasToInsert);
 
             if (estructurasError) throw estructurasError;
           }
@@ -457,14 +631,32 @@ const Usuarios = () => {
             throw userError;
           }
 
-          // Si es un rol multi-estructura, crear las relaciones
+          // Si es un rol multi-estructura, aplicar herencia automática
           if (hasMultiEstructura(newUser.user_position) && newUser.estructura_ids.length > 0) {
-            const estructurasToInsert = newUser.estructura_ids.map(estructuraId => ({
+            // Calcular todas las vinculaciones heredadas para cada estructura seleccionada
+            const todasLasVinculaciones = new Set<number>();
+            
+            newUser.estructura_ids.forEach(estructuraId => {
+              // Solo aplicar herencia si tenemos estructuras cargadas
+              if (estructuras && estructuras.length > 0) {
+                const vinculacionesHeredadas = herenciaUtils.obtenerVinculacionesHeredadas(parseInt(estructuraId));
+                vinculacionesHeredadas.forEach(id => todasLasVinculaciones.add(id));
+              } else {
+                // Fallback: solo agregar la estructura seleccionada
+                todasLasVinculaciones.add(parseInt(estructuraId));
+              }
+            });
+
+            // Insertar todas las vinculaciones heredadas
+            const estructurasToInsert = Array.from(todasLasVinculaciones).map(estructuraId => ({
               user_id: userId,
-              estructura_id: parseInt(estructuraId)
+              estructura_id: estructuraId
             }));
 
-            console.log('Insertando relaciones de estructuras:', estructurasToInsert);
+            console.log('🔄 Aplicando herencia automática:');
+            console.log('📍 Estructuras seleccionadas:', newUser.estructura_ids);
+            console.log('🌳 Vinculaciones heredadas calculadas:', Array.from(todasLasVinculaciones));
+            console.log('💾 Insertando vinculaciones:', estructurasToInsert);
 
             const { error: estructurasError } = await supabase
               .from("user_estructuras")
@@ -473,11 +665,16 @@ const Usuarios = () => {
             if (estructurasError) {
               throw estructurasError;
             }
-          }
 
-          toast({
-            title: "Usuario creado exitosamente",
-          });
+            toast({
+              title: "Usuario creado exitosamente",
+              description: `✅ Herencia automática aplicada: ${todasLasVinculaciones.size} estructuras vinculadas`,
+            });
+          } else {
+            toast({
+              title: "Usuario creado exitosamente",
+            });
+          }
 
           setIsCreateModalOpen(false);
           refetchUsers();
@@ -549,6 +746,19 @@ const Usuarios = () => {
         description: "No tienes permisos para modificar cargos",
       });
       return;
+    }
+
+    // Verificación específica de que el cargo seleccionado está permitido para este usuario
+    if (field === "user_position" && currentUser?.user_position) {
+      const cargosPermitidos = getCargosEditablesParaEdicion(currentUser.user_position);
+      if (!cargosPermitidos.includes(value as JerarquiaPosicion)) {
+        toast({
+          variant: "destructive",
+          title: "Cargo no permitido",
+          description: `Como ${currentUser.user_position}, no puedes asignar el cargo de ${value}`,
+        });
+        return;
+      }
     }
 
     try {
@@ -657,6 +867,98 @@ const Usuarios = () => {
     }
   };
 
+  // Función para recalcular herencia automática de un usuario específico
+  const handleRecalcularHerenciaUsuario = async (user: UserData) => {
+    // Solo permitir recálculo para usuarios con roles multi-estructura
+    if (!hasMultiEstructura(user.user_position)) {
+      toast({
+        variant: "destructive",
+        title: "Recálculo no disponible",
+        description: `El cargo ${user.user_position} no usa herencia automática`,
+      });
+      return;
+    }
+
+    if (!estructuras || estructuras.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No hay estructuras cargadas para procesar",
+      });
+      return;
+    }
+
+    try {
+      console.log(`🔄 Recalculando herencia para usuario: ${user.email} (${user.user_position})`);
+
+      // Obtener las estructuras directas actuales del usuario
+      const { data: estructurasDirectas, error: estructurasError } = await supabase
+        .from("user_estructuras")
+        .select('estructura_id')
+        .eq('user_id', user.id);
+
+      if (estructurasError) throw estructurasError;
+
+      if (!estructurasDirectas || estructurasDirectas.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "Sin estructuras base",
+          description: `${user.nombre_completo} no tiene estructuras asignadas para calcular herencia`,
+        });
+        return;
+      }
+
+      // Calcular todas las vinculaciones heredadas
+      const todasLasVinculaciones = new Set<number>();
+      
+      estructurasDirectas.forEach(({ estructura_id }) => {
+        const vinculacionesHeredadas = herenciaUtils.obtenerVinculacionesHeredadas(estructura_id);
+        vinculacionesHeredadas.forEach(id => todasLasVinculaciones.add(id));
+      });
+
+      console.log(`📍 Estructuras base encontradas:`, estructurasDirectas.map(e => e.estructura_id));
+      console.log(`🌳 Vinculaciones heredadas calculadas:`, Array.from(todasLasVinculaciones));
+
+      // Eliminar todas las vinculaciones existentes del usuario
+      const { error: deleteError } = await supabase
+        .from("user_estructuras")
+        .delete()
+        .eq('user_id', user.id);
+
+      if (deleteError) throw deleteError;
+
+      // Insertar las nuevas vinculaciones heredadas
+      const nuevasVinculaciones = Array.from(todasLasVinculaciones).map(estructura_id => ({
+        user_id: user.id,
+        estructura_id
+      }));
+
+      const { error: insertError } = await supabase
+        .from("user_estructuras")
+        .insert(nuevasVinculaciones);
+
+      if (insertError) throw insertError;
+
+      toast({
+        title: "✅ Herencia recalculada",
+        description: `${user.nombre_completo}: ${todasLasVinculaciones.size} estructuras vinculadas`,
+      });
+
+      console.log(`✅ Recálculo completado para ${user.email}: ${todasLasVinculaciones.size} vinculaciones`);
+
+      // Refrescar la tabla de usuarios
+      refetchUsers();
+
+    } catch (error) {
+      console.error(`❌ Error recalculando herencia para ${user.email}:`, error);
+      toast({
+        variant: "destructive",
+        title: "Error en recálculo",
+        description: `No se pudo recalcular la herencia para ${user.nombre_completo}`,
+      });
+    }
+  };
+
   const filteredUsers = users?.filter((user) => {
     if (!user) return false;
     
@@ -664,16 +966,16 @@ const Usuarios = () => {
     const matchesNombre = user.nombre_completo?.toLowerCase().includes(nombreFilter.toLowerCase()) ?? false;
     const matchesCargo = user.user_position?.toLowerCase().includes(cargoFilter.toLowerCase()) ?? false;
     
-    // Modificar la lógica para estructuras
+    // Lógica de filtrado para estructuras (incluyendo Sales Manager con herencia)
     let matchesEstructura = true;
     if (estructuraFilter) {
-      if (hasMultiEstructura(user.user_position)) {
-        // Para usuarios con múltiples estructuras
-        matchesEstructura = user.estructuras?.some(e => 
+      if (user.estructuras && user.estructuras.length > 0) {
+        // Para usuarios con estructuras heredadas (incluye Sales Manager)
+        matchesEstructura = user.estructuras.some(e => 
           (e.custom_name || e.nombre)?.toLowerCase().includes(estructuraFilter.toLowerCase())
-        ) ?? false;
+        );
       } else {
-        // Para usuarios con una sola estructura
+        // Para usuarios con una sola estructura base
         matchesEstructura = estructuras
           ?.find((e) => e.id === user.estructura_id)
           ?.nombre?.toLowerCase()
@@ -808,11 +1110,17 @@ const Usuarios = () => {
                           <SelectValue placeholder="Seleccionar cargo" />
                         </SelectTrigger>
                         <SelectContent>
-                          {JERARQUIA_POSICIONES.map((role) => (
-                            <SelectItem key={role} value={role}>
-                              {role}
+                          {currentUser?.user_position ? (
+                            getCargosEditablesParaEdicion(currentUser.user_position).map((role) => (
+                              <SelectItem key={role} value={role}>
+                                {role}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="" disabled>
+                              No hay cargos disponibles
                             </SelectItem>
-                          ))}
+                          )}
                         </SelectContent>
                       </Select>
                     ) : (
@@ -830,13 +1138,13 @@ const Usuarios = () => {
                     )}
                   </TableCell>
                   <TableCell>
-                    {hasMultiEstructura(user.user_position) ? (
-                      // Para usuarios con múltiples estructuras
+                    {user.estructuras && user.estructuras.length > 0 ? (
+                      // Si tiene estructuras heredadas, mostrarlas todas (incluye Sales Manager)
                       <span>
-                        {user.estructuras?.map(e => e.custom_name || e.nombre).join(', ')}
+                        {user.estructuras.map(e => e.custom_name || e.nombre).join(', ')}
                       </span>
                     ) : (
-                      // Para usuarios con una sola estructura
+                      // Si no tiene estructuras heredadas, mostrar la estructura base
                       <span>
                         {estructuras?.find((e) => e.id === user.estructura_id)?.custom_name ||
                            estructuras?.find((e) => e.id === user.estructura_id)?.nombre}
@@ -844,7 +1152,7 @@ const Usuarios = () => {
                     )}
                   </TableCell>
                   <TableCell>
-                    {users?.find(u => u.id === user.supervisor_id)?.nombre_completo || 'Sin supervisor'}
+                    {allSupervisors?.find(u => u.id === user.supervisor_id)?.nombre_completo || 'Sin supervisor'}
                   </TableCell>
                   <TableCell>
                     <span className={`px-2 py-1 rounded-full text-xs ${
@@ -863,6 +1171,17 @@ const Usuarios = () => {
                       {canEditUsers(currentUser?.user_position) && user.is_active && (
                         <Button variant="ghost" size="icon" onClick={() => handleEditUser(user)}>
                           <Edit className="h-4 w-4 text-primary" />
+                        </Button>
+                      )}
+                      {/* Botón para recalcular herencia automática */}
+                      {user.is_active && hasMultiEstructura(user.user_position) && (
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => handleRecalcularHerenciaUsuario(user)}
+                          title={`Recalcular herencia automática para ${user.nombre_completo}`}
+                        >
+                          <RotateCcw className="h-4 w-4 text-blue-600" />
                         </Button>
                       )}
                       {canDeleteUsers(currentUser?.user_position) && user.is_active && (
@@ -922,7 +1241,7 @@ const Usuarios = () => {
             email: "",
             nombre_completo: "",
             password: "",
-            role: "",
+            role: "usuario", // Rol por defecto
             user_position: "",
             tipo_estructura: "",
             estructura_id: "",
@@ -1026,6 +1345,7 @@ const Usuarios = () => {
               <Select
                 value={newUser.role}
                 onValueChange={(value) => setNewUser({ ...newUser, role: value })}
+                disabled={!isEditing || !canEditRoles(currentUser?.user_position)} // Deshabilitado en creación, o en edición si no tiene permisos
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar rol" />
@@ -1036,24 +1356,80 @@ const Usuarios = () => {
                   <SelectItem value="superuser">Superuser</SelectItem>
                 </SelectContent>
               </Select>
+              {!isEditing && (
+                <p className="text-xs text-muted-foreground">
+                  🔒 Rol fijo en "Usuario" para nuevos usuarios
+                </p>
+              )}
+              {isEditing && !canEditRoles(currentUser?.user_position) && (
+                <p className="text-xs text-muted-foreground">
+                  🔒 Solo CEO y Director Internacional pueden modificar roles
+                </p>
+              )}
+              {isEditing && canEditRoles(currentUser?.user_position) && (
+                <p className="text-xs text-muted-foreground">
+                  ✅ Puedes modificar el rol de este usuario
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Cargo</Label>
               <Select
                 value={newUser.user_position}
                 onValueChange={(value: JerarquiaPosicion) => setNewUser({ ...newUser, user_position: value })}
+                disabled={isEditing && !canEditPositions(currentUser?.user_position)} // Habilitado si puede editar cargos
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar cargo" />
                 </SelectTrigger>
                 <SelectContent>
-                  {JERARQUIA_POSICIONES.map((role) => (
-                    <SelectItem key={role} value={role}>
-                      {role}
-                    </SelectItem>
-                  ))}
+                  {(() => {
+                    if (isEditing && currentUser?.user_position && canEditPositions(currentUser.user_position)) {
+                      // En modo edición, mostrar solo cargos permitidos para edición
+                      const cargosEditables = getCargosEditablesParaEdicion(currentUser.user_position);
+                      return cargosEditables.map((role) => (
+                        <SelectItem key={role} value={role}>
+                          {role}
+                        </SelectItem>
+                      ));
+                    } else if (!isEditing && currentUser?.user_position) {
+                      // En modo creación, filtrar cargos según jerarquía del usuario actual
+                      const cargosDisponibles = getCargosDisponiblesParaCrear(currentUser.user_position);
+                      return cargosDisponibles.map((role) => (
+                        <SelectItem key={role} value={role}>
+                          {role}
+                        </SelectItem>
+                      ));
+                    }
+                    // Fallback: mostrar todos los cargos
+                    return JERARQUIA_POSICIONES.map((role) => (
+                      <SelectItem key={role} value={role}>
+                        {role}
+                      </SelectItem>
+                    ));
+                  })()}
                 </SelectContent>
               </Select>
+              {isEditing && canEditPositions(currentUser?.user_position) && (
+                <div className="space-y-1">
+                  <p className="text-xs text-green-600">
+                    ✅ Como {currentUser.user_position}, puedes editar cargos desde aquí
+                    {currentUser.user_position === 'Sales Manager' && 
+                      ' (excepto CEO, Director Internacional y Director Nacional)'
+                    }
+                  </p>
+                </div>
+              )}
+              {isEditing && !canEditPositions(currentUser?.user_position) && (
+                <p className="text-xs text-muted-foreground">
+                  🔒 No tienes permisos para modificar cargos
+                </p>
+              )}
+              {!isEditing && currentUser?.user_position && (
+                <p className="text-xs text-muted-foreground">
+                  Solo puedes crear usuarios con cargos de menor jerarquía
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Tipo de Estructura</Label>
@@ -1146,7 +1522,7 @@ const Usuarios = () => {
                 </SelectTrigger>
                 <SelectContent>
                   {newUser.user_position && newUser.user_position !== 'CEO' ? (
-                    obtenerSupervisoresPotenciales(users || [], newUser.user_position)
+                    obtenerSupervisoresPotenciales(allSupervisors || [], newUser.user_position)
                       .map((supervisor) => (
                         <SelectItem key={supervisor.id} value={supervisor.id}>
                           {supervisor.nombre_completo} ({supervisor.user_position})
@@ -1166,6 +1542,20 @@ const Usuarios = () => {
               <Button variant="outline" onClick={() => {
                 setIsCreateModalOpen(false);
                 setIsEditing(false);
+                setIsChangingPassword(false);
+                setShowPassword(false);
+                setShowEditPassword(false);
+                setNewUser({
+                  email: "",
+                  nombre_completo: "",
+                  password: "",
+                  role: "usuario", // Resetear rol por defecto
+                  user_position: "",
+                  tipo_estructura: "",
+                  estructura_id: "",
+                  supervisor_id: "",
+                  estructura_ids: [],
+                });
               }}>
                 Cancelar
               </Button>

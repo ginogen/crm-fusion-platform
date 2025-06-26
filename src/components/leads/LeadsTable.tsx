@@ -129,31 +129,27 @@ const LeadsTable = ({
         }];
       }
 
-      // Para otros roles, obtener subordinados según la jerarquía
-      const { data: subordinateUsers } = await supabase
-        .from("users")
-        .select("id, nombre_completo, user_position, estructuras!inner(id)")
-        .in("user_position", ROLE_HIERARCHY[currentUser.user_position] || [])
-        .eq("estructuras.id", currentUser.estructuras?.[0]?.id)
-        .eq("is_active", true)
-        .order("nombre_completo");
-
-      // Incluir al usuario actual en la lista
-      const allUsers = [
-        {
+      // Para otros roles, obtener subordinados usando la función recursiva
+      const allSubordinateIds = await getAllSubordinatesRecursively(currentUser.id);
+      
+      if (allSubordinateIds.length === 0) {
+        // Si no tiene subordinados, solo mostrar su propio usuario
+        return [{
           id: currentUser.id,
           nombre_completo: currentUser.nombre_completo,
           user_position: currentUser.user_position
-        },
-        ...(subordinateUsers || [])
-      ];
+        }];
+      }
 
-      // Eliminar duplicados por ID
-      const uniqueUsers = allUsers.filter((user, index, self) => 
-        index === self.findIndex(u => u.id === user.id)
-      );
+      // Obtener los datos de todos los usuarios subordinados + el usuario actual
+      const { data: subordinateUsers } = await supabase
+        .from("users")
+        .select("id, nombre_completo, user_position")
+        .in("id", [currentUser.id, ...allSubordinateIds])
+        .eq("is_active", true)
+        .order("nombre_completo");
 
-      return uniqueUsers;
+      return subordinateUsers || [];
     },
     enabled: !!currentUser,
   });
@@ -259,7 +255,7 @@ const LeadsTable = ({
         } else {
           // Para otros roles, usar la nueva función recursiva para obtener todos los subordinados
           console.log('Getting all subordinates recursively for user:', currentUser.id);
-          const allSubordinateIds = await getAllSubordinatesRecursively(currentUser.id, currentUser.user_position);
+          const allSubordinateIds = await getAllSubordinatesRecursively(currentUser.id);
           
           console.log('Found all subordinate IDs:', allSubordinateIds);
           
@@ -478,7 +474,7 @@ const LeadsTable = ({
           baseQuery = baseQuery.eq('asignado_a', currentUser.id);
         } else {
           // Usar la misma lógica recursiva que en la consulta principal
-          const allSubordinateIds = await getAllSubordinatesRecursively(currentUser.id, currentUser.user_position);
+          const allSubordinateIds = await getAllSubordinatesRecursively(currentUser.id);
           
           if (allSubordinateIds.length > 0) {
             baseQuery = baseQuery.in('asignado_a', [currentUser.id, ...allSubordinateIds]);
@@ -547,7 +543,7 @@ const LeadsTable = ({
           baseQuery = baseQuery.eq('asignado_a', currentUser.id);
         } else {
           // Usar la misma lógica recursiva que en la consulta principal
-          const allSubordinateIds = await getAllSubordinatesRecursively(currentUser.id, currentUser.user_position);
+          const allSubordinateIds = await getAllSubordinatesRecursively(currentUser.id);
           
           if (allSubordinateIds.length > 0) {
             baseQuery = baseQuery.in('asignado_a', [currentUser.id, ...allSubordinateIds]);
