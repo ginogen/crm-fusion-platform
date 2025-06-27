@@ -238,6 +238,11 @@ const Campanas = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [cancelUpload, setCancelUpload] = useState(false);
 
+  // Estados para paginación y filtros de leads
+  const [leadsPage, setLeadsPage] = useState<{ [batchId: number]: number }>({});
+  const [leadsPerPage, setLeadsPerPage] = useState(20);
+  const [leadsFilter, setLeadsFilter] = useState<{ [batchId: number]: 'all' | 'assigned' | 'unassigned' }>({});
+
   const { data: batches, refetch } = useQuery({
     queryKey: ["batches"],
     queryFn: async () => {
@@ -263,35 +268,77 @@ const Campanas = () => {
       // 2. Obtener leads para cada batch desde la tabla leads
       const batchesWithLeads = await Promise.all(
         batchesData.map(async (batch) => {
-          const { data: leadsData, error: leadsError } = await supabase
+          // Primero contar el total de leads para este batch
+          const { count: totalLeads } = await supabase
             .from("leads")
-            .select(`
-              id,
-              nombre_completo,
-              email,
-              telefono,
-              estado,
-              created_at,
-              asignado_a,
-              user:users!asignado_a (
-                id,
-                nombre_completo,
-                email
-              )
-            `)
+            .select("*", { count: 'exact', head: true })
             .eq("batch_id", batch.id)
-            .eq("is_from_batch", true)
-            .order("created_at", { ascending: false });
+            .eq("is_from_batch", true);
 
-          if (leadsError) {
-            console.error('Error al cargar leads para batch', batch.id, ':', leadsError);
+          console.log(`Batch ${batch.id} (${batch.name}): Total de leads en BD: ${totalLeads}`);
+
+          // Función para obtener todos los leads usando paginación
+          const getAllLeadsForBatch = async (batchId: number): Promise<any[]> => {
+            const allLeads: any[] = [];
+            let from = 0;
+            const pageSize = 1000; // Tamaño de página grande para eficiencia
+            
+            while (true) {
+              const { data: pageLeads, error } = await supabase
+                .from("leads")
+                .select(`
+                  id,
+                  nombre_completo,
+                  email,
+                  telefono,
+                  estado,
+                  created_at,
+                  asignado_a,
+                  user:users!asignado_a (
+                    id,
+                    nombre_completo,
+                    email
+                  )
+                `)
+                .eq("batch_id", batchId)
+                .eq("is_from_batch", true)
+                .order("created_at", { ascending: false })
+                .range(from, from + pageSize - 1);
+
+              if (error) {
+                console.error('Error al cargar página de leads:', error);
+                break;
+              }
+
+              if (!pageLeads || pageLeads.length === 0) {
+                break; // No hay más leads
+              }
+
+              allLeads.push(...pageLeads);
+              from += pageSize;
+
+              // Si obtuvimos menos leads que el tamaño de página, hemos terminado
+              if (pageLeads.length < pageSize) {
+                break;
+              }
+            }
+
+            return allLeads;
+          };
+
+          // Obtener todos los leads usando paginación
+          const leadsData = await getAllLeadsForBatch(batch.id);
+
+          console.log(`Batch ${batch.id} (${batch.name}): ${leadsData.length} leads cargados (de ${totalLeads} totales)`);
+
+          // Verificar si hay discrepancia entre el conteo y los datos cargados
+          if (totalLeads && leadsData.length !== totalLeads) {
+            console.warn(`⚠️ DISCREPANCIA: Batch ${batch.id} tiene ${totalLeads} leads en BD pero se cargaron ${leadsData.length}`);
           }
-
-          console.log(`Batch ${batch.id} (${batch.name}): ${leadsData?.length || 0} leads cargados`);
 
           return {
             ...batch,
-            leads: leadsData || []
+            leads: leadsData
           };
         })
       );
@@ -411,6 +458,7 @@ const Campanas = () => {
   const distribuirLeads = async (batchId: number) => {
     try {
       console.log('Iniciando distribución de leads para batch:', batchId);
+      console.log('NOTA: Esta función ahora distribuye leads SOLO a usuarios online/conectados');
 
       // 1. Obtener las estructuras vinculadas al batch
       const { data: batchEstructuras } = await supabase
@@ -607,14 +655,27 @@ const Campanas = () => {
 
       console.log('Usuarios filtrados por estructuras target:', usuariosEstructuras);
 
-      let usuarios = usuariosEstructuras;
+      // 5.1. Filtrar solo usuarios que estén online (conectados)
+      const { data: usuariosOnline } = await supabase
+        .from("user_activity")
+        .select("user_id, is_online, last_active")
+        .eq("is_online", true)
+        .gte("last_active", new Date(Date.now() - 5 * 60 * 1000).toISOString()); // Solo usuarios activos en los últimos 5 minutos
+
+      console.log('Usuarios online:', usuariosOnline);
+
+      // 5.2. Filtrar usuarios que estén tanto en las estructuras como online
+      const userIdsOnline = usuariosOnline?.map(u => u.user_id) || [];
+      let usuarios = usuariosEstructuras?.filter(u => userIdsOnline.includes(u.id)) || [];
+
+      console.log('Usuarios finales (en estructuras + online):', usuarios);
 
       if (!usuarios?.length) {
-        // Intentar una estrategia alternativa: buscar usuarios en estructuras relacionadas
-        console.log('No se encontraron usuarios en estructuras específicas, buscando alternativas...');
+        // Intentar una estrategia alternativa: buscar usuarios online en general
+        console.log('No se encontraron usuarios online en estructuras específicas, buscando alternativas...');
         
-        // Buscar usuarios en CUALQUIER estructura para debug
-        const { data: algunosUsuarios } = await supabase
+        // Buscar usuarios online en CUALQUIER estructura
+        const { data: usuariosOnlineGenerales } = await supabase
           .from("users")
           .select(`
             id,
@@ -623,24 +684,21 @@ const Campanas = () => {
             estructura_id,
             is_active
           `)
-          .limit(10);
+          .eq("is_active", true)
+          .in("id", userIdsOnline);
         
-        console.log('Muestra de usuarios del sistema:', algunosUsuarios);
+        console.log('Usuarios online generales:', usuariosOnlineGenerales);
         
-        // Como workaround temporal, usar cualquier usuario activo del sistema
-        if (algunosUsuarios && algunosUsuarios.length > 0) {
-          const usuariosActivos = algunosUsuarios.filter(u => u.is_active);
-          if (usuariosActivos.length > 0) {
-            console.log('WORKAROUND: Usando usuarios activos del sistema general:', usuariosActivos);
-            toast.info(`MODO DEBUG: No hay usuarios en estructuras específicas, usando ${usuariosActivos.length} usuarios activos del sistema como alternativa`);
-            
-            // Usar estos usuarios como backup
-            usuarios = usuariosActivos;
-          }
+        if (usuariosOnlineGenerales && usuariosOnlineGenerales.length > 0) {
+          console.log('WORKAROUND: Usando usuarios online del sistema general:', usuariosOnlineGenerales);
+          toast.info(`MODO DEBUG: No hay usuarios online en estructuras específicas, usando ${usuariosOnlineGenerales.length} usuarios online del sistema como alternativa`);
+          
+          // Usar estos usuarios como backup
+          usuarios = usuariosOnlineGenerales;
         }
         
         if (!usuarios?.length) {
-          toast.error(`No hay usuarios disponibles en las estructuras seleccionadas (IDs: ${estructurasIds.join(', ')}). Verifica que existan usuarios asignados a estas estructuras.`);
+          toast.error(`No hay usuarios online disponibles en las estructuras seleccionadas (IDs: ${estructurasIds.join(', ')}). Verifica que existan usuarios conectados asignados a estas estructuras.`);
           return;
         }
       }
@@ -1214,11 +1272,12 @@ const Campanas = () => {
         throw new Error('El batch no existe');
       }
 
-      // 2. Eliminar los leads
+      // 2. Eliminar los leads de la tabla leads (no campaign_leads)
       const { error: leadsError } = await supabase
-        .from("campaign_leads")
+        .from("leads")
         .delete()
-        .eq("batch_id", batchId);
+        .eq("batch_id", batchId)
+        .eq("is_from_batch", true);
 
       if (leadsError) {
         console.error('Error al eliminar leads:', leadsError);
@@ -1236,7 +1295,7 @@ const Campanas = () => {
         throw new Error(`Error al eliminar permisos: ${permisosError.message}`);
       }
 
-      // 4. Eliminar el batch directamente
+      // 4. Eliminar el batch
       const { error: batchError } = await supabase
         .from("lead_batches")
         .delete()
@@ -1665,56 +1724,52 @@ const Campanas = () => {
       // Construir la consulta base - ahora incluye tanto SIN_LLAMAR como RECHAZADO
       let query = supabase
         .from("leads")
-        .select("id, estado")
+        .select("id, estado, asignado_a")
         .in("estado", ["SIN_LLAMAR", "RECHAZADO"])
         .not("asignado_a", "is", null);
       
-      // Si se especificaron empresa y país, filtrar por estructuras
+      // Si se especificaron empresa y país, filtrar por estructuras jerárquicas (UNIÓN)
       if (empresaId && paisId) {
-        // Función recursiva para obtener todas las estructuras de la jerarquía
+        // Función recursiva para obtener todas las estructuras hijas
         const obtenerEstructurasRecursivas = async (estructuraId: number): Promise<number[]> => {
           const estructurasIds = [estructuraId];
-          
-          // Obtener todas las estructuras hijas directas
-          const { data: estructurasHijas } = await supabase
+          const { data: hijas } = await supabase
             .from("estructuras")
             .select("id")
             .eq("parent_id", estructuraId);
-
-          if (estructurasHijas && estructurasHijas.length > 0) {
-            // Para cada estructura hija, obtener recursivamente sus descendientes
-            for (const hija of estructurasHijas) {
+          if (hijas && hijas.length > 0) {
+            for (const hija of hijas) {
               const descendientes = await obtenerEstructurasRecursivas(hija.id);
               estructurasIds.push(...descendientes);
             }
           }
-
           return estructurasIds;
         };
 
-        // Obtener TODAS las estructuras de la jerarquía para empresa y país
+        // Obtener todas las estructuras hijas de empresa y país
         const estructurasEmpresa = await obtenerEstructurasRecursivas(empresaId);
         const estructurasPais = await obtenerEstructurasRecursivas(paisId);
+        // Usar la UNIÓN de ambas listas
+        const estructurasIds = [...new Set([...estructurasEmpresa, ...estructurasPais])];
 
-        // Combinar todas las estructuras y eliminar duplicados
-        const estructurasIds = [...new Set([
-          ...estructurasEmpresa,
-          ...estructurasPais
-        ])];
-        
-        console.log('Estructuras para evacuación - Empresa:', estructurasEmpresa);
-        console.log('Estructuras para evacuación - País:', estructurasPais);
-        console.log('Todas las estructuras para evacuación:', estructurasIds);
-        
-        // Obtener usuarios de estas estructuras
-        const { data: usuarios } = await supabase
-          .from("users")
-          .select("id")
+        console.log('Estructuras hijas de empresa:', estructurasEmpresa);
+        console.log('Estructuras hijas de país:', estructurasPais);
+        console.log('Estructuras finales para filtrar usuarios (UNIÓN):', estructurasIds);
+
+        // Obtener usuarios vinculados a esas estructuras usando user_estructuras
+        const { data: userEstructuras, error: userEstructurasError } = await supabase
+          .from("user_estructuras")
+          .select("user_id")
           .in("estructura_id", estructurasIds);
-        
-        if (usuarios && usuarios.length > 0) {
+
+        if (userEstructurasError) throw userEstructurasError;
+
+        const userIds = userEstructuras?.map(ue => ue.user_id) || [];
+        console.log('Usuarios vinculados a las estructuras:', userIds);
+
+        if (userIds.length > 0) {
           // Filtrar solo los leads asignados a estos usuarios
-          query = query.in("asignado_a", usuarios.map(u => u.id));
+          query = query.in("asignado_a", userIds);
         } else {
           toast.error("No se encontraron usuarios en las estructuras seleccionadas");
           setLoading(false);
@@ -1724,7 +1779,6 @@ const Campanas = () => {
 
       // Ejecutar la consulta
       const { data: leadsAEvacuar, error: queryError } = await query;
-
       if (queryError) throw queryError;
 
       if (leadsAEvacuar?.length) {
@@ -2058,6 +2112,64 @@ const saveFormById = async (formId: string) => {
   const cancelEditingBatchName = () => {
     setEditingBatchName(null);
     setNewBatchName("");
+  };
+
+  // Funciones auxiliares para paginación y filtros
+  const getFilteredLeads = (batch: Batch) => {
+    const filter = leadsFilter[batch.id] || 'all';
+    let filteredLeads = batch.leads;
+
+    switch (filter) {
+      case 'assigned':
+        filteredLeads = batch.leads.filter(lead => lead.asignado_a);
+        break;
+      case 'unassigned':
+        filteredLeads = batch.leads.filter(lead => !lead.asignado_a);
+        break;
+      default:
+        filteredLeads = batch.leads;
+    }
+
+    return filteredLeads;
+  };
+
+  const getPaginatedLeads = (batch: Batch) => {
+    const filteredLeads = getFilteredLeads(batch);
+    const currentPage = leadsPage[batch.id] || 1;
+    const startIndex = (currentPage - 1) * leadsPerPage;
+    const endIndex = startIndex + leadsPerPage;
+    
+    return {
+      leads: filteredLeads.slice(startIndex, endIndex),
+      totalPages: Math.ceil(filteredLeads.length / leadsPerPage),
+      currentPage,
+      totalLeads: filteredLeads.length
+    };
+  };
+
+  const handlePageChange = (batchId: number, page: number) => {
+    setLeadsPage(prev => ({
+      ...prev,
+      [batchId]: page
+    }));
+  };
+
+  const handleFilterChange = (batchId: number, filter: 'all' | 'assigned' | 'unassigned') => {
+    setLeadsFilter(prev => ({
+      ...prev,
+      [batchId]: filter
+    }));
+    // Resetear a la primera página cuando cambia el filtro
+    setLeadsPage(prev => ({
+      ...prev,
+      [batchId]: 1
+    }));
+  };
+
+  const handleLeadsPerPageChange = (newValue: number) => {
+    setLeadsPerPage(newValue);
+    // Resetear todas las páginas a 1 cuando cambia el número de elementos por página
+    setLeadsPage({});
   };
 
   return (
@@ -2980,6 +3092,51 @@ const saveFormById = async (formId: string) => {
 
                   {/* Tabla de leads existente */}
                   <div className="rounded-md border mt-4 overflow-x-auto">
+                    {/* Controles de filtro y paginación */}
+                    <div className="p-4 border-b bg-gray-50">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        {/* Filtros */}
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <Label className="text-sm font-medium">Filtrar:</Label>
+                            <select
+                              className="text-sm border rounded px-2 py-1"
+                              value={leadsFilter[batch.id] || 'all'}
+                              onChange={(e) => handleFilterChange(batch.id, e.target.value as 'all' | 'assigned' | 'unassigned')}
+                            >
+                              <option value="all">Todos</option>
+                              <option value="assigned">Asignados</option>
+                              <option value="unassigned">No Asignados</option>
+                            </select>
+                          </div>
+                          
+                          <div className="flex items-center gap-2">
+                            <Label className="text-sm font-medium">Por página:</Label>
+                            <select
+                              className="text-sm border rounded px-2 py-1"
+                              value={leadsPerPage}
+                              onChange={(e) => handleLeadsPerPageChange(Number(e.target.value))}
+                            >
+                              <option value={10}>10</option>
+                              <option value={20}>20</option>
+                              <option value={50}>50</option>
+                              <option value={100}>100</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Información de paginación */}
+                        {(() => {
+                          const paginationInfo = getPaginatedLeads(batch);
+                          return (
+                            <div className="text-sm text-gray-600">
+                              Mostrando {((paginationInfo.currentPage - 1) * leadsPerPage) + 1} - {Math.min(paginationInfo.currentPage * leadsPerPage, paginationInfo.totalLeads)} de {paginationInfo.totalLeads} leads
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -2992,20 +3149,23 @@ const saveFormById = async (formId: string) => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {batch.leads.length === 0 ? (
-                          // Skeleton loading para cuando los leads se están cargando
-                          [...Array(5)].map((_, index) => (
-                            <TableRow key={index}>
-                              <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                              <TableCell><Skeleton className="h-4 w-40" /></TableCell>
-                              <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                              <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
-                              <TableCell><Skeleton className="h-4 w-28" /></TableCell>
-                              <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                            </TableRow>
-                          ))
-                        ) : (
-                          batch.leads.map((lead) => (
+                        {(() => {
+                          const paginationInfo = getPaginatedLeads(batch);
+                          
+                          if (paginationInfo.leads.length === 0) {
+                            return (
+                              <TableRow>
+                                <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                                  {paginationInfo.totalLeads === 0 
+                                    ? "No hay leads en este batch" 
+                                    : "No hay leads que coincidan con el filtro seleccionado"
+                                  }
+                                </TableCell>
+                              </TableRow>
+                            );
+                          }
+
+                          return paginationInfo.leads.map((lead) => (
                             <TableRow key={lead.id}>
                               <TableCell>{lead.nombre_completo}</TableCell>
                               <TableCell>{lead.email}</TableCell>
@@ -3027,10 +3187,119 @@ const saveFormById = async (formId: string) => {
                               </TableCell>
                               <TableCell>{new Date(lead.created_at || '').toLocaleDateString()}</TableCell>
                             </TableRow>
-                          ))
-                        )}
+                          ));
+                        })()}
                       </TableBody>
                     </Table>
+
+                    {/* Controles de paginación */}
+                    {(() => {
+                      const paginationInfo = getPaginatedLeads(batch);
+                      
+                      if (paginationInfo.totalPages <= 1) return null;
+
+                      const renderPageNumbers = () => {
+                        const pages = [];
+                        const maxVisiblePages = 5;
+                        let startPage = Math.max(1, paginationInfo.currentPage - Math.floor(maxVisiblePages / 2));
+                        let endPage = Math.min(paginationInfo.totalPages, startPage + maxVisiblePages - 1);
+                        
+                        if (endPage - startPage + 1 < maxVisiblePages) {
+                          startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                        }
+
+                        // Primera página
+                        if (startPage > 1) {
+                          pages.push(
+                            <button
+                              key={1}
+                              onClick={() => handlePageChange(batch.id, 1)}
+                              className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+                            >
+                              1
+                            </button>
+                          );
+                          if (startPage > 2) {
+                            pages.push(
+                              <span key="ellipsis1" className="px-2 py-1 text-sm text-gray-500">
+                                ...
+                              </span>
+                            );
+                          }
+                        }
+
+                        // Páginas del medio
+                        for (let i = startPage; i <= endPage; i++) {
+                          pages.push(
+                            <button
+                              key={i}
+                              onClick={() => handlePageChange(batch.id, i)}
+                              className={`px-3 py-1 text-sm border rounded ${
+                                i === paginationInfo.currentPage
+                                  ? 'bg-blue-500 text-white border-blue-500'
+                                  : 'hover:bg-gray-50'
+                              }`}
+                            >
+                              {i}
+                            </button>
+                          );
+                        }
+
+                        // Última página
+                        if (endPage < paginationInfo.totalPages) {
+                          if (endPage < paginationInfo.totalPages - 1) {
+                            pages.push(
+                              <span key="ellipsis2" className="px-2 py-1 text-sm text-gray-500">
+                                ...
+                              </span>
+                            );
+                          }
+                          pages.push(
+                            <button
+                              key={paginationInfo.totalPages}
+                              onClick={() => handlePageChange(batch.id, paginationInfo.totalPages)}
+                              className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+                            >
+                              {paginationInfo.totalPages}
+                            </button>
+                          );
+                        }
+
+                        return pages;
+                      };
+
+                      return (
+                        <div className="p-4 border-t bg-gray-50">
+                          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                            <div className="text-sm text-gray-600">
+                              Página {paginationInfo.currentPage} de {paginationInfo.totalPages}
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handlePageChange(batch.id, paginationInfo.currentPage - 1)}
+                                disabled={paginationInfo.currentPage === 1}
+                                className="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Anterior
+                              </button>
+                              
+                              <div className="flex items-center gap-1">
+                                {renderPageNumbers()}
+                              </div>
+                              
+                              <button
+                                onClick={() => handlePageChange(batch.id, paginationInfo.currentPage + 1)}
+                                disabled={paginationInfo.currentPage === paginationInfo.totalPages}
+                                className="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Siguiente
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </AccordionContent>
