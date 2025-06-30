@@ -1028,29 +1028,8 @@ const Dashboard = () => {
   const getUserIdsForQueries = async () => {
     if (!currentUser) return [];
 
-    // Si el usuario es CEO, Director Nacional o Internacional, puede ver todos los leads
-    if (
-      currentUser.user_position === USER_ROLES.CEO ||
-      currentUser.user_position === USER_ROLES.DIRECTOR_NACIONAL ||
-      currentUser.user_position === USER_ROLES.DIRECTOR_INTERNACIONAL
-    ) {
-      return null; // null significa "todos los usuarios"
-    }
-
-    // Para Asesor Training, solo sus propios leads
-    if (currentUser.user_position === USER_ROLES.ASESOR_TRAINING) {
-      return [currentUser.id];
-    }
-
-    // Para otros roles, obtener subordinados
-    const { data: subordinateUsers } = await supabase
-      .from("users")
-      .select("id, user_position, estructuras!inner(id)")
-      .in("user_position", ROLE_HIERARCHY[currentUser.user_position] || [])
-      .eq("estructuras.id", currentUser.estructuras?.[0]?.id);
-
-    const subordinateIds = subordinateUsers?.map(u => u.id) || [];
-    return subordinateIds.length > 0 ? [currentUser.id, ...subordinateIds] : [currentUser.id];
+    // CAMBIO: Para las métricas del dashboard, siempre retornamos solo el ID del usuario actual
+    return [currentUser.id];
   };
 
   const { data: metrics } = useQuery({

@@ -959,6 +959,66 @@ const Usuarios = () => {
     }
   };
 
+  // --- INICIO: Lógica de filtrado de tipos y estructuras ---
+  // Utilidad para obtener el nivel jerárquico de un tipo de estructura
+  const TIPOS_ESTRUCTURA_ORDENADOS = [
+    'Empresas',
+    'País',
+    'Zonas',
+    'Filial',
+    'División',
+    'Organizaciones',
+    'Jefaturas',
+    'Sub Organización'
+  ];
+
+  const getTipoNivel = (tipo: string) => {
+    return TIPOS_ESTRUCTURA_ORDENADOS.indexOf(tipo);
+  };
+
+  // Devuelve los tipos de estructura que puede ver el usuario actual (de su tipo hacia abajo)
+  const getTiposEstructuraVisibles = () => {
+    if (!currentUser || !estructuras) return STRUCTURE_TYPES;
+    // Si es CEO, Director Internacional o Director Nacional, puede ver todos los tipos
+    if (["CEO", "Director Internacional", "Director Nacional"].includes(currentUser.user_position)) {
+      return STRUCTURE_TYPES;
+    }
+    // Obtener los tipos de las estructuras a las que está vinculado el usuario
+    const estructurasUsuario = currentUser.estructuras && currentUser.estructuras.length > 0
+      ? currentUser.estructuras
+      : estructuras.filter(e => e.id === currentUser.estructura_id);
+    // Obtener el nivel más alto (más cercano a la raíz) de las estructuras del usuario
+    let niveles = estructurasUsuario.map(e => getTipoNivel(Object.keys(STRUCTURE_TYPES_MAPPING).find(k => STRUCTURE_TYPES_MAPPING[k] === e.tipo) || e.tipo));
+    let nivelMin = Math.min(...niveles);
+    // Si algún nivel es -1, hay un tipo no mapeado, mostrar todos y loguear advertencia
+    if (niveles.some(n => n === -1)) {
+      console.warn("[CRM] Tipo de estructura no mapeado para usuario:", estructurasUsuario.map(e => e.tipo));
+      return STRUCTURE_TYPES;
+    }
+    // Solo mostrar tipos de ese nivel hacia abajo
+    return TIPOS_ESTRUCTURA_ORDENADOS.slice(nivelMin);
+  };
+
+  // Devuelve los IDs de todas las estructuras en la cascada del usuario (todas las vinculadas y sus descendientes)
+  const getEstructurasEnCascada = () => {
+    if (!currentUser || !estructuras) return [];
+    // Si es CEO, Director Internacional o Director Nacional, puede ver todas las estructuras
+    if (["CEO", "Director Internacional", "Director Nacional"].includes(currentUser.user_position)) {
+      return estructuras.map(e => e.id);
+    }
+    const estructurasUsuario = currentUser.estructuras && currentUser.estructuras.length > 0
+      ? currentUser.estructuras
+      : estructuras.filter(e => e.id === currentUser.estructura_id);
+    // Usar herenciaUtils para obtener todos los descendientes de cada estructura vinculada
+    const ids = new Set<number>();
+    estructurasUsuario.forEach(e => {
+      ids.add(e.id);
+      herenciaUtils.obtenerVinculacionesHeredadas(e.id).forEach(id => ids.add(id));
+    });
+    return Array.from(ids);
+  };
+  // --- FIN: Lógica de filtrado de tipos y estructuras ---
+
   const filteredUsers = users?.filter((user) => {
     if (!user) return false;
     
@@ -1441,7 +1501,7 @@ const Usuarios = () => {
                   <SelectValue placeholder="Seleccionar tipo" />
                 </SelectTrigger>
                 <SelectContent>
-                  {STRUCTURE_TYPES.map((type) => (
+                  {getTiposEstructuraVisibles().map((type) => (
                     <SelectItem key={type} value={type}>
                       {type}
                     </SelectItem>
@@ -1459,7 +1519,8 @@ const Usuarios = () => {
                       ?.filter(e => {
                         try {
                           const mappedType = STRUCTURE_TYPES_MAPPING[newUser.tipo_estructura];
-                          return mappedType && e.tipo.toLowerCase() === mappedType.toLowerCase();
+                          // Solo mostrar estructuras del tipo seleccionado, dentro de la cascada del usuario
+                          return mappedType && e.tipo.toLowerCase() === mappedType.toLowerCase() && getEstructurasEnCascada().includes(e.id);
                         } catch (error) {
                           console.error('Error al filtrar estructuras:', error);
                           return false;
@@ -1497,8 +1558,8 @@ const Usuarios = () => {
                     <SelectContent>
                       {estructuras
                         ?.filter(e => {
-                          // Usar el mismo filtro que en la selección múltiple
-                          return e.tipo.toLowerCase() === STRUCTURE_TYPES_MAPPING[newUser.tipo_estructura].toLowerCase();
+                          // Solo mostrar estructuras del tipo seleccionado, dentro de la cascada del usuario
+                          return e.tipo.toLowerCase() === STRUCTURE_TYPES_MAPPING[newUser.tipo_estructura].toLowerCase() && getEstructurasEnCascada().includes(e.id);
                         })
                         .map((estructura) => (
                           <SelectItem key={estructura.id} value={estructura.id.toString()}>
