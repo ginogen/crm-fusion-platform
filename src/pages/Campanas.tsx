@@ -2984,16 +2984,21 @@ const saveFormById = async (formId: string) => {
                   {/* Mostrar información de estructuras vinculadas */}
                   {batch.batch_estructura_permisos?.length > 0 && (
                     <div className="bg-blue-50 p-4 rounded-md mb-4">
+                      {console.log('[DEBUG vinculación] batch.batch_estructura_permisos:', batch.batch_estructura_permisos)}
                       <div className="flex items-center justify-between">
                         <div className="flex gap-4">
                           <span>
                             <strong>Empresa:</strong> {
                               batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Empresa')?.estructuras.custom_name
+                              || batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Empresa')?.estructuras.nombre
+                              || <span className="text-gray-400">No vinculado</span>
                             }
                           </span>
                           <span>
                             <strong>País:</strong> {
                               batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Paises')?.estructuras.custom_name
+                              || batch.batch_estructura_permisos.find(be => be.estructuras.tipo === 'Paises')?.estructuras.nombre
+                              || <span className="text-gray-400">No vinculado</span>
                             }
                           </span>
                         </div>
