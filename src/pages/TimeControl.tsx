@@ -110,13 +110,22 @@ const TimeControl = () => {
   const { data: users, isLoading: isLoadingUsers } = useQuery({
     queryKey: ["users-time", timeRecords],
     queryFn: async () => {
-      // Obtener todos los usuarios
+      // Obtener todos los usuarios con campos específicos para mejorar rendimiento
       const { data: usersData, error: usersError } = await supabase
         .from("users")
         .select(`
-          *,
-          estructura:estructuras(*)
+          id,
+          email,
+          nombre_completo,
+          user_position,
+          role,
+          created_at,
+          estructura_id,
+          supervisor_id,
+          is_active,
+          estructuras(id, nombre, custom_name)
         `)
+        .eq('is_active', true) // Solo usuarios activos
         .order('created_at', { ascending: false });
 
       if (usersError) {
@@ -134,14 +143,16 @@ const TimeControl = () => {
 
         return {
           ...user,
+          estructura: user.estructuras?.[0] || undefined, // Tomar la primera estructura o undefined
           in_appointment: appointmentInfo.isInAppointment,
           current_appointment: appointmentInfo.appointmentRecord
         };
       });
 
-      return processedUsers as UserData[];
+      return processedUsers as unknown as UserData[];
     },
-    refetchInterval: 10000, // Actualizar cada 10 segundos para ver cambios en tiempo real
+    refetchInterval: 30000, // Reducir frecuencia: actualizar cada 30 segundos en lugar de 10
+    staleTime: 15000, // Considerar datos válidos por 15 segundos
   });
 
   // Obtener registros de actividad y cierre de sesión
@@ -150,14 +161,16 @@ const TimeControl = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("user_activity")
-        .select("*")
+        .select("id, user_id, last_active, session_start, is_online, created_at")
         .eq("is_online", false) // Filtrar por registros donde is_online es false (sesión cerrada)
-        .order("last_active", { ascending: false });
+        .order("last_active", { ascending: false })
+        .limit(100); // Limitar a los últimos 100 registros para mejorar rendimiento
 
       if (error) throw error;
       return data as UserActivity[];
     },
-    refetchInterval: 10000, // Actualizar cada 10 segundos para ver cambios en tiempo real
+    refetchInterval: 60000, // Reducir frecuencia: actualizar cada 60 segundos en lugar de 10
+    staleTime: 30000, // Considerar datos válidos por 30 segundos
   });
 
   // Determinar qué usuarios están actualmente en cita

@@ -524,29 +524,17 @@ const Usuarios = () => {
 
           if (deleteError) throw deleteError;
 
-          // Aplicar herencia automática para las estructuras seleccionadas
+          // En modo edición, respetar la selección específica del usuario
+          // sin aplicar herencia automática completa
           if (newUser.estructura_ids.length > 0) {
-            const todasLasVinculaciones = new Set<number>();
-            
-            newUser.estructura_ids.forEach(estructuraId => {
-              // Solo aplicar herencia si tenemos estructuras cargadas
-              if (estructuras && estructuras.length > 0) {
-                const vinculacionesHeredadas = herenciaUtils.obtenerVinculacionesHeredadas(parseInt(estructuraId));
-                vinculacionesHeredadas.forEach(id => todasLasVinculaciones.add(id));
-              } else {
-                // Fallback: solo agregar la estructura seleccionada
-                todasLasVinculaciones.add(parseInt(estructuraId));
-              }
-            });
-
-            const estructurasToInsert = Array.from(todasLasVinculaciones).map(estructuraId => ({
+            const estructurasToInsert = newUser.estructura_ids.map(estructuraId => ({
               user_id: newUser.id,
-              estructura_id: estructuraId
+              estructura_id: parseInt(estructuraId)
             }));
 
-            console.log('🔄 Aplicando herencia automática en edición:');
-            console.log('📍 Estructuras seleccionadas:', newUser.estructura_ids);
-            console.log('🌳 Vinculaciones heredadas calculadas:', Array.from(todasLasVinculaciones));
+            console.log('✏️ Actualizando estructuras en edición (sin herencia automática):');
+            console.log('📍 Estructuras seleccionadas manualmente:', newUser.estructura_ids);
+            console.log('💾 Vinculaciones a insertar:', estructurasToInsert);
 
             const { error: estructurasError } = await supabase
               .from("user_estructuras")
@@ -558,6 +546,9 @@ const Usuarios = () => {
 
         toast({
           title: "Usuario actualizado exitosamente",
+          description: hasMultiEstructura(newUser.user_position) && newUser.estructura_ids.length > 0
+            ? `${newUser.estructura_ids.length} estructuras vinculadas según selección manual`
+            : undefined,
         });
 
         setIsCreateModalOpen(false);
@@ -1198,17 +1189,20 @@ const Usuarios = () => {
                     )}
                   </TableCell>
                   <TableCell>
-                    {user.estructuras && user.estructuras.length > 0 ? (
-                      // Si tiene estructuras heredadas, mostrarlas todas (incluye Sales Manager)
-                      <span>
-                        {user.estructuras.map(e => e.custom_name || e.nombre).join(', ')}
-                      </span>
-                    ) : (
-                      // Si no tiene estructuras heredadas, mostrar la estructura base
+                    {user.estructura_id ? (
+                      // Si tiene estructura_id, mostrar solo esa (estructura base/directa)
                       <span>
                         {estructuras?.find((e) => e.id === user.estructura_id)?.custom_name ||
                            estructuras?.find((e) => e.id === user.estructura_id)?.nombre}
                       </span>
+                    ) : user.estructuras && user.estructuras.length > 0 ? (
+                      // Si no tiene estructura_id pero tiene estructuras heredadas, mostrar solo la primera (principal)
+                      <span>
+                        {user.estructuras[0].custom_name || user.estructuras[0].nombre}
+                      </span>
+                    ) : (
+                      // Sin estructura asignada
+                      <span className="text-muted-foreground">Sin estructura</span>
                     )}
                   </TableCell>
                   <TableCell>

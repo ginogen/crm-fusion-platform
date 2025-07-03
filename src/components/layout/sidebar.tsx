@@ -77,13 +77,7 @@ export const AppSidebar = () => {
             const Icon = Icons[item.icon as keyof typeof Icons] as LucideIcon;
             const isActive = location.pathname === item.href;
             
-            // Debug log
-            if (item.roles) {
-              console.log('Item:', item.label);
-              console.log('Required roles:', item.roles);
-              console.log('User role:', userData?.role);
-              console.log('Has access:', !item.roles || (userData?.role && item.roles.includes(userData.role)));
-            }
+
 
             // Si el item tiene roles definidos y el usuario no tiene uno de esos roles, no mostrar
             if (item.roles && (!userData?.role || !item.roles.includes(userData.role))) {

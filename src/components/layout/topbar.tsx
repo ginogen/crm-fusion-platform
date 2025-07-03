@@ -9,7 +9,6 @@ import { es } from "date-fns/locale";
 import { useAuth } from '../../lib/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { GestionTipo } from "@/lib/types";
-
 type Lead = {
   id: string;
   nombre_completo: string;
@@ -84,11 +83,13 @@ export const Topbar = ({ onEditLead, onGestionLead }: TopbarProps) => {
           `)
           .eq('fecha', today);
 
-        // Obtener leads por evacuar
-        const { data: leads, error: leadsError } = await supabase
-          .from('leads')
-          .select('*')
-          .eq('estado', 'por_evacuar');
+        // Obtener leads por evacuar (comentado ya que 'por_evacuar' no existe en el enum)
+        // const { data: leads, error: leadsError } = await supabase
+        //   .from('leads')
+        //   .select('*')
+        //   .eq('estado', 'por_evacuar');
+        const leads = []; // Placeholder mientras se define el enum correcto
+        const leadsError = null;
 
         if (tareasError || leadsError) throw tareasError || leadsError;
 

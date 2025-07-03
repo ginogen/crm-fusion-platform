@@ -2984,7 +2984,6 @@ const saveFormById = async (formId: string) => {
                   {/* Mostrar información de estructuras vinculadas */}
                   {batch.batch_estructura_permisos?.length > 0 && (
                     <div className="bg-blue-50 p-4 rounded-md mb-4">
-                      {console.log('[DEBUG vinculación] batch.batch_estructura_permisos:', batch.batch_estructura_permisos)}
                       <div className="flex items-center justify-between">
                         <div className="flex gap-4">
                           <span>

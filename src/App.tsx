@@ -6,7 +6,8 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { MainLayout } from "./components/layout/main-layout";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { UserTrackingProvider, useUserTracking } from "@/contexts/UserTrackingContext";
+import { useEffect } from "react";
 
 // Pages
 import Dashboard from "./pages/Dashboard";
@@ -29,10 +30,18 @@ const RESTRICTED_POSITIONS = {
   DIRECTOR_NACIONAL: 'Director Nacional'
 } as const;
 
-function App() {
+// Componente interno que usa el contexto de tracking
+function AppContent() {
   const { session } = useAuth();
-  console.log('Session user:', session?.user);
-  useActivityTracking(session?.user?.id);
+  const { currentUser, isOnline, isLoading } = useUserTracking();
+  
+  // Solo logear cuando hay cambios importantes
+  useEffect(() => {
+    if (currentUser && !isLoading) {
+      console.log('[App] UserTracking Context - Usuario inicializado:', currentUser);
+      console.log('[App] UserTracking Context - Estado:', { isOnline, isLoading });
+    }
+  }, [currentUser?.id, isOnline, isLoading]);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -104,6 +113,14 @@ function App() {
         <Sonner />
       </TooltipProvider>
     </QueryClientProvider>
+  );
+}
+
+function App() {
+  return (
+    <UserTrackingProvider>
+      <AppContent />
+    </UserTrackingProvider>
   );
 }
 
