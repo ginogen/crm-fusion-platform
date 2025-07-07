@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../integrations/supabase/client';
 
 const app = express();
 const PORT = process.env.PORT || 3001;

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 
 export const ReportsService = {
   async getDotacionPersonal({ estructuraId, userId }: { estructuraId?: string; userId?: string }) {

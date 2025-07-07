@@ -26,7 +26,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Plus, Search, Ban, Edit, RefreshCw, Eye, EyeOff, RotateCcw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { supabaseAdmin } from "@/integrations/supabase/admin-client";
+import { adminApi } from "@/lib/admin-api"; // API segura para operaciones administrativas
 import { ROLES, STRUCTURE_TYPES, STRUCTURE_TYPES_MAPPING, MULTI_ESTRUCTURA_POSITIONS } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -455,7 +455,7 @@ const Usuarios = () => {
     return !restrictedPositions.includes(userPosition || '');
   };
 
-  // Usar supabaseAdmin solo para operaciones administrativas de auth
+  // Usar adminApi (API segura) para operaciones administrativas de auth
   const handleSaveUser = async () => {
     try {
       if (isEditing) {
@@ -484,12 +484,12 @@ const Usuarios = () => {
         }
 
         if (isChangingPassword && newUser.password) {
-          const { error: passwordError } = await supabaseAdmin.auth.admin.updateUserById(
-            newUser.id,
+          const { error: passwordError } = await adminApi.updateUserById(
+            newUser.id!,
             { password: newUser.password }
           );
 
-          if (passwordError) throw passwordError;
+          if (passwordError) throw new Error(passwordError);
         }
 
         // Determinar el supervisor_id correcto
@@ -577,25 +577,18 @@ const Usuarios = () => {
           return;
         }
 
-        // Crear usuario en Auth usando supabaseAdmin
-        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        // Crear usuario en Auth usando adminApi
+        const { data: authData, error: authError } = await adminApi.createUser({
           email: newUser.email,
-          password: newUser.password,
-          email_confirm: true
+          password: newUser.password
         });
 
-        console.log('Resultado de creación en Auth:', { authData, authError });
+        if (authError) {
+          throw new Error(authError.message);
+        }
 
-        if (authError || !authData.user) {
-          if (authError?.message?.includes('User already registered')) {
-            toast({
-              variant: "destructive",
-              title: "Error al crear usuario",
-              description: "El email ya está registrado en el sistema de autenticación",
-            });
-            return;
-          }
-          throw authError || new Error("No se pudo crear el usuario en Auth");
+        if (!authData?.user) {
+          throw new Error('No se pudo crear el usuario en Auth');
         }
 
         // Asegurarnos de tener un ID válido
@@ -672,7 +665,7 @@ const Usuarios = () => {
 
         } catch (error) {
           // Si algo falla, limpiar el usuario de auth
-          await supabase.auth.admin.deleteUser(userId);
+          await adminApi.deleteUser(userId);
           throw error;
         }
       }
@@ -788,16 +781,10 @@ const Usuarios = () => {
     }
 
     // Obtener la contraseña actual del usuario
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.getUserById(user.id);
+    const { data: authData, error: authError } = await adminApi.getUserById(user.id);
     
     if (authError) {
-      console.error("Error getting user password:", authError);
-      toast({
-        variant: "destructive",
-        title: "Error al obtener datos del usuario",
-        description: "No se pudo obtener la contraseña actual del usuario",
-      });
-      return;
+      throw new Error(authError.message);
     }
 
     // Obtener la estructura actual del usuario
