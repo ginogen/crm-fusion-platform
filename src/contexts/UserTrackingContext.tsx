@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { logger } from '@/lib/utils';
 
 interface TrackingUser {
   id: string;
@@ -29,9 +30,16 @@ interface UserTrackingProviderProps {
 }
 
 const STORAGE_KEY = 'current_user_tracking';
-const HEARTBEAT_INTERVAL = 120000; // 2 minutos (reducido la frecuencia)
+// OPTIMIZACIÓN: Aumentar intervalo de heartbeat de 2 a 5 minutos
+const HEARTBEAT_INTERVAL = 300000; // 5 minutos (era 2 minutos)
 const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutos
-const SUPABASE_RETRY_LIMIT = 3; // Máximo de intentos fallidos antes de desactivar Supabase
+// OPTIMIZACIÓN: Reducir reintentos para fallar más rápido
+const SUPABASE_RETRY_LIMIT = 1; // 1 reintento (era 3)
+// OPTIMIZACIÓN: Añadir throttling para updateActivity
+const ACTIVITY_THROTTLE_MS = 30000; // Máximo cada 30 segundos
+
+// OPTIMIZACIÓN: Determinar si estamos en producción para reducir logs
+const isDevelopment = import.meta.env.DEV;
 
 export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<TrackingUser | null>(null);
@@ -39,6 +47,10 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
   const [isLoading, setIsLoading] = useState(true);
   const [lastActivity, setLastActivity] = useState<Date | null>(null);
   const [supabaseErrors, setSupabaseErrors] = useState(0);
+  
+  // OPTIMIZACIÓN: Refs para throttling y control de estado
+  const lastUpdateRef = useRef<number>(0);
+  const isTabActiveRef = useRef<boolean>(true);
 
   const getUserFromStorage = (): TrackingUser | null => {
     try {
@@ -66,7 +78,7 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
     }
   };
 
-  const saveUserToStorage = (user: TrackingUser) => {
+  const saveUserToStorage = useCallback((user: TrackingUser) => {
     const userData = {
       ...user,
       lastActivity: new Date().toISOString(),
@@ -74,15 +86,32 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
     setLastActivity(new Date());
-  };
+  }, []);
 
-  const updateActivity = async (userId: string) => {
+  // OPTIMIZACIÓN: Función updateActivity optimizada con throttling
+  const updateActivity = useCallback(async (userId: string, force: boolean = false) => {
     try {
-      console.log('[UserTrackingContext] updateActivity iniciado para userId:', userId);
+      const now = Date.now();
+      
+      // OPTIMIZACIÓN: Throttling - solo actualizar si han pasado 30 segundos o es forzado
+      if (!force && (now - lastUpdateRef.current < ACTIVITY_THROTTLE_MS)) {
+        return;
+      }
+      
+      // OPTIMIZACIÓN: No actualizar si la pestaña no está activa (excepto si es forzado)
+      if (!force && !isTabActiveRef.current) {
+        return;
+      }
+
+      lastUpdateRef.current = now;
+      
+      // OPTIMIZACIÓN: Reducir logs en producción
+      logger.log('[UserTrackingContext] updateActivity iniciado para userId:', userId);
       
       // Verificar autenticación actual
       const { data: { session } } = await supabase.auth.getSession();
-      console.log('[UserTrackingContext] Sesión actual:', {
+      
+      logger.log('[UserTrackingContext] Sesión actual:', {
         hasSession: !!session,
         userId: session?.user?.id,
         isExpired: session?.expires_at ? new Date(session.expires_at * 1000) < new Date() : 'unknown'
@@ -105,7 +134,8 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
       // PRIORIDAD 2: Intentar actualizar en Supabase (políticas RLS corregidas)
       if (supabaseErrors < SUPABASE_RETRY_LIMIT) {
         try {
-          console.log('[UserTrackingContext] Intentando SELECT en user_activity para userId:', userId);
+          logger.log('[UserTrackingContext] Intentando SELECT en user_activity para userId:', userId);
+          
           const { data: existingData, error: selectError } = await supabase
             .from('user_activity')
             .select('id, last_active')
@@ -114,7 +144,7 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
             .limit(1);
 
           if (selectError) {
-            console.error('[UserTrackingContext] Error en SELECT:', {
+            logger.error('[UserTrackingContext] Error en SELECT:', {
               code: selectError.code,
               message: selectError.message,
               details: selectError.details,
@@ -128,8 +158,9 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
             }
           }
 
-                      if (existingData && existingData.length > 0) {
-              console.log('[UserTrackingContext] ✅ ACTUALIZANDO registro existente - Registros encontrados:', existingData.length, 'para userId:', userId);
+          if (existingData && existingData.length > 0) {
+            logger.log('[UserTrackingContext] ✅ ACTUALIZANDO registro existente - Registros encontrados:', existingData.length, 'para userId:', userId);
+            
             const { error: updateError } = await supabase
               .from('user_activity')
               .update({
@@ -139,7 +170,7 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
               .eq('user_id', userId);
             
             if (updateError) {
-              console.error('[UserTrackingContext] Error en UPDATE:', {
+              logger.error('[UserTrackingContext] Error en UPDATE:', {
                 code: updateError.code,
                 message: updateError.message,
                 details: updateError.details,
@@ -147,11 +178,12 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
                 userId: userId
               });
               setSupabaseErrors(prev => prev + 1);
-                          } else {
-                console.log('[UserTrackingContext] ✅ UPDATE exitoso para userId:', userId);
-              }
-                      } else {
-              console.log('[UserTrackingContext] 🆕 CREANDO nuevo registro - Registros encontrados:', existingData?.length || 0, 'para userId:', userId);
+            } else {
+              logger.log('[UserTrackingContext] ✅ UPDATE exitoso para userId:', userId);
+            }
+          } else {
+            logger.log('[UserTrackingContext] 🆕 CREANDO nuevo registro - Registros encontrados:', existingData?.length || 0, 'para userId:', userId);
+            
             const { error: insertError } = await supabase
               .from('user_activity')
               .insert({
@@ -162,7 +194,7 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
               });
             
             if (insertError) {
-              console.error('[UserTrackingContext] Error en INSERT:', {
+              logger.error('[UserTrackingContext] Error en INSERT:', {
                 code: insertError.code,
                 message: insertError.message,
                 details: insertError.details,
@@ -170,20 +202,20 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
                 userId: userId
               });
               setSupabaseErrors(prev => prev + 1);
-                          } else {
-                console.log('[UserTrackingContext] 🆕 INSERT exitoso para userId:', userId);
-              }
+            } else {
+              logger.log('[UserTrackingContext] 🆕 INSERT exitoso para userId:', userId);
+            }
           }
         } catch (supabaseError) {
           setSupabaseErrors(prev => prev + 1);
         }
       }
     } catch (error) {
-      console.error('[UserTrackingContext] Error crítico en updateActivity:', error);
+      logger.error('[UserTrackingContext] Error crítico en updateActivity:', error);
     }
-  };
+  }, [supabaseErrors]);
 
-  const initializeTracking = async () => {
+  const initializeTracking = useCallback(async () => {
     // Evitar inicialización múltiple si ya hay un usuario
     if (currentUser && !isLoading) {
       return;
@@ -207,7 +239,7 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
           setCurrentUser(userData);
           setIsOnline(true);
           saveUserToStorage(userData);
-          await updateActivity(userData.id);
+          await updateActivity(userData.id, true); // Forzar primera actualización
           setIsLoading(false);
           return;
         }
@@ -226,7 +258,7 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
       setIsOnline(false);
       setIsLoading(false);
     } catch (error) {
-      console.error('[UserTrackingContext] Error inicializando tracking:', error);
+      logger.error('[UserTrackingContext] Error inicializando tracking:', error);
       
       // Fallback final a localStorage
       const storedUser = getUserFromStorage();
@@ -239,7 +271,28 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
       }
       setIsLoading(false);
     }
-  };
+  }, [currentUser, isLoading, saveUserToStorage, updateActivity]);
+
+  // OPTIMIZACIÓN: Memoizar el handler de actividad con throttling integrado
+  const handleActivity = useCallback(() => {
+    if (!currentUser) return;
+    
+    // Actualizar último tiempo de actividad local inmediatamente
+    setLastActivity(new Date());
+    
+    // La función updateActivity ya tiene throttling interno
+    updateActivity(currentUser.id);
+  }, [currentUser, updateActivity]);
+
+  // OPTIMIZACIÓN: Función para manejar cambios de visibilidad de pestaña
+  const handleVisibilityChange = useCallback(() => {
+    isTabActiveRef.current = !document.hidden;
+    
+    // Si la pestaña se vuelve activa, forzar una actualización
+    if (!document.hidden && currentUser) {
+      updateActivity(currentUser.id, true);
+    }
+  }, [currentUser, updateActivity]);
 
   // useEffect principal para inicialización (solo se ejecuta una vez)
   useEffect(() => {
@@ -265,42 +318,54 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
     let heartbeatInterval: NodeJS.Timeout;
     let activityTimeout: NodeJS.Timeout;
 
-    const handleActivity = () => {
-      updateActivity(currentUser.id);
+    const handleInactivity = () => {
+      setIsOnline(false);
+      // Marcar como offline en Supabase cuando se vuelve inactivo
+      supabase
+        .from('user_activity')
+        .update({ is_online: false })
+        .eq('user_id', currentUser.id)
+        .then(({ error }) => {
+          if (error) {
+            logger.error('Error setting offline status:', error);
+          }
+        });
+    };
+
+    const wrappedHandleActivity = () => {
+      handleActivity();
       
       // Reiniciar el timeout de inactividad
       clearTimeout(activityTimeout);
-      activityTimeout = setTimeout(() => {
-        setIsOnline(false);
-        // Marcar como offline en Supabase cuando se vuelve inactivo
-        supabase
-          .from('user_activity')
-          .update({ is_online: false })
-          .eq('user_id', currentUser.id)
-          .then(({ error }) => {
-            if (error) console.error('Error setting offline status:', error);
-          });
-      }, INACTIVITY_TIMEOUT);
+      activityTimeout = setTimeout(handleInactivity, INACTIVITY_TIMEOUT);
     };
 
-    // Configurar eventos de actividad
-    const events = ['mousedown', 'keydown', 'mousemove', 'wheel', 'click', 'scroll'];
-    events.forEach(event => document.addEventListener(event, handleActivity));
+    // OPTIMIZACIÓN: Reducir eventos solo a los más importantes
+    const events = ['mousedown', 'keydown', 'click', 'focus']; // Removidos: mousemove, wheel, scroll
+    events.forEach(event => document.addEventListener(event, wrappedHandleActivity, { passive: true }));
 
-    // Configurar heartbeat
+    // OPTIMIZACIÓN: Añadir listener para cambios de visibilidad de pestaña
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Configurar heartbeat optimizado
     heartbeatInterval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        updateActivity(currentUser.id);
+      // OPTIMIZACIÓN: Solo hacer heartbeat si la pestaña está visible y activa
+      if (document.visibilityState === 'visible' && isTabActiveRef.current) {
+        updateActivity(currentUser.id, true); // Forzar heartbeat
       }
     }, HEARTBEAT_INTERVAL);
 
+    // Inicializar timeout de inactividad
+    activityTimeout = setTimeout(handleInactivity, INACTIVITY_TIMEOUT);
+
     // Cleanup
     return () => {
-      events.forEach(event => document.removeEventListener(event, handleActivity));
+      events.forEach(event => document.removeEventListener(event, wrappedHandleActivity));
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(heartbeatInterval);
       clearTimeout(activityTimeout);
     };
-  }, [currentUser?.id]); // Solo depende del ID del usuario
+  }, [currentUser?.id, handleActivity, handleVisibilityChange, updateActivity]); // Solo depende del ID del usuario y handlers memoizados
 
   // useEffect separado para listener de autenticación
   useEffect(() => {
@@ -325,7 +390,7 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
     return () => {
       subscription.unsubscribe();
     };
-  }, []); // Sin dependencias - el listener se configura una vez
+  }, [initializeTracking]); // Sin dependencias - el listener se configura una vez
 
   // useEffect para cleanup al desmontar
   useEffect(() => {
@@ -340,12 +405,13 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
     };
   }, [currentUser?.id]);
 
-  const value: UserTrackingContextType = {
+  // OPTIMIZACIÓN: Memoizar el value del contexto
+  const value = useMemo<UserTrackingContextType>(() => ({
     currentUser,
     isOnline,
     isLoading,
     lastActivity,
-  };
+  }), [currentUser, isOnline, isLoading, lastActivity]);
 
   return (
     <UserTrackingContext.Provider value={value}>

@@ -14,7 +14,7 @@ import { LEAD_STATUSES, LEAD_STATUS_LABELS, USER_ROLES, ROLE_HIERARCHY } from "@
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { Pencil, ClipboardList, History } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, logger } from "@/lib/utils";
 import type { LeadEstado } from "@/lib/types";
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
@@ -170,8 +170,8 @@ const LeadsTable = ({
   });
 
   useEffect(() => {
-    console.log('Current filters:', filters);
-    console.log('Current user:', currentUser);
+    logger.log('Current filters:', filters);
+    logger.log('Current user:', currentUser);
   }, [filters, currentUser]);
 
   // Efecto para resetear el filtro de asignado si el usuario no tiene permisos
@@ -210,9 +210,9 @@ const LeadsTable = ({
     queryFn: async () => {
       if (!currentUser) return { leads: [], totalCount: 0 };
 
-      console.log('Building query with filters:', filters);
-      console.log('Current page:', currentPage);
-      console.log('Items per page:', itemsPerPage);
+      logger.log('Building query with filters:', filters);
+      logger.log('Current page:', currentPage);
+      logger.log('Items per page:', itemsPerPage);
 
       let baseQuery = supabase
         .from("leads")
@@ -311,7 +311,7 @@ const LeadsTable = ({
           .order('created_at', { ascending: false });
 
         if (error) {
-          console.error('Query error:', error);
+          logger.error('Query error:', error);
           throw error;
         }
 
@@ -432,7 +432,7 @@ const LeadsTable = ({
     },
     onError: (error) => {
       toast.error("Error al actualizar el estado");
-      console.error("Error updating lead status:", error);
+      logger.error("Error updating lead status:", error);
     }
   });
 

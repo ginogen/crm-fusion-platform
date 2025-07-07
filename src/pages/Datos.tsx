@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
+import { logger } from "@/lib/utils";
 import { toast } from "sonner";
 import { Upload, UserPlus, Download } from "lucide-react";
 import LeadsTable from "@/components/leads/LeadsTable";
@@ -135,7 +136,7 @@ const LeadEditModal = ({ lead, isOpen, onClose }: { lead: any, isOpen: boolean, 
     },
     onError: (error) => {
       toast.error("Error al actualizar el lead");
-      console.error("Error updating lead:", error);
+      logger.error("Error updating lead:", error);
     }
   });
 
@@ -346,7 +347,7 @@ const GestionModal = ({ lead, isOpen, onClose, initialData }: { lead: any, isOpe
         toast.error("Este lead ya tiene una gestión registrada");
       } else {
         toast.error("Error al registrar la gestión");
-        console.error("Error creating gestion:", error);
+        logger.error("Error creating gestion:", error);
       }
     },
     onSettled: () => {

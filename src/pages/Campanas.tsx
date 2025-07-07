@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { logger } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -275,7 +276,7 @@ const Campanas = () => {
             .eq("batch_id", batch.id)
             .eq("is_from_batch", true);
 
-          console.log(`Batch ${batch.id} (${batch.name}): Total de leads en BD: ${totalLeads}`);
+          logger.log(`Batch ${batch.id} (${batch.name}): Total de leads en BD: ${totalLeads}`);
 
           // Función para obtener todos los leads usando paginación
           const getAllLeadsForBatch = async (batchId: number): Promise<any[]> => {
@@ -306,7 +307,7 @@ const Campanas = () => {
                 .range(from, from + pageSize - 1);
 
               if (error) {
-                console.error('Error al cargar página de leads:', error);
+                logger.error('Error al cargar página de leads:', error);
                 break;
               }
 
@@ -329,11 +330,11 @@ const Campanas = () => {
           // Obtener todos los leads usando paginación
           const leadsData = await getAllLeadsForBatch(batch.id);
 
-          console.log(`Batch ${batch.id} (${batch.name}): ${leadsData.length} leads cargados (de ${totalLeads} totales)`);
+          logger.log(`Batch ${batch.id} (${batch.name}): ${leadsData.length} leads cargados (de ${totalLeads} totales)`);
 
           // Verificar si hay discrepancia entre el conteo y los datos cargados
           if (totalLeads && leadsData.length !== totalLeads) {
-            console.warn(`⚠️ DISCREPANCIA: Batch ${batch.id} tiene ${totalLeads} leads en BD pero se cargaron ${leadsData.length}`);
+            logger.warn(`⚠️ DISCREPANCIA: Batch ${batch.id} tiene ${totalLeads} leads en BD pero se cargaron ${leadsData.length}`);
           }
 
           return {
@@ -386,10 +387,10 @@ const Campanas = () => {
   const empresas = estructuras?.filter(e => e.tipo === 'Empresa') || [];
       const paises = estructuras?.filter(e => e.tipo === 'Paises') || [];
 
-  // Agregar console.log después de la definición de las variables
-  console.log('Todas las estructuras:', estructuras);
-  console.log('Empresas filtradas:', empresas);
-  console.log('Países filtrados:', paises);
+  // Logs de debug para estructuras
+  logger.log('Todas las estructuras:', estructuras);
+  logger.log('Empresas filtradas:', empresas);
+  logger.log('Países filtrados:', paises);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -457,8 +458,8 @@ const Campanas = () => {
 
   const distribuirLeads = async (batchId: number) => {
     try {
-      console.log('Iniciando distribución de leads para batch:', batchId);
-      console.log('NOTA: Esta función ahora distribuye leads SOLO a usuarios online/conectados');
+      logger.log('Iniciando distribución de leads para batch:', batchId);
+      logger.log('NOTA: Esta función ahora distribuye leads SOLO a usuarios online/conectados');
 
       // 1. Obtener las estructuras vinculadas al batch
       const { data: batchEstructuras } = await supabase
@@ -476,7 +477,7 @@ const Campanas = () => {
         `)
         .eq("lead_batch_id", batchId) as { data: BatchEstructuraPermiso[] | null };
 
-      console.log('Estructuras vinculadas al batch:', batchEstructuras);
+      logger.log('Estructuras vinculadas al batch:', batchEstructuras);
 
       if (!batchEstructuras?.length) {
         toast.error("No hay estructuras vinculadas al batch");
@@ -491,8 +492,8 @@ const Campanas = () => {
         be => be.estructuras.tipo === 'Paises'
       );
 
-      console.log('Empresa estructura:', empresaEstructura);
-      console.log('País estructura:', paisEstructura);
+      logger.log('Empresa estructura:', empresaEstructura);
+      logger.log('País estructura:', paisEstructura);
 
       if (!empresaEstructura || !paisEstructura) {
         toast.error("Falta vincular empresa o país");
@@ -501,7 +502,7 @@ const Campanas = () => {
 
       // 3. Función recursiva mejorada para obtener todas las estructuras de la jerarquía
       const obtenerEstructurasRecursivas = async (estructuraId: number): Promise<number[]> => {
-        console.log(`Buscando estructuras hijas para ID: ${estructuraId}`);
+        logger.log(`Buscando estructuras hijas para ID: ${estructuraId}`);
         const estructurasIds = [estructuraId];
         
         // Obtener todas las estructuras hijas directas usando parent_id
@@ -510,34 +511,34 @@ const Campanas = () => {
           .select("id, nombre, tipo, parent_id")
           .eq("parent_id", estructuraId);
 
-        console.log(`Estructura ${estructuraId} - Hijas encontradas:`, estructurasHijas);
-        console.log(`Error en consulta:`, error);
+        logger.log(`Estructura ${estructuraId} - Hijas encontradas:`, estructurasHijas);
+        logger.log(`Error en consulta:`, error);
 
         if (estructurasHijas && estructurasHijas.length > 0) {
-          console.log(`Procesando ${estructurasHijas.length} estructuras hijas de ${estructuraId}`);
+          logger.log(`Procesando ${estructurasHijas.length} estructuras hijas de ${estructuraId}`);
           // Para cada estructura hija, obtener recursivamente sus descendientes
           for (const hija of estructurasHijas) {
-            console.log(`Procesando estructura hija: ${hija.id} (${hija.nombre} - ${hija.tipo})`);
+            logger.log(`Procesando estructura hija: ${hija.id} (${hija.nombre} - ${hija.tipo})`);
             const descendientes = await obtenerEstructurasRecursivas(hija.id);
             estructurasIds.push(...descendientes);
           }
         } else {
-          console.log(`No se encontraron estructuras hijas para ${estructuraId}`);
+          logger.log(`No se encontraron estructuras hijas para ${estructuraId}`);
         }
 
-        console.log(`Estructura ${estructuraId} - Total IDs obtenidos:`, estructurasIds);
+        logger.log(`Estructura ${estructuraId} - Total IDs obtenidos:`, estructurasIds);
         return estructurasIds;
       };
 
       // 3.5. También intentar buscar usando el campo parent_estructura_id como alternativa
       const obtenerEstructurasAlternativa = async (): Promise<number[]> => {
-        console.log('Intentando método alternativo: buscar TODAS las estructuras y filtrar manualmente');
+        logger.log('Intentando método alternativo: buscar TODAS las estructuras y filtrar manualmente');
         
         const { data: todasLasEstructuras } = await supabase
           .from("estructuras")
           .select("id, nombre, tipo, parent_id, parent_estructura_id");
         
-        console.log('TODAS las estructuras en el sistema:', todasLasEstructuras);
+        logger.log('TODAS las estructuras en el sistema:', todasLasEstructuras);
         
         if (!todasLasEstructuras) return [];
         
@@ -547,11 +548,11 @@ const Campanas = () => {
           
           // Buscar por parent_id
           const hijasPorParentId = todasLasEstructuras.filter(e => e.parent_id === parentId);
-          console.log(`Hijas de ${parentId} por parent_id:`, hijasPorParentId);
+          logger.log(`Hijas de ${parentId} por parent_id:`, hijasPorParentId);
           
           // Buscar por parent_estructura_id como alternativa
           const hijasPorParentEstructuraId = todasLasEstructuras.filter(e => e.parent_estructura_id === parentId);
-          console.log(`Hijas de ${parentId} por parent_estructura_id:`, hijasPorParentEstructuraId);
+          logger.log(`Hijas de ${parentId} por parent_estructura_id:`, hijasPorParentEstructuraId);
           
           // Combinar ambos resultados
           const todasLasHijas = [...hijasPorParentId, ...hijasPorParentEstructuraId];
@@ -572,15 +573,15 @@ const Campanas = () => {
         const estructurasEmpresa = construirJerarquia(empresaId);
         const estructurasPais = construirJerarquia(paisId);
         
-        console.log('Método alternativo - Estructuras de empresa:', estructurasEmpresa);
-        console.log('Método alternativo - Estructuras de país:', estructurasPais);
+        logger.log('Método alternativo - Estructuras de empresa:', estructurasEmpresa);
+        logger.log('Método alternativo - Estructuras de país:', estructurasPais);
         
         return [...new Set([...estructurasEmpresa, ...estructurasPais])];
       };
 
       // 4. Obtener TODAS las estructuras de la jerarquía para empresa y país
-      console.log('Obteniendo estructuras para empresa:', empresaEstructura.estructuras_id);
-      console.log('Obteniendo estructuras para país:', paisEstructura.estructuras_id);
+      logger.log('Obteniendo estructuras para empresa:', empresaEstructura.estructuras_id);
+      logger.log('Obteniendo estructuras para país:', paisEstructura.estructuras_id);
 
       let estructurasEmpresa = await obtenerEstructurasRecursivas(empresaEstructura.estructuras_id);
       let estructurasPais = await obtenerEstructurasRecursivas(paisEstructura.estructuras_id);
@@ -591,16 +592,16 @@ const Campanas = () => {
         ...estructurasPais
       ])];
 
-      console.log('Estructuras de empresa obtenidas (método recursivo):', estructurasEmpresa);
-      console.log('Estructuras de país obtenidas (método recursivo):', estructurasPais);
-      console.log('TODAS las estructuras combinadas (método recursivo):', todasLasEstructurasIds);
+      logger.log('Estructuras de empresa obtenidas (método recursivo):', estructurasEmpresa);
+      logger.log('Estructuras de país obtenidas (método recursivo):', estructurasPais);
+      logger.log('TODAS las estructuras combinadas (método recursivo):', todasLasEstructurasIds);
 
       // Si solo obtenemos las estructuras padre, intentar método alternativo
       if (todasLasEstructurasIds.length <= 2) {
-        console.log('Pocos resultados con método recursivo, probando método alternativo...');
+        logger.log('Pocos resultados con método recursivo, probando método alternativo...');
         const estructurasAlternativas = await obtenerEstructurasAlternativa();
         if (estructurasAlternativas.length > todasLasEstructurasIds.length) {
-          console.log('Método alternativo obtuvo más resultados, usando esos:', estructurasAlternativas);
+          logger.log('Método alternativo obtuvo más resultados, usando esos:', estructurasAlternativas);
           todasLasEstructurasIds = estructurasAlternativas;
         }
       }
@@ -612,9 +613,9 @@ const Campanas = () => {
       }
 
       const estructurasIds = todasLasEstructurasIds;
-      console.log('RESUMEN: Estructuras finales para buscar usuarios:', estructurasIds);
+      logger.log('RESUMEN: Estructuras finales para buscar usuarios:', estructurasIds);
 
-      console.log('IDs de todas las estructuras:', estructurasIds);
+      logger.log('IDs de todas las estructuras:', estructurasIds);
 
       // 5. Primero, vamos a investigar qué usuarios existen y a qué estructuras están vinculados
       const { data: todosLosUsuarios, error: usersError } = await supabase
@@ -627,17 +628,17 @@ const Campanas = () => {
           is_active
         `);
 
-      console.log('TODOS los usuarios en el sistema:', todosLosUsuarios);
-      console.log('Error al obtener usuarios:', usersError);
+      logger.log('TODOS los usuarios en el sistema:', todosLosUsuarios);
+      logger.log('Error al obtener usuarios:', usersError);
 
       if (todosLosUsuarios) {
         const usuariosEnEstructuras = todosLosUsuarios.filter(u => estructurasIds.includes(u.estructura_id));
-        console.log('Usuarios encontrados en las estructuras target:', usuariosEnEstructuras);
+        logger.log('Usuarios encontrados en las estructuras target:', usuariosEnEstructuras);
         
         // Mostrar estadísticas por estructura
         estructurasIds.forEach(estructuraId => {
           const usuariosEnEstructura = todosLosUsuarios.filter(u => u.estructura_id === estructuraId);
-          console.log(`Estructura ${estructuraId}: ${usuariosEnEstructura.length} usuarios`, usuariosEnEstructura);
+          logger.log(`Estructura ${estructuraId}: ${usuariosEnEstructura.length} usuarios`, usuariosEnEstructura);
         });
       }
 
@@ -653,7 +654,7 @@ const Campanas = () => {
         `)
         .in("estructura_id", estructurasIds);
 
-      console.log('Usuarios filtrados por estructuras target:', usuariosEstructuras);
+      logger.log('Usuarios filtrados por estructuras target:', usuariosEstructuras);
 
       // 5.1. Filtrar solo usuarios que estén online (conectados)
       const { data: usuariosOnline } = await supabase
@@ -662,17 +663,17 @@ const Campanas = () => {
         .eq("is_online", true)
         .gte("last_active", new Date(Date.now() - 5 * 60 * 1000).toISOString()); // Solo usuarios activos en los últimos 5 minutos
 
-      console.log('Usuarios online:', usuariosOnline);
+      logger.log('Usuarios online:', usuariosOnline);
 
       // 5.2. Filtrar usuarios que estén tanto en las estructuras como online
       const userIdsOnline = usuariosOnline?.map(u => u.user_id) || [];
       let usuarios = usuariosEstructuras?.filter(u => userIdsOnline.includes(u.id)) || [];
 
-      console.log('Usuarios finales (en estructuras + online):', usuarios);
+      logger.log('Usuarios finales (en estructuras + online):', usuarios);
 
       if (!usuarios?.length) {
         // Intentar una estrategia alternativa: buscar usuarios online en general
-        console.log('No se encontraron usuarios online en estructuras específicas, buscando alternativas...');
+        logger.log('No se encontraron usuarios online en estructuras específicas, buscando alternativas...');
         
         // Buscar usuarios online en CUALQUIER estructura
         const { data: usuariosOnlineGenerales } = await supabase
@@ -687,7 +688,7 @@ const Campanas = () => {
           .eq("is_active", true)
           .in("id", userIdsOnline);
         
-        console.log('Usuarios online generales:', usuariosOnlineGenerales);
+                  logger.log('Usuarios online generales:', usuariosOnlineGenerales);
         
         if (usuariosOnlineGenerales && usuariosOnlineGenerales.length > 0) {
           console.log('WORKAROUND: Usando usuarios online del sistema general:', usuariosOnlineGenerales);
@@ -712,11 +713,11 @@ const Campanas = () => {
         .is("asignado_a", null);
 
       if (leadsError) {
-        console.error('Error al obtener leads:', leadsError);
+        logger.error('Error al obtener leads:', leadsError);
         throw leadsError;
       }
 
-      console.log('Leads sin asignar del batch:', batchLeads);
+      logger.log('Leads sin asignar del batch:', batchLeads);
 
       if (!batchLeads?.length) {
         // Verificar si hay leads en el batch en general
@@ -725,13 +726,13 @@ const Campanas = () => {
           .select("id, estado, asignado_a")
           .eq("batch_id", batchId);
         
-        console.log('Todos los leads del batch:', todosLosLeads);
+        logger.log('Todos los leads del batch:', todosLosLeads);
         
         const leadsSinAsignar = todosLosLeads?.filter(lead => !lead.asignado_a) || [];
         const leadsSinLlamar = todosLosLeads?.filter(lead => lead.estado === "SIN_LLAMAR") || [];
         
-        console.log('Leads sin asignar (total):', leadsSinAsignar.length);
-        console.log('Leads SIN_LLAMAR (total):', leadsSinLlamar.length);
+        logger.log('Leads sin asignar (total):', leadsSinAsignar.length);
+        logger.log('Leads SIN_LLAMAR (total):', leadsSinLlamar.length);
         
         if (leadsSinAsignar.length === 0) {
           toast.error("Todos los leads de este batch ya están asignados");
@@ -749,15 +750,15 @@ const Campanas = () => {
       const totalLeads = batchLeads.length;
       const totalUsuarios = usuarios.length;
 
-      console.log(`Distribución: ${totalLeads} leads entre ${totalUsuarios} usuarios`);
+      logger.log(`Distribución: ${totalLeads} leads entre ${totalUsuarios} usuarios`);
       
       // Calcular distribución base equitativa
       const leadsBasePorUsuario = Math.floor(totalLeads / totalUsuarios);
       const leadsMaximoPorUsuario = Math.min(MAX_LEADS_POR_USUARIO, leadsBasePorUsuario);
       const leadsSobrantes = totalLeads - (leadsMaximoPorUsuario * totalUsuarios);
       
-      console.log(`Distribución base: ${leadsMaximoPorUsuario} leads por usuario`);
-      console.log(`Leads sobrantes después de distribución base: ${leadsSobrantes}`);
+      logger.log(`Distribución base: ${leadsMaximoPorUsuario} leads por usuario`);
+      logger.log(`Leads sobrantes después de distribución base: ${leadsSobrantes}`);
       
       // Crear array para tracking de leads asignados por usuario
       const leadsAsignadosPorUsuario = usuarios.map(usuario => ({
@@ -768,7 +769,7 @@ const Campanas = () => {
       let leadIndex = 0;
 
       // FASE 1: Distribución base equitativa
-      console.log('FASE 1: Distribución base equitativa');
+      logger.log('FASE 1: Distribución base equitativa');
       for (const usuarioData of leadsAsignadosPorUsuario) {
         for (let i = 0; i < leadsMaximoPorUsuario && leadIndex < totalLeads; i++) {
           leadsUpdates.push({
@@ -783,11 +784,11 @@ const Campanas = () => {
         }
       }
 
-      console.log(`Después de FASE 1: ${leadIndex} leads asignados`);
+      logger.log(`Después de FASE 1: ${leadIndex} leads asignados`);
       
       // FASE 2: Distribuir leads sobrantes uno por uno hasta completar MAX_LEADS_POR_USUARIO
       if (leadIndex < totalLeads) {
-        console.log('FASE 2: Distribuyendo leads sobrantes');
+        logger.log('FASE 2: Distribuyendo leads sobrantes');
         let usuarioIndex = 0;
         
         while (leadIndex < totalLeads) {
@@ -811,26 +812,26 @@ const Campanas = () => {
           
           // Si todos los usuarios han llegado al máximo, salir del loop
           if (leadsAsignadosPorUsuario.every(u => u.leadsAsignados >= MAX_LEADS_POR_USUARIO)) {
-            console.log('Todos los usuarios han alcanzado el máximo de leads permitidos');
+            logger.log('Todos los usuarios han alcanzado el máximo de leads permitidos');
             break;
           }
         }
       }
 
       // Mostrar estadísticas finales
-      console.log('ESTADÍSTICAS FINALES DE DISTRIBUCIÓN:');
+      logger.log('ESTADÍSTICAS FINALES DE DISTRIBUCIÓN:');
       leadsAsignadosPorUsuario.forEach(usuarioData => {
-        console.log(`Usuario ${usuarioData.usuario.nombre_completo}: ${usuarioData.leadsAsignados} leads`);
+        logger.log(`Usuario ${usuarioData.usuario.nombre_completo}: ${usuarioData.leadsAsignados} leads`);
       });
-      console.log(`Total de leads procesados: ${leadIndex} de ${totalLeads}`);
+      logger.log(`Total de leads procesados: ${leadIndex} de ${totalLeads}`);
       
       if (leadIndex < totalLeads) {
         const leadsNoAsignados = totalLeads - leadIndex;
-        console.log(`ADVERTENCIA: ${leadsNoAsignados} leads no pudieron ser asignados (todos los usuarios alcanzaron el máximo)`);
+        logger.log(`ADVERTENCIA: ${leadsNoAsignados} leads no pudieron ser asignados (todos los usuarios alcanzaron el máximo)`);
         toast.info(`Se distribuyeron ${leadIndex} leads. ${leadsNoAsignados} leads no asignados (usuarios en capacidad máxima).`);
       }
 
-      console.log('Actualizaciones de leads a realizar:', leadsUpdates);
+      logger.log('Actualizaciones de leads a realizar:', leadsUpdates);
 
       // 8. Actualizar los leads en la base de datos
       if (leadsUpdates.length === 0) {
@@ -838,18 +839,18 @@ const Campanas = () => {
         return false;
       }
 
-      console.log('Ejecutando actualización en base de datos para', leadsUpdates.length, 'leads');
+              logger.log('Ejecutando actualización en base de datos para', leadsUpdates.length, 'leads');
       
       const { error: updateError } = await supabase
         .from("leads")
         .upsert(leadsUpdates);
 
-      if (updateError) {
-        console.error('Error al actualizar leads:', updateError);
-        throw updateError;
-      }
+              if (updateError) {
+          logger.error('Error al actualizar leads:', updateError);
+          throw updateError;
+        }
 
-      console.log('Actualización completada exitosamente');
+        logger.log('Actualización completada exitosamente');
       
       // Verificar que los leads se actualizaron correctamente
       const { data: verificacionLeads } = await supabase
@@ -858,14 +859,14 @@ const Campanas = () => {
         .eq("batch_id", batchId)
         .not("asignado_a", "is", null);
       
-      console.log('Leads asignados después de la actualización:', verificacionLeads);
+              logger.log('Leads asignados después de la actualización:', verificacionLeads);
 
       await refetch();
       toast.success(`${leadsUpdates.length} leads distribuidos entre ${usuarios.length} usuarios. ${verificacionLeads?.length || 0} leads confirmados como asignados.`);
       return true;
 
     } catch (error) {
-      console.error('Error en distribuirLeads:', error);
+      logger.error('Error en distribuirLeads:', error);
       toast.error("Error al distribuir los leads");
       return false;
     }
@@ -880,7 +881,7 @@ const Campanas = () => {
         .eq("lead_batch_id", batchId);
 
       if (deleteError) {
-        console.error('Error al eliminar estructuras existentes:', deleteError);
+        logger.error('Error al eliminar estructuras existentes:', deleteError);
         throw deleteError;
       }
 
@@ -898,7 +899,7 @@ const Campanas = () => {
         });
 
       if (insertError) {
-        console.error('Error al insertar nuevas estructuras:', insertError);
+        logger.error('Error al insertar nuevas estructuras:', insertError);
         throw insertError;
       }
 
@@ -911,7 +912,7 @@ const Campanas = () => {
       refetch();
       toast.success("Estructuras actualizadas y leads redistribuidos correctamente");
     } catch (error) {
-      console.error('Error al actualizar estructuras:', error);
+      logger.error('Error al actualizar estructuras:', error);
       toast.error(`Error al actualizar las estructuras: ${error instanceof Error ? error.message : 'Error desconocido'}`);
     }
   };

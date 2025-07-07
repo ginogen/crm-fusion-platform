@@ -8,6 +8,7 @@ import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { UserTrackingProvider, useUserTracking } from "@/contexts/UserTrackingContext";
 import { useEffect } from "react";
+import { logger } from "@/lib/utils";
 
 // Pages
 import Dashboard from "./pages/Dashboard";
@@ -38,8 +39,8 @@ function AppContent() {
   // Solo logear cuando hay cambios importantes
   useEffect(() => {
     if (currentUser && !isLoading) {
-      console.log('[App] UserTracking Context - Usuario inicializado:', currentUser);
-      console.log('[App] UserTracking Context - Estado:', { isOnline, isLoading });
+      logger.log('[App] UserTracking Context - Usuario inicializado:', currentUser);
+      logger.log('[App] UserTracking Context - Estado:', { isOnline, isLoading });
     }
   }, [currentUser?.id, isOnline, isLoading]);
 

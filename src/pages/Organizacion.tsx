@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { logger } from "@/lib/utils";
 import { useEstructuraHerencia } from "@/hooks/useEstructuraHerencia";
 import {
   Dialog,
@@ -815,7 +816,7 @@ const Organizacion = () => {
         .eq('can_create', true);
 
       if (error) {
-        console.error("Error fetching permisos:", error);
+        logger.error("Error fetching permisos:", error);
         throw error;
       }
 
@@ -1016,12 +1017,12 @@ const Organizacion = () => {
   // Función para actualizar automáticamente las vinculaciones de usuarios con herencia
   const actualizarVinculacionesUsuarios = async () => {
     if (!estructuras) {
-      console.warn("No hay estructuras cargadas para procesar");
+      logger.warn("No hay estructuras cargadas para procesar");
       return;
     }
     
     try {
-      console.log("🔄 Iniciando recálculo de vinculaciones heredadas...");
+      logger.log("🔄 Iniciando recálculo de vinculaciones heredadas...");
       
       // Obtener todos los usuarios ACTIVOS que están vinculados a estructuras
       const { data: users, error: usersError } = await supabase
@@ -1030,19 +1031,19 @@ const Organizacion = () => {
         .eq('is_active', true) // Solo usuarios activos
         .not('estructura_id', 'is', null); // Solo usuarios con estructura asignada
         
-      if (usersError) {
-        console.error("Error obteniendo usuarios:", usersError);
-        toast.error("Error al obtener usuarios para recalcular");
-        return;
-      }
+              if (usersError) {
+          logger.error("Error obteniendo usuarios:", usersError);
+          toast.error("Error al obtener usuarios para recalcular");
+          return;
+        }
 
-      if (!users || users.length === 0) {
-        console.log("No se encontraron usuarios activos con estructuras asignadas");
-        toast.info("No hay usuarios activos con estructuras para procesar");
-        return;
-      }
+              if (!users || users.length === 0) {
+          logger.log("No se encontraron usuarios activos con estructuras asignadas");
+          toast.info("No hay usuarios activos con estructuras para procesar");
+          return;
+        }
 
-      console.log(`📊 Procesando ${users.length} usuarios activos...`);
+        logger.log(`📊 Procesando ${users.length} usuarios activos...`);
       let procesados = 0;
       let errores = 0;
 
