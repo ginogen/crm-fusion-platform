@@ -502,7 +502,14 @@ const Usuarios = () => {
 
           if (passwordError) {
             console.error('Error actualizando contraseña:', passwordError);
-            throw new Error(typeof passwordError === 'string' ? passwordError : 'Error al actualizar contraseña');
+            // Manejar errores específicos de validación
+            if (passwordError.includes('Invalid user ID format')) {
+              throw new Error('ID de usuario no válido');
+            } else if (passwordError.includes('Password must be at least')) {
+              throw new Error('La contraseña debe tener al menos 6 caracteres');
+            } else {
+              throw new Error(typeof passwordError === 'string' ? passwordError : 'Error al actualizar contraseña');
+            }
           }
         }
 
@@ -598,7 +605,17 @@ const Usuarios = () => {
         });
 
         if (authError) {
-          throw new Error(authError.message);
+          console.error('Error detallado al crear usuario:', authError);
+          // Manejar errores específicos de validación
+          if (authError.message?.includes('Invalid email format')) {
+            throw new Error('El formato del email no es válido');
+          } else if (authError.message?.includes('Password must be at least')) {
+            throw new Error('La contraseña debe tener al menos 6 caracteres');
+          } else if (authError.message?.includes('already registered')) {
+            throw new Error('Este email ya está registrado');
+          } else {
+            throw new Error(authError.message || 'Error al crear usuario');
+          }
         }
 
         if (!authData?.user) {

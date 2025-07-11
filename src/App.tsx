@@ -59,11 +59,15 @@ const RESTRICTED_POSITIONS = {
 const useConnectionMonitor = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSupabaseConnected, setIsSupabaseConnected] = useState(true);
+  const [lastCheck, setLastCheck] = useState(Date.now());
 
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      checkSupabaseConnection();
+      // Solo verificar conexión si han pasado más de 2 minutos desde la última verificación
+      if (Date.now() - lastCheck > 120000) {
+        checkSupabaseConnection();
+      }
     };
 
     const handleOffline = () => {
@@ -75,6 +79,7 @@ const useConnectionMonitor = () => {
       try {
         const connected = await checkConnection();
         setIsSupabaseConnected(connected);
+        setLastCheck(Date.now());
         
         if (!connected) {
           console.log('🔄 Intentando reconectar...');
@@ -87,22 +92,29 @@ const useConnectionMonitor = () => {
       }
     };
 
-    // Verificar conexión cada 30 segundos
-    const connectionInterval = setInterval(checkSupabaseConnection, 30000);
+    // Verificar conexión cada 5 minutos en lugar de 30 segundos
+    const connectionInterval = setInterval(() => {
+      // Solo verificar si la página está visible y han pasado al menos 2 minutos
+      if (!document.hidden && Date.now() - lastCheck > 120000) {
+        checkSupabaseConnection();
+      }
+    }, 300000); // 5 minutos
 
     // Listeners para cambios de conectividad
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Verificación inicial
-    checkSupabaseConnection();
+    // Verificación inicial solo si la página está visible
+    if (!document.hidden) {
+      checkSupabaseConnection();
+    }
 
     return () => {
       clearInterval(connectionInterval);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, []);
+  }, [lastCheck]);
 
   return { isOnline, isSupabaseConnected };
 };

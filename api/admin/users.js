@@ -8,6 +8,12 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
 // Cliente regular para verificaciones de autenticación
 const supabaseClient = createClient(supabaseUrl, process.env.VITE_SUPABASE_ANON_KEY);
 
+// Función para validar UUID
+const isValidUUID = (uuid) => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return typeof uuid === 'string' && uuidRegex.test(uuid);
+};
+
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     const { action, userId, password, userData } = req.body;
@@ -58,6 +64,22 @@ export default async function handler(req, res) {
       switch (action) {
         case 'createUser':
           try {
+            // Validar datos de entrada
+            if (!userData || !userData.email || !userData.password) {
+              return res.status(400).json({ error: 'Email and password are required' });
+            }
+
+            // Validar formato de email
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(userData.email)) {
+              return res.status(400).json({ error: 'Invalid email format' });
+            }
+
+            // Validar contraseña
+            if (userData.password.length < 6) {
+              return res.status(400).json({ error: 'Password must be at least 6 characters' });
+            }
+
             const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
               email: userData.email,
               password: userData.password,
@@ -78,8 +100,13 @@ export default async function handler(req, res) {
         case 'updatePassword':
           try {
             // Validar que el userId sea un UUID válido
-            if (!userId || typeof userId !== 'string' || userId.length !== 36) {
+            if (!userId || !isValidUUID(userId)) {
               return res.status(400).json({ error: 'Invalid user ID format' });
+            }
+
+            // Validar contraseña
+            if (!password || password.length < 6) {
+              return res.status(400).json({ error: 'Password must be at least 6 characters' });
             }
 
             const { error: passwordError } = await supabaseAdmin.auth.admin.updateUserById(
@@ -101,7 +128,7 @@ export default async function handler(req, res) {
         case 'getUserById':
           try {
             // Validar que el userId sea un UUID válido
-            if (!userId || typeof userId !== 'string' || userId.length !== 36) {
+            if (!userId || !isValidUUID(userId)) {
               return res.status(400).json({ error: 'Invalid user ID format' });
             }
 
@@ -121,7 +148,7 @@ export default async function handler(req, res) {
         case 'deleteUser':
           try {
             // Validar que el userId sea un UUID válido
-            if (!userId || typeof userId !== 'string' || userId.length !== 36) {
+            if (!userId || !isValidUUID(userId)) {
               return res.status(400).json({ error: 'Invalid user ID format' });
             }
 
