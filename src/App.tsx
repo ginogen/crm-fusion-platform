@@ -26,25 +26,24 @@ import NotFound from "./pages/NotFound";
 import Auth from "./pages/Auth";
 import TimeControl from "./pages/TimeControl";
 
-// Configuración optimizada del QueryClient para múltiples usuarios (80+)
+// Configuración del QueryClient con manejo de errores de conexión
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 10 * 60 * 1000, // 10 minutos (aumentado de 5)
-      gcTime: 30 * 60 * 1000, // 30 minutos (aumentado de 10)
-      retry: 2, // Máximo 2 reintentos (reducido de 3)
-      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
+      staleTime: 5 * 60 * 1000, // 5 minutos
+      gcTime: 10 * 60 * 1000, // 10 minutos
+      retry: (failureCount, error) => {
+        // Reintentar hasta 3 veces para errores de conexión
+        if (failureCount < 3) {
+          const isConnectionError = error?.message?.includes('fetch') || 
+                                  error?.message?.includes('network') ||
+                                  error?.message?.includes('timeout');
+          return isConnectionError;
+        }
+        return false;
+      },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
       networkMode: 'offlineFirst',
-      refetchOnWindowFocus: false, // Evitar refetch innecesario al cambiar de pestaña
-      refetchOnReconnect: true,
-      // Configuración específica para múltiples usuarios
-      refetchOnMount: true,
-      refetchInterval: false, // No refetch automático por tiempo
-    },
-    mutations: {
-      retry: 1, // Solo 1 reintento para mutaciones
-      retryDelay: 2000,
-      networkMode: 'online',
     },
   },
 });
