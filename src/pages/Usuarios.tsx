@@ -483,13 +483,31 @@ const Usuarios = () => {
           }
         }
 
+        // Solo usar adminApi si se está cambiando la contraseña
         if (isChangingPassword && newUser.password) {
-          const { error: passwordError } = await adminApi.updateUserById(
-            newUser.id!,
-            { password: newUser.password }
-          );
+          try {
+            const { error: passwordError } = await adminApi.updateUserById(
+              newUser.id!,
+              { password: newUser.password }
+            );
 
-          if (passwordError) throw new Error(passwordError);
+            if (passwordError) {
+              toast({
+                variant: "destructive",
+                title: "Error al cambiar contraseña",
+                description: passwordError,
+              });
+              return;
+            }
+          } catch (error) {
+            console.error("Error al cambiar contraseña:", error);
+            toast({
+              variant: "destructive",
+              title: "Error al cambiar contraseña",
+              description: "No se pudo actualizar la contraseña. Los demás cambios se guardarán.",
+            });
+            // Continuar con la actualización de otros campos
+          }
         }
 
         // Determinar el supervisor_id correcto
@@ -548,6 +566,8 @@ const Usuarios = () => {
           title: "Usuario actualizado exitosamente",
           description: hasMultiEstructura(newUser.user_position) && newUser.estructura_ids.length > 0
             ? `${newUser.estructura_ids.length} estructuras vinculadas según selección manual`
+            : isChangingPassword && newUser.password
+            ? "Contraseña y datos actualizados"
             : undefined,
         });
 
@@ -778,13 +798,6 @@ const Usuarios = () => {
         description: "No tienes permisos para editar usuarios",
       });
       return;
-    }
-
-    // Obtener la contraseña actual del usuario
-    const { data: authData, error: authError } = await adminApi.getUserById(user.id);
-    
-    if (authError) {
-      throw new Error(authError.message);
     }
 
     // Obtener la estructura actual del usuario
