@@ -34,25 +34,14 @@
       ]
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/webhook/(.*)",
-      "dest": "/api/webhook/[token].js"
+      "source": "/api/webhook/(.*)",
+      "destination": "/api/webhook/[token].js"
     },
     {
-      "src": "/api/admin/(.*)",
-      "dest": "/api/admin/$1"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/assets/(.*)",
-      "dest": "/assets/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/api/admin/(.*)",
+      "destination": "/api/admin/$1"
     }
   ]
 } 
