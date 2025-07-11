@@ -26,13 +26,29 @@ const isValidUUID = (uuid) => {
 };
 
 export default async function handler(req, res) {
+  // Logs detallados de la petición
+  console.log('🔍 === INICIO PETICIÓN API ===');
+  console.log('🔍 Método:', req.method);
+  console.log('🔍 URL:', req.url);
+  console.log('🔍 Headers:', Object.keys(req.headers));
+  console.log('🔍 Content-Type:', req.headers['content-type']);
+  console.log('🔍 Authorization presente:', !!req.headers.authorization);
+  console.log('🔍 Body presente:', !!req.body);
+  
   // Solo aceptar método POST
   if (req.method !== 'POST') {
     console.log('❌ Método no permitido:', req.method);
+    console.log('❌ Se esperaba POST pero se recibió:', req.method);
     res.setHeader('Allow', ['POST']);
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ 
+      error: 'Method not allowed',
+      received: req.method,
+      expected: 'POST'
+    });
   }
 
+  console.log('✅ Método POST verificado correctamente');
+  
   try {
     const { action, userId, password, userData } = req.body;
     
