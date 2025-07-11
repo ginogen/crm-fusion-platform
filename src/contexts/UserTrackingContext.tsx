@@ -38,8 +38,13 @@ const SUPABASE_RETRY_LIMIT = 1; // 1 reintento (era 3)
 // OPTIMIZACIÓN: Añadir throttling para updateActivity
 const ACTIVITY_THROTTLE_MS = 30000; // Máximo cada 30 segundos
 
+// OPTIMIZACIÓN: Timeouts más largos para producción
+const PRODUCTION_TIMEOUT = 30000; // 30 segundos para producción
+const DEVELOPMENT_TIMEOUT = 10000; // 10 segundos para desarrollo
+
 // OPTIMIZACIÓN: Determinar si estamos en producción para reducir logs
 const isDevelopment = import.meta.env.DEV;
+const QUERY_TIMEOUT = isDevelopment ? DEVELOPMENT_TIMEOUT : PRODUCTION_TIMEOUT;
 
 export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<TrackingUser | null>(null);
@@ -221,6 +226,12 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
       return;
     }
 
+    // Configurar timeout para evitar cuelgues
+    const timeoutId = setTimeout(() => {
+      console.warn('⚠️ UserTrackingContext: Timeout en inicialización');
+      setIsLoading(false);
+    }, QUERY_TIMEOUT);
+
     try {
       setIsLoading(true);
       
@@ -241,6 +252,7 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
           saveUserToStorage(userData);
           await updateActivity(userData.id, true); // Forzar primera actualización
           setIsLoading(false);
+          clearTimeout(timeoutId);
           return;
         }
       }
@@ -251,12 +263,14 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
         setCurrentUser(storedUser);
         setIsOnline(true);
         setIsLoading(false);
+        clearTimeout(timeoutId);
         return;
       }
 
       setCurrentUser(null);
       setIsOnline(false);
       setIsLoading(false);
+      clearTimeout(timeoutId);
     } catch (error) {
       logger.error('[UserTrackingContext] Error inicializando tracking:', error);
       
@@ -270,6 +284,7 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
         setIsOnline(false);
       }
       setIsLoading(false);
+      clearTimeout(timeoutId);
     }
   }, [currentUser, isLoading, saveUserToStorage, updateActivity]);
 

@@ -3,40 +3,145 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// Configuración optimizada para manejar timeouts y reconexiones
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
     flowType: 'pkce',
-    // Configurar el tiempo de sesión a 30 minutos
     storageKey: 'sb-session',
     storage: {
       getItem: (key) => {
         const item = localStorage.getItem(key);
         if (!item) return null;
         
-        const session = JSON.parse(item);
-        const lastActive = new Date(session.last_activity || Date.now());
-        const now = new Date();
-        
-        // Si han pasado más de 30 minutos, eliminar la sesión
-        if (now.getTime() - lastActive.getTime() > 15 * 60 * 1000) {
+        try {
+          const session = JSON.parse(item);
+          const lastActive = new Date(session.last_activity || Date.now());
+          const now = new Date();
+          
+          // Si han pasado más de 15 minutos, eliminar la sesión
+          if (now.getTime() - lastActive.getTime() > 15 * 60 * 1000) {
+            localStorage.removeItem(key);
+            return null;
+          }
+          
+          // Actualizar el tiempo de última actividad
+          session.last_activity = now.toISOString();
+          localStorage.setItem(key, JSON.stringify(session));
+          return item;
+        } catch (error) {
+          console.error('❌ Error parsing session:', error);
           localStorage.removeItem(key);
           return null;
         }
-        
-        // Actualizar el tiempo de última actividad
-        session.last_activity = now.toISOString();
-        localStorage.setItem(key, JSON.stringify(session));
-        return item;
       },
       setItem: (key, value) => {
-        const session = JSON.parse(value);
-        session.last_activity = new Date().toISOString();
-        localStorage.setItem(key, JSON.stringify(session));
+        try {
+          const session = JSON.parse(value);
+          session.last_activity = new Date().toISOString();
+          localStorage.setItem(key, JSON.stringify(session));
+        } catch (error) {
+          console.error('❌ Error storing session:', error);
+        }
       },
       removeItem: (key) => localStorage.removeItem(key),
     },
   },
+  // Configuración de realtime para manejar conexiones perdidas
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    },
+    heartbeatIntervalMs: 30000, // 30 segundos
+    reconnectAfterMs: (tries) => Math.min(tries * 1000, 10000), // Backoff exponencial
+  },
+  // Configuración global de la base de datos
+  db: {
+    schema: 'public'
+  },
+  // Headers adicionales para debugging
+  global: {
+    headers: {
+      'X-Client-Info': 'crm-fusion@1.0.0',
+    },
+  },
 });
+
+// Manejar errores de conexión globalmente
+supabase.auth.onAuthStateChange((event, session) => {
+  console.log('🔄 Auth state changed:', event, session?.user?.id);
+  
+  if (event === 'SIGNED_OUT') {
+    console.log('👋 Usuario desconectado');
+    // Limpiar cualquier estado local
+    localStorage.removeItem('sb-session');
+  }
+  
+  if (event === 'TOKEN_REFRESHED') {
+    console.log('🔄 Token refreshed successfully');
+  }
+});
+
+// Crear función helper para reintentos con backoff exponencial
+export const executeWithRetry = async <T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000
+): Promise<T> => {
+  let lastError: Error;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error as Error;
+      
+      // Si es el último intento, lanzar el error
+      if (attempt === maxRetries) {
+        console.error(`❌ Operación falló después de ${maxRetries + 1} intentos:`, error);
+        throw error;
+      }
+      
+      // Calcular delay con backoff exponencial
+      const delay = baseDelay * Math.pow(2, attempt);
+      console.warn(`⚠️ Intento ${attempt + 1} falló, reintentando en ${delay}ms...`);
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError!;
+};
+
+// Función para verificar la conexión
+export const checkConnection = async (): Promise<boolean> => {
+  try {
+    const { data, error } = await supabase.from('users').select('count').limit(1);
+    return !error;
+  } catch (error) {
+    console.error('❌ Error de conexión:', error);
+    return false;
+  }
+};
+
+// Función para reconectar automáticamente
+export const reconnectSupabase = async (): Promise<void> => {
+  console.log('🔄 Intentando reconectar con Supabase...');
+  
+  try {
+    // Refrescar la sesión
+    const { data: { session }, error } = await supabase.auth.refreshSession();
+    
+    if (error) {
+      console.error('❌ Error al refrescar sesión:', error);
+      throw error;
+    }
+    
+    console.log('✅ Reconexión exitosa');
+  } catch (error) {
+    console.error('❌ Error en reconexión:', error);
+    throw error;
+  }
+};
