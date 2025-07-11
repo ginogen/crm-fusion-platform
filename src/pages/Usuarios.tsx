@@ -483,30 +483,26 @@ const Usuarios = () => {
           }
         }
 
-        // Solo usar adminApi si se está cambiando la contraseña
         if (isChangingPassword && newUser.password) {
-          try {
-            const { error: passwordError } = await adminApi.updateUserById(
-              newUser.id!,
-              { password: newUser.password }
-            );
-
-            if (passwordError) {
-              toast({
-                variant: "destructive",
-                title: "Error al cambiar contraseña",
-                description: passwordError,
-              });
-              return;
-            }
-          } catch (error) {
-            console.error("Error al cambiar contraseña:", error);
+          console.log('Intentando actualizar contraseña para usuario:', newUser.id);
+          
+          if (!newUser.id || typeof newUser.id !== 'string' || newUser.id.length !== 36) {
             toast({
               variant: "destructive",
-              title: "Error al cambiar contraseña",
-              description: "No se pudo actualizar la contraseña. Los demás cambios se guardarán.",
+              title: "Error de validación",
+              description: "ID de usuario no válido",
             });
-            // Continuar con la actualización de otros campos
+            return;
+          }
+
+          const { error: passwordError } = await adminApi.updateUserById(
+            newUser.id,
+            { password: newUser.password }
+          );
+
+          if (passwordError) {
+            console.error('Error actualizando contraseña:', passwordError);
+            throw new Error(typeof passwordError === 'string' ? passwordError : 'Error al actualizar contraseña');
           }
         }
 
@@ -566,8 +562,6 @@ const Usuarios = () => {
           title: "Usuario actualizado exitosamente",
           description: hasMultiEstructura(newUser.user_position) && newUser.estructura_ids.length > 0
             ? `${newUser.estructura_ids.length} estructuras vinculadas según selección manual`
-            : isChangingPassword && newUser.password
-            ? "Contraseña y datos actualizados"
             : undefined,
         });
 
@@ -800,29 +794,38 @@ const Usuarios = () => {
       return;
     }
 
-    // Obtener la estructura actual del usuario
-    const estructura = estructuras?.find(e => e.id === user.estructura_id);
-    
-    // Obtener todas las estructuras del usuario si es multi-estructura
-    const estructuraIds = hasMultiEstructura(user.user_position)
-      ? user.estructuras?.map(e => e.id.toString()) || []
-      : [];
+    try {
+      // Obtener la estructura actual del usuario
+      const estructura = estructuras?.find(e => e.id === user.estructura_id);
+      
+      // Obtener todas las estructuras del usuario si es multi-estructura
+      const estructuraIds = hasMultiEstructura(user.user_position)
+        ? user.estructuras?.map(e => e.id.toString()) || []
+        : [];
 
-    setNewUser({
-      id: user.id,
-      email: user.email,
-      nombre_completo: user.nombre_completo,
-      password: "", // La contraseña se maneja de forma segura y no se muestra
-      role: user.role,
-      user_position: user.user_position,
-      tipo_estructura: estructura?.tipo || "",
-      estructura_id: user.estructura_id?.toString() || "",
-      supervisor_id: user.supervisor_id || "",
-      estructura_ids: estructuraIds,
-    });
+      setNewUser({
+        id: user.id,
+        email: user.email,
+        nombre_completo: user.nombre_completo,
+        password: "", // La contraseña se maneja de forma segura y no se muestra
+        role: user.role,
+        user_position: user.user_position,
+        tipo_estructura: estructura?.tipo || "",
+        estructura_id: user.estructura_id?.toString() || "",
+        supervisor_id: user.supervisor_id || "",
+        estructura_ids: estructuraIds,
+      });
 
-    setIsEditing(true);
-    setIsCreateModalOpen(true);
+      setIsEditing(true);
+      setIsCreateModalOpen(true);
+    } catch (error) {
+      console.error("Error al preparar edición de usuario:", error);
+      toast({
+        variant: "destructive",
+        title: "Error al editar usuario",
+        description: "No se pudo cargar la información del usuario",
+      });
+    }
   };
 
   const handleReactivateUser = async (userId: string) => {

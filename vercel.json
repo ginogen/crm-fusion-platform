@@ -20,6 +20,10 @@
       "dest": "/api/webhook/[token].js"
     },
     {
+      "src": "/api/admin/(.*)",
+      "dest": "/api/admin/$1"
+    },
+    {
       "handle": "filesystem"
     },
     {
