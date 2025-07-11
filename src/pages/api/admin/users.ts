@@ -16,18 +16,18 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
 const supabaseClient = createClient(supabaseUrl, process.env.VITE_SUPABASE_ANON_KEY);
 
 // Log de configuración
-console.log('🔧 API Server configurado correctamente');
+console.log('🔧 API Server configurado correctamente en src/pages/api/admin/users.ts');
 
 // Función para validar UUID (solo para operaciones que lo requieren)
-const isValidUUID = (uuid) => {
+const isValidUUID = (uuid: string): boolean => {
   if (!uuid || typeof uuid !== 'string') return false;
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   return uuidRegex.test(uuid);
 };
 
-export default async function handler(req, res) {
+export default async function handler(req: any, res: any) {
   // Logs detallados de la petición
-  console.log('🔍 === INICIO PETICIÓN API ===');
+  console.log('🔍 === INICIO PETICIÓN API (src/pages/api/admin/users.ts) ===');
   console.log('🔍 Método:', req.method);
   console.log('🔍 URL:', req.url);
   console.log('🔍 Headers:', Object.keys(req.headers));
