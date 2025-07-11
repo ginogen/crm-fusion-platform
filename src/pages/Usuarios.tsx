@@ -484,33 +484,12 @@ const Usuarios = () => {
         }
 
         if (isChangingPassword && newUser.password) {
-          console.log('Intentando actualizar contraseña para usuario:', newUser.id);
-          
-          if (!newUser.id || typeof newUser.id !== 'string' || newUser.id.length !== 36) {
-            toast({
-              variant: "destructive",
-              title: "Error de validación",
-              description: "ID de usuario no válido",
-            });
-            return;
-          }
-
           const { error: passwordError } = await adminApi.updateUserById(
-            newUser.id,
+            newUser.id!,
             { password: newUser.password }
           );
 
-          if (passwordError) {
-            console.error('Error actualizando contraseña:', passwordError);
-            // Manejar errores específicos de validación
-            if (passwordError.includes('Invalid user ID format')) {
-              throw new Error('ID de usuario no válido');
-            } else if (passwordError.includes('Password must be at least')) {
-              throw new Error('La contraseña debe tener al menos 6 caracteres');
-            } else {
-              throw new Error(typeof passwordError === 'string' ? passwordError : 'Error al actualizar contraseña');
-            }
-          }
+          if (passwordError) throw new Error(passwordError);
         }
 
         // Determinar el supervisor_id correcto
@@ -605,17 +584,7 @@ const Usuarios = () => {
         });
 
         if (authError) {
-          console.error('Error detallado al crear usuario:', authError);
-          // Manejar errores específicos de validación
-          if (authError.message?.includes('Invalid email format')) {
-            throw new Error('El formato del email no es válido');
-          } else if (authError.message?.includes('Password must be at least')) {
-            throw new Error('La contraseña debe tener al menos 6 caracteres');
-          } else if (authError.message?.includes('already registered')) {
-            throw new Error('Este email ya está registrado');
-          } else {
-            throw new Error(authError.message || 'Error al crear usuario');
-          }
+          throw new Error(authError.message);
         }
 
         if (!authData?.user) {
@@ -627,49 +596,24 @@ const Usuarios = () => {
         console.log('ID de usuario creado:', userId);
 
         try {
-          // Preparar datos para inserción con validación
-          const supervisorId = newUser.user_position === 'CEO' ? null : (newUser.supervisor_id || null);
-          
-          const userData = {
-            id: userId,
-            email: newUser.email,
-            nombre_completo: newUser.nombre_completo,
-            role: newUser.role,
-            user_position: newUser.user_position,
-            estructura_id: null,
-            supervisor_id: supervisorId,
-            is_active: true,
-            created_at: new Date().toISOString(),
-          };
-          
-          console.log('📝 Datos a insertar en tabla users:', userData);
-          console.log('🔍 Tipos de datos:', {
-            id: typeof userData.id,
-            email: typeof userData.email,
-            nombre_completo: typeof userData.nombre_completo,
-            role: typeof userData.role,
-            user_position: typeof userData.user_position,
-            supervisor_id: typeof userData.supervisor_id,
-            is_active: typeof userData.is_active,
-          });
-
           // Crear el usuario base primero
           const { error: userError } = await supabase
             .from("users")
-            .insert(userData);
+            .insert({
+              id: userId,
+              email: newUser.email,
+              nombre_completo: newUser.nombre_completo,
+              role: newUser.role,
+              user_position: newUser.user_position,
+              estructura_id: null,
+              supervisor_id: newUser.user_position === 'CEO' ? null : newUser.supervisor_id,
+              is_active: true,
+              created_at: new Date().toISOString(),
+            });
 
           if (userError) {
-            console.error('❌ Error en inserción de usuario:', userError);
-            console.error('❌ Detalles del error:', {
-              message: userError.message,
-              details: userError.details,
-              hint: userError.hint,
-              code: userError.code
-            });
             throw userError;
           }
-
-          console.log('✅ Usuario insertado exitosamente en tabla users');
 
           // Si es un rol multi-estructura, aplicar herencia automática
           if (hasMultiEstructura(newUser.user_position) && newUser.estructura_ids.length > 0) {
@@ -836,38 +780,36 @@ const Usuarios = () => {
       return;
     }
 
-    try {
-      // Obtener la estructura actual del usuario
-      const estructura = estructuras?.find(e => e.id === user.estructura_id);
-      
-      // Obtener todas las estructuras del usuario si es multi-estructura
-      const estructuraIds = hasMultiEstructura(user.user_position)
-        ? user.estructuras?.map(e => e.id.toString()) || []
-        : [];
-
-      setNewUser({
-        id: user.id,
-        email: user.email,
-        nombre_completo: user.nombre_completo,
-        password: "", // La contraseña se maneja de forma segura y no se muestra
-        role: user.role,
-        user_position: user.user_position,
-        tipo_estructura: estructura?.tipo || "",
-        estructura_id: user.estructura_id?.toString() || "",
-        supervisor_id: user.supervisor_id || "",
-        estructura_ids: estructuraIds,
-      });
-
-      setIsEditing(true);
-      setIsCreateModalOpen(true);
-    } catch (error) {
-      console.error("Error al preparar edición de usuario:", error);
-      toast({
-        variant: "destructive",
-        title: "Error al editar usuario",
-        description: "No se pudo cargar la información del usuario",
-      });
+    // Obtener la contraseña actual del usuario
+    const { data: authData, error: authError } = await adminApi.getUserById(user.id);
+    
+    if (authError) {
+      throw new Error(authError.message);
     }
+
+    // Obtener la estructura actual del usuario
+    const estructura = estructuras?.find(e => e.id === user.estructura_id);
+    
+    // Obtener todas las estructuras del usuario si es multi-estructura
+    const estructuraIds = hasMultiEstructura(user.user_position)
+      ? user.estructuras?.map(e => e.id.toString()) || []
+      : [];
+
+    setNewUser({
+      id: user.id,
+      email: user.email,
+      nombre_completo: user.nombre_completo,
+      password: "", // La contraseña se maneja de forma segura y no se muestra
+      role: user.role,
+      user_position: user.user_position,
+      tipo_estructura: estructura?.tipo || "",
+      estructura_id: user.estructura_id?.toString() || "",
+      supervisor_id: user.supervisor_id || "",
+      estructura_ids: estructuraIds,
+    });
+
+    setIsEditing(true);
+    setIsCreateModalOpen(true);
   };
 
   const handleReactivateUser = async (userId: string) => {

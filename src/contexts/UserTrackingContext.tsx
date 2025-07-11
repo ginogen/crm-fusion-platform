@@ -38,13 +38,8 @@ const SUPABASE_RETRY_LIMIT = 1; // 1 reintento (era 3)
 // OPTIMIZACIÓN: Añadir throttling para updateActivity
 const ACTIVITY_THROTTLE_MS = 30000; // Máximo cada 30 segundos
 
-// OPTIMIZACIÓN: Timeouts más largos para producción
-const PRODUCTION_TIMEOUT = 30000; // 30 segundos para producción
-const DEVELOPMENT_TIMEOUT = 10000; // 10 segundos para desarrollo
-
 // OPTIMIZACIÓN: Determinar si estamos en producción para reducir logs
 const isDevelopment = import.meta.env.DEV;
-const QUERY_TIMEOUT = isDevelopment ? DEVELOPMENT_TIMEOUT : PRODUCTION_TIMEOUT;
 
 export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<TrackingUser | null>(null);
@@ -226,49 +221,28 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
       return;
     }
 
-    // Configurar timeout para evitar cuelgues
-    const timeoutId = setTimeout(() => {
-      console.warn('⚠️ UserTrackingContext: Timeout en inicialización');
-      setIsLoading(false);
-    }, QUERY_TIMEOUT);
-
     try {
       setIsLoading(true);
       
       // Método 1: Intentar obtener desde Supabase
-      try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        // Obtener datos completos del usuario
+        const { data: userData } = await supabase
+          .from('users')
+          .select('id, email, nombre_completo')
+          .eq('id', session.user.id)
+          .single();
         
-        if (sessionError) {
-          console.warn('⚠️ Error obteniendo sesión en UserTracking:', sessionError);
+        if (userData) {
+          setCurrentUser(userData);
+          setIsOnline(true);
+          saveUserToStorage(userData);
+          await updateActivity(userData.id, true); // Forzar primera actualización
+          setIsLoading(false);
+          return;
         }
-        
-        if (session?.user) {
-          // Obtener datos completos del usuario
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('id, email, nombre_completo')
-            .eq('id', session.user.id)
-            .single();
-          
-          if (userError) {
-            console.error('❌ Error obteniendo datos del usuario en UserTracking:', userError);
-            throw userError;
-          }
-          
-          if (userData) {
-            setCurrentUser(userData);
-            setIsOnline(true);
-            saveUserToStorage(userData);
-            await updateActivity(userData.id, true); // Forzar primera actualización
-            setIsLoading(false);
-            clearTimeout(timeoutId);
-            return;
-          }
-        }
-      } catch (error) {
-        console.warn('⚠️ Error en UserTracking al obtener sesión:', error);
-        // Continuar con fallback a localStorage
       }
 
       // Método 2: Fallback a localStorage
@@ -277,14 +251,12 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
         setCurrentUser(storedUser);
         setIsOnline(true);
         setIsLoading(false);
-        clearTimeout(timeoutId);
         return;
       }
 
       setCurrentUser(null);
       setIsOnline(false);
       setIsLoading(false);
-      clearTimeout(timeoutId);
     } catch (error) {
       logger.error('[UserTrackingContext] Error inicializando tracking:', error);
       
@@ -298,7 +270,6 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
         setIsOnline(false);
       }
       setIsLoading(false);
-      clearTimeout(timeoutId);
     }
   }, [currentUser, isLoading, saveUserToStorage, updateActivity]);
 

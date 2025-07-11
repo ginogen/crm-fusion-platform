@@ -10,22 +10,14 @@
       }
     },
     {
-      "src": "src/pages/api/**/*.ts",
+      "src": "api/**/*.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/api/webhook/(.*)",
-      "dest": "/src/pages/api/webhook/[token].ts"
-    },
-    {
-      "src": "/api/admin/(.*)",
-      "dest": "/src/pages/api/admin/$1"
-    },
-    {
-      "src": "/api/reports/(.*)",
-      "dest": "/src/pages/api/reports/$1"
+      "dest": "/api/webhook/[token].js"
     },
     {
       "handle": "filesystem"

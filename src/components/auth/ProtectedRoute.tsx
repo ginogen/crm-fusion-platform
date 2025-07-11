@@ -1,6 +1,6 @@
 import { Navigate } from 'react-router-dom';
-import { LoadingScreen } from '@/components/ui/loading-screen';
-import { useAuthStatus } from '@/hooks/useAuthStatus';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 type JerarquiaPosicion = typeof JERARQUIA_POSICIONES[number];
 
@@ -28,58 +28,43 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute = ({ children, requiredPosition }: ProtectedRouteProps) => {
-  const { isAuthenticated, isLoading, user, error } = useAuthStatus();
+  const { data: currentUser, isLoading } = useQuery({
+    queryKey: ["currentUser"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No user found");
 
-  console.log('🔍 ProtectedRoute: Estado de autenticación:', { isAuthenticated, isLoading, userId: user?.id });
+      const { data } = await supabase
+        .from("users")
+        .select("id, user_position")
+        .eq("id", user.id)
+        .single();
 
-  // Si está cargando, mostrar pantalla de carga
+      return data as UserData;
+    },
+  });
+
+  // Si está cargando, mostramos null o un componente de carga
   if (isLoading) {
-    console.log('⏳ ProtectedRoute: Cargando...');
-    return <LoadingScreen message="Verificando acceso..." />;
+    return null;
   }
 
-  // Si hay error, mostrar pantalla de error
-  if (error) {
-    console.error('❌ ProtectedRoute: Error:', error);
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center space-y-4 p-8 bg-white rounded-lg shadow-lg max-w-md">
-          <div className="text-red-500 text-6xl mb-4">⚠️</div>
-          <h2 className="text-xl font-bold text-gray-800">Error de Conexión</h2>
-          <p className="text-gray-600">
-            {error}
-          </p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
-          >
-            Recargar Página
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Si no hay usuario autenticado, redirigir a auth
-  if (!isAuthenticated || !user) {
-    console.log('🔄 ProtectedRoute: Redirigiendo a auth...');
+  // Si no hay usuario, redirigir a auth
+  if (!currentUser) {
     return <Navigate to="/auth" replace />;
   }
 
   // Si no se requiere una posición específica, permitir acceso
   if (!requiredPosition) {
-    console.log('✅ ProtectedRoute: Acceso permitido');
     return <>{children}</>;
   }
 
   // Verificar si el usuario tiene la posición requerida
-  const hasRequiredPosition = requiredPosition.includes(user.user_position);
+  const hasRequiredPosition = requiredPosition.includes(currentUser.user_position);
 
   if (!hasRequiredPosition) {
-    console.log('❌ ProtectedRoute: Posición no autorizada:', user.user_position);
     return <Navigate to="/" replace />;
   }
 
-  console.log('✅ ProtectedRoute: Acceso autorizado');
   return <>{children}</>;
 }; 
