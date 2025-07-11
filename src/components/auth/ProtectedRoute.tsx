@@ -1,7 +1,6 @@
 import { Navigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 import { LoadingScreen } from '@/components/ui/loading-screen';
+import { useAuthStatus } from '@/hooks/useAuthStatus';
 
 type JerarquiaPosicion = typeof JERARQUIA_POSICIONES[number];
 
@@ -29,43 +28,9 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute = ({ children, requiredPosition }: ProtectedRouteProps) => {
-  const { data: currentUser, isLoading, error } = useQuery({
-    queryKey: ["currentUser"],
-    queryFn: async () => {
-      console.log('🔍 ProtectedRoute: Verificando autenticación...');
-      
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      
-      if (authError) {
-        console.error('❌ Error de autenticación:', authError);
-        throw authError;
-      }
-      
-      if (!user) {
-        console.log('❌ No hay usuario autenticado');
-        throw new Error("No user found");
-      }
+  const { isAuthenticated, isLoading, user, error } = useAuthStatus();
 
-      console.log('✅ Usuario autenticado:', user.id);
-
-      const { data, error: userError } = await supabase
-        .from("users")
-        .select("id, user_position")
-        .eq("id", user.id)
-        .single();
-
-      if (userError) {
-        console.error('❌ Error obteniendo datos del usuario:', userError);
-        throw userError;
-      }
-
-      console.log('✅ Datos del usuario obtenidos:', data);
-      return data as UserData;
-    },
-    retry: 3,
-    retryDelay: 1000,
-    staleTime: 5 * 60 * 1000, // 5 minutos
-  });
+  console.log('🔍 ProtectedRoute: Estado de autenticación:', { isAuthenticated, isLoading, userId: user?.id });
 
   // Si está cargando, mostrar pantalla de carga
   if (isLoading) {
@@ -82,7 +47,7 @@ export const ProtectedRoute = ({ children, requiredPosition }: ProtectedRoutePro
           <div className="text-red-500 text-6xl mb-4">⚠️</div>
           <h2 className="text-xl font-bold text-gray-800">Error de Conexión</h2>
           <p className="text-gray-600">
-            No se pudo conectar con el servidor. Por favor, verifica tu conexión y recarga la página.
+            {error}
           </p>
           <button 
             onClick={() => window.location.reload()} 
@@ -95,8 +60,8 @@ export const ProtectedRoute = ({ children, requiredPosition }: ProtectedRoutePro
     );
   }
 
-  // Si no hay usuario, redirigir a auth
-  if (!currentUser) {
+  // Si no hay usuario autenticado, redirigir a auth
+  if (!isAuthenticated || !user) {
     console.log('🔄 ProtectedRoute: Redirigiendo a auth...');
     return <Navigate to="/auth" replace />;
   }
@@ -108,10 +73,10 @@ export const ProtectedRoute = ({ children, requiredPosition }: ProtectedRoutePro
   }
 
   // Verificar si el usuario tiene la posición requerida
-  const hasRequiredPosition = requiredPosition.includes(currentUser.user_position);
+  const hasRequiredPosition = requiredPosition.includes(user.user_position);
 
   if (!hasRequiredPosition) {
-    console.log('❌ ProtectedRoute: Posición no autorizada:', currentUser.user_position);
+    console.log('❌ ProtectedRoute: Posición no autorizada:', user.user_position);
     return <Navigate to="/" replace />;
   }
 

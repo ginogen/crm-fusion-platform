@@ -151,6 +151,46 @@ class ErrorBoundary extends React.Component<
   }
 }
 
+// Componente para manejar errores de recursos (CSS, etc.)
+const ResourceErrorHandler = ({ children }: { children: React.ReactNode }) => {
+  const [hasResourceError, setHasResourceError] = useState(false);
+
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      // Capturar errores de recursos como CSS, JS, etc.
+      if (event.filename && (event.filename.includes('.css') || event.filename.includes('.js'))) {
+        console.warn('⚠️ Error cargando recurso:', event.filename, event.message);
+        setHasResourceError(true);
+      }
+    };
+
+    window.addEventListener('error', handleError);
+    return () => window.removeEventListener('error', handleError);
+  }, []);
+
+  if (hasResourceError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center space-y-4 p-8 bg-white rounded-lg shadow-lg max-w-md">
+          <div className="text-yellow-500 text-6xl mb-4">⚠️</div>
+          <h2 className="text-xl font-bold text-gray-800">Error de Recursos</h2>
+          <p className="text-gray-600">
+            Algunos recursos no se cargaron correctamente. Esto puede ser temporal.
+          </p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+          >
+            Recargar Página
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+};
+
 // Componente de estado de conexión
 const ConnectionStatus = ({ isOnline, isSupabaseConnected }: { isOnline: boolean; isSupabaseConnected: boolean }) => {
   if (isOnline && isSupabaseConnected) return null;
@@ -318,9 +358,11 @@ function AppContent() {
 function App() {
   return (
     <ErrorBoundary>
-      <UserTrackingProvider>
-        <AppContent />
-      </UserTrackingProvider>
+      <ResourceErrorHandler>
+        <UserTrackingProvider>
+          <AppContent />
+        </UserTrackingProvider>
+      </ResourceErrorHandler>
     </ErrorBoundary>
   );
 }

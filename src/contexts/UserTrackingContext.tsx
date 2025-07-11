@@ -236,25 +236,39 @@ export const UserTrackingProvider: React.FC<UserTrackingProviderProps> = ({ chil
       setIsLoading(true);
       
       // Método 1: Intentar obtener desde Supabase
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session?.user) {
-        // Obtener datos completos del usuario
-        const { data: userData } = await supabase
-          .from('users')
-          .select('id, email, nombre_completo')
-          .eq('id', session.user.id)
-          .single();
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        if (userData) {
-          setCurrentUser(userData);
-          setIsOnline(true);
-          saveUserToStorage(userData);
-          await updateActivity(userData.id, true); // Forzar primera actualización
-          setIsLoading(false);
-          clearTimeout(timeoutId);
-          return;
+        if (sessionError) {
+          console.warn('⚠️ Error obteniendo sesión en UserTracking:', sessionError);
         }
+        
+        if (session?.user) {
+          // Obtener datos completos del usuario
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('id, email, nombre_completo')
+            .eq('id', session.user.id)
+            .single();
+          
+          if (userError) {
+            console.error('❌ Error obteniendo datos del usuario en UserTracking:', userError);
+            throw userError;
+          }
+          
+          if (userData) {
+            setCurrentUser(userData);
+            setIsOnline(true);
+            saveUserToStorage(userData);
+            await updateActivity(userData.id, true); // Forzar primera actualización
+            setIsLoading(false);
+            clearTimeout(timeoutId);
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ Error en UserTracking al obtener sesión:', error);
+        // Continuar con fallback a localStorage
       }
 
       // Método 2: Fallback a localStorage
