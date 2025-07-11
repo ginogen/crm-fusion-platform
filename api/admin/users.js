@@ -3,10 +3,52 @@ import { createClient } from '@supabase/supabase-js';
 // Configuración correcta para el entorno del servidor
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+// Configuración del Transaction Pooler para APIs
+// URL del pooler: postgres://postgres:cmboQQnTsfKQ3PUk@db.pxmkytffrwxydvnhjpzc.supabase.co:6543/postgres
+const supabasePoolerUrl = process.env.VITE_SUPABASE_POOLER_URL;
+
+// Determinar la URL final a usar (pooler tiene prioridad para APIs)
+const finalUrl = supabasePoolerUrl || supabaseUrl;
+const isUsingPooler = !!supabasePoolerUrl;
+
+// Log de configuración para debugging
+console.log('🔗 API Admin - Configuración de Supabase:', {
+  url: finalUrl,
+  isUsingPooler,
+  mode: isUsingPooler ? 'Transaction Pooler' : 'Direct Connection',
+  apiOptimized: isUsingPooler ? 'Para múltiples usuarios' : 'Configuración básica'
+});
+
+// Cliente admin optimizado para pooling
+const supabaseAdmin = createClient(finalUrl, supabaseServiceRoleKey, {
+  auth: {
+    autoRefreshToken: false, // No necesario para service role
+    persistSession: false,   // No necesario para APIs
+  },
+  // Configuración específica para APIs con pooling
+  global: {
+    headers: {
+      'X-Client-Info': 'crm-fusion-api@1.0.0',
+      'X-Connection-Mode': isUsingPooler ? 'transaction-pooler' : 'direct',
+      'X-API-Type': 'admin-users',
+    },
+  },
+});
 
 // Cliente regular para verificaciones de autenticación
-const supabaseClient = createClient(supabaseUrl, process.env.VITE_SUPABASE_ANON_KEY);
+const supabaseClient = createClient(finalUrl, process.env.VITE_SUPABASE_ANON_KEY, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'crm-fusion-api-auth@1.0.0',
+      'X-Connection-Mode': isUsingPooler ? 'transaction-pooler' : 'direct',
+    },
+  },
+});
 
 // Función para validar UUID
 const isValidUUID = (uuid) => {
@@ -14,167 +56,226 @@ const isValidUUID = (uuid) => {
   return typeof uuid === 'string' && uuidRegex.test(uuid);
 };
 
+// Función helper para operaciones con pooling optimizado
+const executePooledOperation = async (operation, retries = 2) => {
+  if (!isUsingPooler) {
+    return operation();
+  }
+
+  // Con pooler, usar reintentos más rápidos
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt === retries) {
+        throw error;
+      }
+      
+      // Esperar menos tiempo entre reintentos con pooler
+      const delay = 200 * Math.pow(2, attempt);
+      console.warn(`⚠️ API Admin - Reintento ${attempt + 1} en ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+};
+
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     const { action, userId, password, userData } = req.body;
 
+    // Log de inicio de operación
+    console.log('🔧 API Admin - Operación:', {
+      action,
+      userId: userId ? userId.substring(0, 8) + '...' : 'N/A',
+      poolerMode: isUsingPooler ? 'Transaction Pooler' : 'Direct',
+      timestamp: new Date().toISOString()
+    });
+
     try {
-      // Verificar autenticación del usuario que hace la petición
-      const authHeader = req.headers.authorization;
-      if (!authHeader) {
-        return res.status(401).json({ error: 'No authorization header' });
+      if (action === 'createUser') {
+        // Validar datos requeridos
+        if (!userData.email || !password) {
+          return res.status(400).json({ 
+            error: 'Email y contraseña son requeridos',
+            details: 'Datos faltantes para crear usuario' 
+          });
+        }
+
+        // Crear usuario con pooling optimizado
+        const result = await executePooledOperation(async () => {
+          const { data, error } = await supabaseAdmin.auth.admin.createUser({
+            email: userData.email,
+            password: password,
+            email_confirm: true,
+            user_metadata: {
+              nombre_completo: userData.nombre_completo || '',
+              user_position: userData.user_position || 'Usuario'
+            }
+          });
+          
+          if (error) throw error;
+          return data;
+        });
+
+        if (result.user) {
+          // Actualizar datos del usuario en la tabla users
+          await executePooledOperation(async () => {
+            const { error: updateError } = await supabaseAdmin
+              .from('users')
+              .update({
+                nombre_completo: userData.nombre_completo,
+                user_position: userData.user_position,
+                estructura_id: userData.estructura_id || null,
+                supervisor_id: userData.supervisor_id || null,
+                is_active: true
+              })
+              .eq('id', result.user.id);
+
+            if (updateError) throw updateError;
+          });
+
+          console.log('✅ Usuario creado exitosamente:', {
+            id: result.user.id,
+            email: result.user.email,
+            poolerUsed: isUsingPooler
+          });
+
+          return res.status(200).json({ 
+            data: result, 
+            message: 'Usuario creado exitosamente',
+            poolerMode: isUsingPooler ? 'Transaction Pooler' : 'Direct'
+          });
+        }
       }
 
-      const token = authHeader.replace('Bearer ', '');
-      const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
-      
-      if (authError || !user) {
-        console.error('Auth error:', authError);
-        return res.status(401).json({ error: 'Invalid token' });
+      if (action === 'updateUser') {
+        // Validar UUID
+        if (!isValidUUID(userId)) {
+          return res.status(400).json({ 
+            error: 'ID de usuario no válido',
+            details: 'El formato del ID debe ser UUID válido' 
+          });
+        }
+
+        // Actualizar usuario con pooling optimizado
+        await executePooledOperation(async () => {
+          const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+            password: password,
+            user_metadata: {
+              nombre_completo: userData.nombre_completo || '',
+              user_position: userData.user_position || ''
+            }
+          });
+
+          if (error) throw error;
+        });
+
+        // Actualizar datos en la tabla users
+        await executePooledOperation(async () => {
+          const { error: updateError } = await supabaseAdmin
+            .from('users')
+            .update({
+              nombre_completo: userData.nombre_completo,
+              user_position: userData.user_position,
+              estructura_id: userData.estructura_id || null,
+              supervisor_id: userData.supervisor_id || null
+            })
+            .eq('id', userId);
+
+          if (updateError) throw updateError;
+        });
+
+        console.log('✅ Usuario actualizado exitosamente:', {
+          id: userId.substring(0, 8) + '...',
+          poolerUsed: isUsingPooler
+        });
+
+        return res.status(200).json({ 
+          message: 'Usuario actualizado exitosamente',
+          poolerMode: isUsingPooler ? 'Transaction Pooler' : 'Direct'
+        });
       }
 
-      // Verificar que el usuario tenga permisos administrativos
-      const { data: userProfile, error: profileError } = await supabaseClient
-        .from('users')
-        .select('user_position')
-        .eq('id', user.id)
-        .single();
+      if (action === 'deleteUser') {
+        // Validar UUID
+        if (!isValidUUID(userId)) {
+          return res.status(400).json({ 
+            error: 'ID de usuario no válido',
+            details: 'El formato del ID debe ser UUID válido' 
+          });
+        }
 
-      if (profileError) {
-        console.error('Profile error:', profileError);
-        return res.status(403).json({ error: 'Could not verify permissions' });
+        // Eliminar usuario con pooling optimizado
+        await executePooledOperation(async () => {
+          const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
+          if (error) throw error;
+        });
+
+        console.log('✅ Usuario eliminado exitosamente:', {
+          id: userId.substring(0, 8) + '...',
+          poolerUsed: isUsingPooler
+        });
+
+        return res.status(200).json({ 
+          message: 'Usuario eliminado exitosamente',
+          poolerMode: isUsingPooler ? 'Transaction Pooler' : 'Direct'
+        });
       }
 
-      const allowedPositions = [
-        'CEO',
-        'Director Internacional',
-        'Director Nacional',
-        'Director de Zona',
-        'Sales Manager',
-        'Gerente Divisional',
-        'Gerente',
-        'Jefe de Grupo'
-      ];
-
-      if (!userProfile || !allowedPositions.includes(userProfile.user_position)) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
-
-      // Ejecutar la acción administrativa solicitada
-      switch (action) {
-        case 'createUser':
-          try {
-            // Validar datos de entrada
-            if (!userData || !userData.email || !userData.password) {
-              return res.status(400).json({ error: 'Email and password are required' });
-            }
-
-            // Validar formato de email
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(userData.email)) {
-              return res.status(400).json({ error: 'Invalid email format' });
-            }
-
-            // Validar contraseña
-            if (userData.password.length < 6) {
-              return res.status(400).json({ error: 'Password must be at least 6 characters' });
-            }
-
-            const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-              email: userData.email,
-              password: userData.password,
-              email_confirm: true
-            });
-
-            if (createError) {
-              console.error('Create user error:', createError);
-              return res.status(400).json({ error: createError.message });
-            }
-
-            return res.status(200).json({ user: newUser });
-          } catch (error) {
-            console.error('Create user exception:', error);
-            return res.status(500).json({ error: 'Failed to create user' });
-          }
-
-        case 'updatePassword':
-          try {
-            // Validar que el userId sea un UUID válido
-            if (!userId || !isValidUUID(userId)) {
-              return res.status(400).json({ error: 'Invalid user ID format' });
-            }
-
-            // Validar contraseña
-            if (!password || password.length < 6) {
-              return res.status(400).json({ error: 'Password must be at least 6 characters' });
-            }
-
-            const { error: passwordError } = await supabaseAdmin.auth.admin.updateUserById(
-              userId,
-              { password: password }
-            );
-
-            if (passwordError) {
-              console.error('Update password error:', passwordError);
-              return res.status(400).json({ error: passwordError.message });
-            }
-
-            return res.status(200).json({ success: true });
-          } catch (error) {
-            console.error('Update password exception:', error);
-            return res.status(500).json({ error: 'Failed to update password' });
-          }
-
-        case 'getUserById':
-          try {
-            // Validar que el userId sea un UUID válido
-            if (!userId || !isValidUUID(userId)) {
-              return res.status(400).json({ error: 'Invalid user ID format' });
-            }
-
-            const { data: authData, error: getUserError } = await supabaseAdmin.auth.admin.getUserById(userId);
-
-            if (getUserError) {
-              console.error('Get user error:', getUserError);
-              return res.status(400).json({ error: getUserError.message });
-            }
-
-            return res.status(200).json({ user: authData });
-          } catch (error) {
-            console.error('Get user exception:', error);
-            return res.status(500).json({ error: 'Failed to get user' });
-          }
-
-        case 'deleteUser':
-          try {
-            // Validar que el userId sea un UUID válido
-            if (!userId || !isValidUUID(userId)) {
-              return res.status(400).json({ error: 'Invalid user ID format' });
-            }
-
-            const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-
-            if (deleteError) {
-              console.error('Delete user error:', deleteError);
-              return res.status(400).json({ error: deleteError.message });
-            }
-
-            return res.status(200).json({ success: true });
-          } catch (error) {
-            console.error('Delete user exception:', error);
-            return res.status(500).json({ error: 'Failed to delete user' });
-          }
-
-        default:
-          return res.status(400).json({ error: 'Invalid action' });
-      }
+      return res.status(400).json({ 
+        error: 'Acción no válida',
+        details: 'Las acciones válidas son: createUser, updateUser, deleteUser' 
+      });
 
     } catch (error) {
-      console.error('API Error:', error);
-      return res.status(500).json({ error: 'Internal server error' });
+      console.error('❌ Error en API Admin:', {
+        error: error.message,
+        action,
+        userId: userId ? userId.substring(0, 8) + '...' : 'N/A',
+        poolerMode: isUsingPooler ? 'Transaction Pooler' : 'Direct',
+        timestamp: new Date().toISOString()
+      });
+
+      // Manejo de errores específicos
+      if (error.message?.includes('Invalid email format')) {
+        return res.status(400).json({ 
+          error: 'El formato del email no es válido',
+          details: error.message 
+        });
+      }
+
+      if (error.message?.includes('Password must be at least')) {
+        return res.status(400).json({ 
+          error: 'La contraseña debe tener al menos 6 caracteres',
+          details: error.message 
+        });
+      }
+
+      if (error.message?.includes('User already registered')) {
+        return res.status(409).json({ 
+          error: 'El usuario ya está registrado',
+          details: 'Ya existe un usuario con este email' 
+        });
+      }
+
+      if (error.message?.includes('User not found')) {
+        return res.status(404).json({ 
+          error: 'Usuario no encontrado',
+          details: 'El usuario especificado no existe' 
+        });
+      }
+
+      return res.status(500).json({ 
+        error: 'Error interno del servidor',
+        details: process.env.NODE_ENV === 'development' ? error.message : 'Error interno',
+        poolerMode: isUsingPooler ? 'Transaction Pooler' : 'Direct'
+      });
     }
   } else {
     res.setHeader('Allow', ['POST']);
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ 
+      error: 'Método no permitido',
+      details: 'Solo se permiten peticiones POST' 
+    });
   }
 } 

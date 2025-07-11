@@ -3,8 +3,24 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Configuración optimizada para manejar timeouts y reconexiones
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+// Configuración del Transaction Pooler
+// URL del pooler: postgres://postgres:cmboQQnTsfKQ3PUk@db.pxmkytffrwxydvnhjpzc.supabase.co:6543/postgres
+const supabasePoolerUrl = import.meta.env.VITE_SUPABASE_POOLER_URL;
+
+// Determinar la URL final a usar
+const finalUrl = supabasePoolerUrl || supabaseUrl;
+const isUsingPooler = !!supabasePoolerUrl;
+
+// Log de configuración
+console.log('🔗 Configuración de Supabase:', {
+  url: finalUrl,
+  isUsingPooler,
+  mode: isUsingPooler ? 'Transaction Pooler' : 'Direct Connection',
+  poolerAvailable: !!supabasePoolerUrl
+});
+
+// Configuración optimizada para manejar timeouts, reconexiones y pooling
+export const supabase = createClient(finalUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
@@ -49,25 +65,55 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       removeItem: (key) => localStorage.removeItem(key),
     },
   },
-  // Configuración de realtime para manejar conexiones perdidas
+  // Configuración de realtime optimizada para pooling
   realtime: {
     params: {
-      eventsPerSecond: 10,
+      // Reducir eventos por segundo si usamos pooler
+      eventsPerSecond: isUsingPooler ? 5 : 10,
     },
-    heartbeatIntervalMs: 30000, // 30 segundos
-    reconnectAfterMs: (tries) => Math.min(tries * 1000, 10000), // Backoff exponencial
+    // Aumentar heartbeat si usamos pooler para evitar timeouts
+    heartbeatIntervalMs: isUsingPooler ? 45000 : 30000,
+    reconnectAfterMs: (tries) => Math.min(tries * (isUsingPooler ? 2000 : 1000), 10000),
   },
   // Configuración global de la base de datos
   db: {
     schema: 'public'
   },
-  // Headers adicionales para debugging
+  // Headers adicionales para debugging y pooling
   global: {
     headers: {
       'X-Client-Info': 'crm-fusion@1.0.0',
+      'X-Connection-Mode': isUsingPooler ? 'transaction-pooler' : 'direct',
+      'X-Pool-Config': isUsingPooler ? 'size-30-timeout-30s' : 'none',
     },
   },
 });
+
+// Función para verificar si estamos usando pooler
+export const isUsingTransactionPooler = () => isUsingPooler;
+
+// Función para obtener estadísticas de conexión
+export const getConnectionStats = () => ({
+  url: finalUrl,
+  isPooler: isUsingPooler,
+  mode: isUsingPooler ? 'Transaction Pooler (6543)' : 'Direct Connection',
+  maxConnections: isUsingPooler ? '30 (pooled)' : 'Unlimited (direct)',
+  recommendedForUsers: isUsingPooler ? '80+ usuarios' : '< 30 usuarios'
+});
+
+// Función específica para operaciones de base de datos con pooling optimizado
+export const executePooledQuery = async <T>(
+  operation: () => Promise<T>,
+  retries: number = 2
+): Promise<T> => {
+  if (!isUsingPooler) {
+    // Si no usamos pooler, ejecutar directamente
+    return operation();
+  }
+
+  // Con pooler, usar reintentos más agresivos
+  return executeWithRetry(operation, retries, 500);
+};
 
 // Manejar errores de conexión globalmente
 supabase.auth.onAuthStateChange((event, session) => {
@@ -81,6 +127,10 @@ supabase.auth.onAuthStateChange((event, session) => {
   
   if (event === 'TOKEN_REFRESHED') {
     console.log('🔄 Token refreshed successfully');
+  }
+  
+  if (event === 'SIGNED_IN') {
+    console.log('✅ Usuario conectado via', isUsingPooler ? 'Transaction Pooler' : 'Direct Connection');
   }
 });
 
@@ -104,7 +154,7 @@ export const executeWithRetry = async <T>(
         throw error;
       }
       
-      // Calcular delay con backoff exponencial
+      // Calcular delay con backoff exponencial (más rápido con pooler)
       const delay = baseDelay * Math.pow(2, attempt);
       console.warn(`⚠️ Intento ${attempt + 1} falló, reintentando en ${delay}ms...`);
       
@@ -143,5 +193,18 @@ export const reconnectSupabase = async (): Promise<void> => {
   } catch (error) {
     console.error('❌ Error en reconexión:', error);
     throw error;
+  }
+};
+
+// Función para monitorear el uso del pooler
+export const logPoolerStats = () => {
+  if (isUsingPooler) {
+    console.log('📊 Transaction Pooler Stats:', {
+      mode: 'Transaction Pooling',
+      port: '6543',
+      maxConnections: 30,
+      timeout: '30s',
+      optimizedFor: '80+ usuarios simultáneos'
+    });
   }
 };
