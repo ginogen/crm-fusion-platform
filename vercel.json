@@ -14,14 +14,6 @@
       "use": "@vercel/node"
     }
   ],
-  "functions": {
-    "api/admin/users.js": {
-      "maxDuration": 60
-    },
-    "api/webhook/[token].js": {
-      "maxDuration": 30
-    }
-  },
   "headers": [
     {
       "source": "/assets/(.*)",
