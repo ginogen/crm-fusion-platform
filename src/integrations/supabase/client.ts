@@ -3,66 +3,23 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Para el frontend, siempre usar la URL HTTP normal de Supabase
-// El Transaction Pooler se configura automáticamente en el servidor
+// Validar variables de entorno
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('❌ Variables de entorno de Supabase faltantes');
+  throw new Error('Configuración de Supabase incompleta');
+}
+
+// Configuración simplificada del cliente Supabase
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
-    flowType: 'pkce',
-    storageKey: 'sb-session',
-    storage: {
-      getItem: (key) => {
-        const item = localStorage.getItem(key);
-        if (!item) return null;
-        
-        try {
-          const session = JSON.parse(item);
-          const lastActive = new Date(session.last_activity || Date.now());
-          const now = new Date();
-          
-          // Si han pasado más de 15 minutos, eliminar la sesión
-          if (now.getTime() - lastActive.getTime() > 15 * 60 * 1000) {
-            localStorage.removeItem(key);
-            return null;
-          }
-          
-          // Actualizar el tiempo de última actividad
-          session.last_activity = now.toISOString();
-          localStorage.setItem(key, JSON.stringify(session));
-          return item;
-        } catch (error) {
-          console.error('❌ Error parsing session:', error);
-          localStorage.removeItem(key);
-          return null;
-        }
-      },
-      setItem: (key, value) => {
-        try {
-          const session = JSON.parse(value);
-          session.last_activity = new Date().toISOString();
-          localStorage.setItem(key, JSON.stringify(session));
-        } catch (error) {
-          console.error('❌ Error storing session:', error);
-        }
-      },
-      removeItem: (key) => localStorage.removeItem(key),
-    },
   },
-  // Configuración optimizada para el cliente
   realtime: {
-    params: {
-      eventsPerSecond: 10,
-    },
-    heartbeatIntervalMs: 30000, // 30 segundos
-    reconnectAfterMs: (tries) => Math.min(tries * 1000, 10000), // Backoff exponencial
+    heartbeatIntervalMs: 30000,
+    reconnectAfterMs: (tries) => Math.min(tries * 1000, 10000),
   },
-  // Configuración global de la base de datos
-  db: {
-    schema: 'public'
-  },
-  // Headers adicionales para identificar conexiones desde frontend
   global: {
     headers: {
       'X-Client-Info': 'crm-fusion-frontend@1.0.0',
@@ -71,10 +28,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 // Log de configuración
-console.log('🔧 Supabase configurado:', {
-  url: 'HTTP API (pooler automático)',
-  frontend: true
-});
+console.log('🔧 Supabase configurado con URL:', supabaseUrl);
 
 // Manejar errores de conexión globalmente
 supabase.auth.onAuthStateChange((event, session) => {
@@ -82,8 +36,6 @@ supabase.auth.onAuthStateChange((event, session) => {
   
   if (event === 'SIGNED_OUT') {
     console.log('👋 Usuario desconectado');
-    // Limpiar cualquier estado local
-    localStorage.removeItem('sb-session');
   }
   
   if (event === 'TOKEN_REFRESHED') {
@@ -91,7 +43,7 @@ supabase.auth.onAuthStateChange((event, session) => {
   }
 });
 
-// Función optimizada para reintentos
+// Función para reintentos con manejo de errores mejorado
 export const executeWithRetry = async <T>(
   operation: () => Promise<T>,
   maxRetries: number = 3,
@@ -138,7 +90,6 @@ export const reconnectSupabase = async (): Promise<void> => {
   console.log('🔄 Intentando reconectar con Supabase...');
   
   try {
-    // Refrescar la sesión
     const { data: { session }, error } = await supabase.auth.refreshSession();
     
     if (error) {

@@ -627,24 +627,49 @@ const Usuarios = () => {
         console.log('ID de usuario creado:', userId);
 
         try {
+          // Preparar datos para inserción con validación
+          const supervisorId = newUser.user_position === 'CEO' ? null : (newUser.supervisor_id || null);
+          
+          const userData = {
+            id: userId,
+            email: newUser.email,
+            nombre_completo: newUser.nombre_completo,
+            role: newUser.role,
+            user_position: newUser.user_position,
+            estructura_id: null,
+            supervisor_id: supervisorId,
+            is_active: true,
+            created_at: new Date().toISOString(),
+          };
+          
+          console.log('📝 Datos a insertar en tabla users:', userData);
+          console.log('🔍 Tipos de datos:', {
+            id: typeof userData.id,
+            email: typeof userData.email,
+            nombre_completo: typeof userData.nombre_completo,
+            role: typeof userData.role,
+            user_position: typeof userData.user_position,
+            supervisor_id: typeof userData.supervisor_id,
+            is_active: typeof userData.is_active,
+          });
+
           // Crear el usuario base primero
           const { error: userError } = await supabase
             .from("users")
-            .insert({
-              id: userId,
-              email: newUser.email,
-              nombre_completo: newUser.nombre_completo,
-              role: newUser.role,
-              user_position: newUser.user_position,
-              estructura_id: null,
-              supervisor_id: newUser.user_position === 'CEO' ? null : newUser.supervisor_id,
-              is_active: true,
-              created_at: new Date().toISOString(),
-            });
+            .insert(userData);
 
           if (userError) {
+            console.error('❌ Error en inserción de usuario:', userError);
+            console.error('❌ Detalles del error:', {
+              message: userError.message,
+              details: userError.details,
+              hint: userError.hint,
+              code: userError.code
+            });
             throw userError;
           }
+
+          console.log('✅ Usuario insertado exitosamente en tabla users');
 
           // Si es un rol multi-estructura, aplicar herencia automática
           if (hasMultiEstructura(newUser.user_position) && newUser.estructura_ids.length > 0) {
