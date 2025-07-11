@@ -2,13 +2,10 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabasePoolerUrl = import.meta.env.VITE_SUPABASE_POOLER_URL;
 
-// Usar el pooler URL si está disponible (mejor para frontend con muchas conexiones transitorias)
-const finalUrl = supabasePoolerUrl || supabaseUrl;
-
-// Configuración optimizada para Transaction Pooler
-export const supabase = createClient(finalUrl, supabaseAnonKey, {
+// Para el frontend, siempre usar la URL HTTP normal de Supabase
+// El Transaction Pooler se configura automáticamente en el servidor
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
@@ -53,7 +50,7 @@ export const supabase = createClient(finalUrl, supabaseAnonKey, {
       removeItem: (key) => localStorage.removeItem(key),
     },
   },
-  // Configuración optimizada para pooler
+  // Configuración optimizada para el cliente
   realtime: {
     params: {
       eventsPerSecond: 10,
@@ -61,7 +58,7 @@ export const supabase = createClient(finalUrl, supabaseAnonKey, {
     heartbeatIntervalMs: 30000, // 30 segundos
     reconnectAfterMs: (tries) => Math.min(tries * 1000, 10000), // Backoff exponencial
   },
-  // Configuración global de la base de datos optimizada para pooler
+  // Configuración global de la base de datos
   db: {
     schema: 'public'
   },
@@ -69,15 +66,14 @@ export const supabase = createClient(finalUrl, supabaseAnonKey, {
   global: {
     headers: {
       'X-Client-Info': 'crm-fusion-frontend@1.0.0',
-      'X-Connection-Type': supabasePoolerUrl ? 'pooler' : 'direct',
     },
   },
 });
 
 // Log de configuración
 console.log('🔧 Supabase configurado:', {
-  url: finalUrl === supabasePoolerUrl ? 'Transaction Pooler' : 'Direct Connection',
-  pooler: !!supabasePoolerUrl
+  url: 'HTTP API (pooler automático)',
+  frontend: true
 });
 
 // Manejar errores de conexión globalmente
@@ -95,7 +91,7 @@ supabase.auth.onAuthStateChange((event, session) => {
   }
 });
 
-// Función optimizada para Transaction Pooler - conexiones cortas
+// Función optimizada para reintentos
 export const executeWithRetry = async <T>(
   operation: () => Promise<T>,
   maxRetries: number = 3,
@@ -115,7 +111,7 @@ export const executeWithRetry = async <T>(
         throw error;
       }
       
-      // Calcular delay con backoff exponencial (más corto para pooler)
+      // Calcular delay con backoff exponencial
       const delay = Math.min(baseDelay * Math.pow(1.5, attempt), 5000);
       console.warn(`⚠️ Intento ${attempt + 1} falló, reintentando en ${delay}ms...`);
       
@@ -126,10 +122,9 @@ export const executeWithRetry = async <T>(
   throw lastError!;
 };
 
-// Función optimizada para verificar conexión con pooler
+// Función para verificar conexión
 export const checkConnection = async (): Promise<boolean> => {
   try {
-    // Consulta rápida y ligera, ideal para pooler
     const { data, error } = await supabase.from('users').select('count').limit(1);
     return !error;
   } catch (error) {

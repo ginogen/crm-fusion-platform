@@ -3,9 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 // Configuración correcta para el entorno del servidor
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-const supabasePoolerUrl = process.env.VITE_SUPABASE_POOLER_URL;
 
-// Para operaciones administrativas, usar conexión directa (mejor rendimiento)
+// Para operaciones administrativas, usar conexión directa con service role
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: {
     autoRefreshToken: false,
@@ -19,9 +18,8 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
   },
 });
 
-// Cliente para verificaciones de autenticación - puede usar pooler
-const finalClientUrl = supabasePoolerUrl || supabaseUrl;
-const supabaseClient = createClient(finalClientUrl, process.env.VITE_SUPABASE_ANON_KEY, {
+// Cliente para verificaciones de autenticación con anon key
+const supabaseClient = createClient(supabaseUrl, process.env.VITE_SUPABASE_ANON_KEY, {
   auth: {
     autoRefreshToken: false,
     persistSession: false,
@@ -29,15 +27,15 @@ const supabaseClient = createClient(finalClientUrl, process.env.VITE_SUPABASE_AN
   global: {
     headers: {
       'X-Client-Info': 'crm-fusion-auth@1.0.0',
-      'X-Connection-Type': supabasePoolerUrl ? 'pooler-server' : 'direct-server',
+      'X-Connection-Type': 'auth-server',
     },
   },
 });
 
 // Log de configuración del servidor
 console.log('🔧 API Server configurado:', {
-  admin: 'Direct Connection',
-  auth: supabasePoolerUrl ? 'Transaction Pooler' : 'Direct Connection'
+  admin: 'Service Role Connection',
+  auth: 'Anon Key Connection'
 });
 
 // Función para validar UUID
